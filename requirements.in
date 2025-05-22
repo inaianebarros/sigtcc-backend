@@ -1,3 +1,4 @@
-decouple
 Django
+django-simple-history
 pip-tools
+python-decouple

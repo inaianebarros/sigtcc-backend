@@ -8,11 +8,13 @@ asgiref==3.8.1
     # via django
 build==1.2.2.post1
     # via pip-tools
-click==8.2.0
+click==8.2.1
     # via pip-tools
-decouple==0.0.7
-    # via -r requirements.in
 django==5.2.1
+    # via
+    #   -r requirements.in
+    #   django-simple-history
+django-simple-history==3.8.0
     # via -r requirements.in
 packaging==25.0
     # via build
@@ -22,6 +24,8 @@ pyproject-hooks==1.2.0
     # via
     #   build
     #   pip-tools
+python-decouple==3.8
+    # via -r requirements.in
 sqlparse==0.5.3
     # via django
 wheel==0.45.1
