@@ -29,6 +29,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # local apps
+    'academic',
+    'user',
 ]
 
 MIDDLEWARE = [
@@ -105,6 +108,8 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
+
+AUTH_USER_MODEL = 'user.User'
 
 
 # Static files (CSS, JavaScript, Images)
