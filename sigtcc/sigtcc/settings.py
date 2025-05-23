@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     # local apps
     'academic',
     'user',
+    'tcc',
 ]
 
 MIDDLEWARE = [
