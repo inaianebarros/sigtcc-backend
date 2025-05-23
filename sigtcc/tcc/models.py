@@ -41,6 +41,41 @@ class Document(BaseModel):
     )
 
 
+class SupervisionRequest(BaseModelWithHistory):
+    class ANSWER(TextChoices):
+        YES = 'YES', 'Sim'
+        NO = 'NO', 'Não'
+
+    answer = CharField(
+        'Resposta',
+        choices=ANSWER.choices,
+        max_length=3,
+    )
+    justification = TextField('Justificativa', max_length=1500)
+    professor = ForeignKey(
+        ProfessorProfile,
+        on_delete=DO_NOTHING,
+        related_name='supervision_requests',
+        related_query_name='supervision_request',
+        verbose_name='Professor',
+    )
+    student = ForeignKey(
+        StudentProfile,
+        on_delete=DO_NOTHING,
+        related_name='supervision_requests',
+        related_query_name='supervision_request',
+        verbose_name='Aluno',
+    )
+    tcc = ForeignKey(
+        'TCC',
+        null=True,
+        on_delete=DO_NOTHING,
+        related_name='supervision_requests',
+        related_query_name='supervision_request',
+        verbose_name='TCC',
+    )
+
+
 class TaskTCC(BaseModelWithHistory):
     class TASK_STATUS(TextChoices):
         COMPLETE = 'COMPLETE', 'Concluída'
