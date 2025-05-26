@@ -40,6 +40,10 @@ class Document(BaseModel):
         verbose_name='Tarefa',
     )
 
+    class Meta:
+        verbose_name = 'Documento'
+        verbose_name_plural = 'Documentos'
+
 
 class SupervisionRequest(BaseModelWithHistory):
     class ANSWER(TextChoices):
@@ -74,6 +78,13 @@ class SupervisionRequest(BaseModelWithHistory):
         related_query_name='supervision_request',
         verbose_name='TCC',
     )
+
+    class Meta:
+        verbose_name = 'Solicitação de Supervisão'
+        verbose_name_plural = 'Solicitações de Supervisão'
+
+    def __str__(self) -> str:
+        return f'{self.student} - {self.professor}'
 
 
 class TaskTCC(BaseModelWithHistory):
@@ -138,3 +149,10 @@ class TCC(BaseModelWithHistory):
         verbose_name='Aluno',
     )
     theme = CharField('Tema', max_length=255)
+
+    class Meta:
+        verbose_name = 'TCC'
+        verbose_name_plural = 'TCCs'
+
+    def __str__(self) -> str:
+        return f'{self.student} - {self.theme}'

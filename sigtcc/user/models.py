@@ -34,6 +34,13 @@ class ProfessorProfile(BaseModelWithHistory):
         verbose_name='Usuário',
     )
 
+    class Meta:
+        verbose_name = 'Perfil do Professor'
+        verbose_name_plural = 'Perfis dos Professores'
+
+    def __str__(self):
+        return f'{self.user.first_name} {self.user.last_name}'
+
 
 class StudentProfile(BaseModelWithHistory):
     course = ForeignKey(
@@ -52,6 +59,13 @@ class StudentProfile(BaseModelWithHistory):
         verbose_name='Usuário',
     )
 
+    class Meta:
+        verbose_name = 'Perfil do Aluno'
+        verbose_name_plural = 'Perfis dos Alunos'
+
+    def __str__(self):
+        return f'{self.user.first_name} {self.user.last_name}'
+
 
 class User(BaseModelWithHistory, AbstractUser):
     class ROLE(TextChoices):
@@ -59,3 +73,10 @@ class User(BaseModelWithHistory, AbstractUser):
         STUDENT = 'STUDENT', 'Student'
 
     role = CharField(max_length=10, choices=ROLE.choices, default=ROLE.STUDENT)
+
+    class Meta:
+        verbose_name = 'Usuário'
+        verbose_name_plural = 'Usuários'
+
+    def __str__(self):
+        return f'{self.role} - {self.first_name} {self.last_name}'

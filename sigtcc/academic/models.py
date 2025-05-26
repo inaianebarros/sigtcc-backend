@@ -9,6 +9,13 @@ class ExpertiseArea(BaseModelWithHistory):
     description = CharField(max_length=255)
     name = CharField(max_length=255, unique=True)
 
+    class Meta:
+        verbose_name = 'Área de expertise'
+        verbose_name_plural = 'Áreas de expertise'
+
+    def __str__(self):
+        return self.name
+
 
 class Course(BaseModelWithHistory):
     description = CharField('Descrição', max_length=255)
@@ -21,7 +28,21 @@ class Course(BaseModelWithHistory):
     )
     name = CharField('Nome', max_length=255, unique=True)
 
+    class Meta:
+        verbose_name = 'Curso'
+        verbose_name_plural = 'Cursos'
+
+    def __str__(self):
+        return f'{self.institute} - {self.name}'
+
 
 class Institute(BaseModelWithHistory):
     description = CharField('Descrição', max_length=255)
     name = CharField('Nome', max_length=255, unique=True)
+
+    class Meta:
+        verbose_name = 'Instituto'
+        verbose_name_plural = 'Institutos'
+
+    def __str__(self):
+        return self.name
