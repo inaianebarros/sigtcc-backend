@@ -4,22 +4,62 @@
 #
 #    pip-compile requirements.in
 #
-asgiref==3.8.1
+annotated-types==0.7.0
+    # via pydantic
+argon2-cffi==23.1.0
     # via django
+argon2-cffi-bindings==21.2.0
+    # via argon2-cffi
+asgiref==3.8.1
+    # via
+    #   django
+    #   django-ninja-extra
 build==1.2.2.post1
     # via pip-tools
+cffi==1.17.1
+    # via
+    #   argon2-cffi-bindings
+    #   cryptography
 click==8.2.1
     # via pip-tools
-django==5.2.1
+contextlib2==21.6.0
+    # via django-ninja-extra
+cryptography==45.0.3
+    # via pyjwt
+django[argon2]==5.2.1
     # via
     #   -r requirements.in
+    #   django
+    #   django-ninja
+    #   django-ninja-extra
+    #   django-ninja-jwt
     #   django-simple-history
+django-ninja==1.4.1
+    # via
+    #   -r requirements.in
+    #   django-ninja-extra
+django-ninja-extra==0.30.0
+    # via
+    #   -r requirements.in
+    #   django-ninja-jwt
+django-ninja-jwt==5.3.7
+    # via -r requirements.in
 django-simple-history==3.8.0
     # via -r requirements.in
+injector==0.22.0
+    # via django-ninja-extra
 packaging==25.0
     # via build
 pip-tools==7.4.1
     # via -r requirements.in
+pycparser==2.22
+    # via cffi
+pydantic==2.11.5
+    # via django-ninja
+pydantic-core==2.33.2
+    # via pydantic
+pyjwt[crypto]==2.10.1
+    # via django-ninja-jwt
 pyproject-hooks==1.2.0
     # via
     #   build
@@ -28,6 +68,13 @@ python-decouple==3.8
     # via -r requirements.in
 sqlparse==0.5.3
     # via django
+typing-extensions==4.13.2
+    # via
+    #   pydantic
+    #   pydantic-core
+    #   typing-inspection
+typing-inspection==0.4.1
+    # via pydantic
 wheel==0.45.1
     # via pip-tools
 

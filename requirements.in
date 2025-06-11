@@ -1,4 +1,7 @@
-Django
+Django[argon2]<6
+django-ninja
+django-ninja-extra
+django-ninja-jwt
 django-simple-history
 pip-tools
 python-decouple
