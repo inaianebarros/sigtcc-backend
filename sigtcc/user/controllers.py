@@ -4,7 +4,6 @@ from ninja.constants import NOT_SET
 from ninja_extra import api_controller
 from ninja_extra import route
 from ninja_extra import status
-from ninja_jwt.authentication import JWTAuth
 from ninja_jwt.controller import TokenBlackListController
 from ninja_jwt.controller import TokenObtainPairController
 
