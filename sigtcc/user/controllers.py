@@ -54,7 +54,6 @@ class UserController(TokenObtainPairController, TokenBlackListController):
     @route.post(
         '/',
         auth=NOT_SET,
-        permissions=[],
         response={
             status.HTTP_200_OK: ReturnSchema,
             status.HTTP_400_BAD_REQUEST: ReturnSchema,
