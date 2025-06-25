@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'simple_history',
     # local apps
     'academic',
+    'common',
     'user',
     'tcc',
 ]
