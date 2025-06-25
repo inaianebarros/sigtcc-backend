@@ -1,7 +1,9 @@
 Django[argon2]<6
+django-cors-headers
 django-ninja
 django-ninja-extra
 django-ninja-jwt
 django-simple-history
+Faker
 pip-tools
 python-decouple
