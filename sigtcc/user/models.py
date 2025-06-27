@@ -1,3 +1,4 @@
+from uuid import uuid4
 from django.contrib.auth.models import AbstractUser
 from django.db.models import CASCADE
 from django.db.models import CharField
@@ -49,8 +50,9 @@ class StudentProfile(BaseModelWithHistory):
         related_name='students',
         related_query_name='student',
         verbose_name='Curso',
+        null=True,
     )
-    enrollment = CharField(max_length=50, unique=True)
+    enrollment = CharField(max_length=50, unique=True, default=str(uuid4()))
     user = ForeignKey(
         'User',
         on_delete=CASCADE,
