@@ -11,6 +11,7 @@ from ninja_jwt.controller import TokenObtainPairController
 from core.constants import QUERY
 from sigtcc.schemas import ReturnSchema
 from user.models import ProfessorProfile
+from user.models import StudentProfile
 from user.models import User
 from user.schemas import ProfessorSchemaOut
 from user.schemas import UserSchemaIn
@@ -71,6 +72,7 @@ class UserController(TokenObtainPairController, TokenBlackListController):
                 user = User(**data, username=user_schema.email)
                 user.set_password(user_schema.password)
                 user.save()
+                StudentProfile.objects.create(user=user)
         except Exception as exc:
             return status.HTTP_500_INTERNAL_SERVER_ERROR, ReturnSchema(detail=str(exc))
 

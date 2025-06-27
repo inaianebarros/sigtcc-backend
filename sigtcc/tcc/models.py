@@ -55,7 +55,6 @@ class SupervisionRequest(BaseModelWithHistory):
         choices=ANSWER.choices,
         max_length=3,
     )
-    justification = TextField('Justificativa', max_length=1500)
     professor = ForeignKey(
         ProfessorProfile,
         on_delete=DO_NOTHING,
@@ -63,6 +62,7 @@ class SupervisionRequest(BaseModelWithHistory):
         related_query_name='supervision_request',
         verbose_name='Professor',
     )
+    professor_message = TextField('Mensagem do Professor', max_length=1500)
     student = ForeignKey(
         StudentProfile,
         on_delete=DO_NOTHING,
@@ -70,6 +70,7 @@ class SupervisionRequest(BaseModelWithHistory):
         related_query_name='supervision_request',
         verbose_name='Aluno',
     )
+    student_message = TextField('Mensagem do Aluno', max_length=1500)
     tcc = ForeignKey(
         'TCC',
         null=True,
