@@ -49,11 +49,13 @@ class SupervisionRequest(BaseModelWithHistory):
     class ANSWER(TextChoices):
         YES = 'YES', 'Sim'
         NO = 'NO', 'Não'
+        NO_ANSWER = 'NO_ANSWER', 'Sem Resposta'
 
     answer = CharField(
         'Resposta',
         choices=ANSWER.choices,
-        max_length=3,
+        default=ANSWER.NO_ANSWER,
+        max_length=10,
     )
     professor = ForeignKey(
         ProfessorProfile,

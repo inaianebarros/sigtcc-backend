@@ -52,7 +52,7 @@ class StudentProfile(BaseModelWithHistory):
         verbose_name='Curso',
         null=True,
     )
-    enrollment = CharField(max_length=50, unique=True, default=str(uuid4()))
+    enrollment = CharField(max_length=50, unique=True, default=uuid4)
     user = ForeignKey(
         'User',
         on_delete=CASCADE,
