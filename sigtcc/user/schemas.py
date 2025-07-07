@@ -37,4 +37,4 @@ class ProfessorSchemaOut(ModelSchema):
 
     class Meta:
         model = ProfessorProfile
-        fields = ['uuid']
+        fields = ['uuid', 'lattes_url']
