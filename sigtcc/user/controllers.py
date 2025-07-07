@@ -20,6 +20,24 @@ from user.schemas import UserSchemaIn
 @api_controller('/professors', auth=NOT_SET, tags=['Professors'])
 class ProfessorController(ControllerBase):
     @route.get(
+        '/{professor_uuid}',
+        auth=NOT_SET,
+        permissions=[],
+        response={
+            status.HTTP_200_OK: ProfessorSchemaOut,
+            status.HTTP_400_BAD_REQUEST: ReturnSchema,
+            status.HTTP_500_INTERNAL_SERVER_ERROR: ReturnSchema,
+        },
+    )
+    def get_professor(self, request: HttpRequest, professor_uuid: str):
+        try:
+            professor = ProfessorProfile.objects.get(uuid=professor_uuid)
+        except ProfessorProfile.DoesNotExist:
+            return status.HTTP_400_BAD_REQUEST, ReturnSchema(detail='Professor does not exist.')
+
+        return professor
+
+    @route.get(
         '/',
         auth=NOT_SET,
         permissions=[],
