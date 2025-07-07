@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from django.core.management.base import BaseCommand
 from faker import Faker
 
@@ -85,6 +87,7 @@ class Populator:
 
                 professor_profile = ProfessorProfile.objects.create(
                     institute=self.fake.random_element(self._all_institutes()),
+                    lattes_url=f'https://lattes.cnpq.br/{uuid4()}',
                     user=user,
                 )
 
