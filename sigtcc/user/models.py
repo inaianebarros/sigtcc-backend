@@ -27,6 +27,7 @@ class ProfessorProfile(BaseModelWithHistory):
         related_query_name='professor',
         verbose_name='Instituto',
     )
+    lattes_url = CharField('URL do Currículo Lattes', max_length=255, null=True)
     user = ForeignKey(
         'User',
         on_delete=CASCADE,
@@ -74,7 +75,9 @@ class User(BaseModelWithHistory, AbstractUser):
         PROFESSOR = 'PROFESSOR', 'Professor'
         STUDENT = 'STUDENT', 'Student'
 
-    role = CharField(max_length=10, choices=ROLE.choices, default=ROLE.STUDENT)
+    role = CharField(
+        choices=ROLE.choices, default=ROLE.STUDENT, max_length=10, verbose_name='Perfil'
+    )
 
     class Meta:
         verbose_name = 'Usuário'
