@@ -1,12 +1,13 @@
 from django.db import transaction
 from django.http.request import HttpRequest
 from ninja.constants import NOT_SET
-from ninja_extra import api_controller
 from ninja_extra import ControllerBase
+from ninja_extra import api_controller
 from ninja_extra import route
 from ninja_extra import status
 from ninja_jwt.controller import TokenBlackListController
 from ninja_jwt.controller import TokenObtainPairController
+from ninja_jwt.controller import schema
 
 from core.constants import QUERY
 from sigtcc.schemas import ReturnSchema
@@ -14,7 +15,9 @@ from user.models import ProfessorProfile
 from user.models import StudentProfile
 from user.models import User
 from user.schemas import ProfessorSchemaOut
+from user.schemas import StudentSchemaOut
 from user.schemas import UserSchemaIn
+from user.schemas import UserSchemaLoginOut
 
 
 @api_controller('/professors', auth=NOT_SET, tags=['Professors'])
@@ -68,6 +71,27 @@ class ProfessorController(ControllerBase):
         return qs.distinct().order_by('user__first_name')
 
 
+@api_controller('/students', auth=NOT_SET, tags=['Students'])
+class StudentController(ControllerBase):
+    @route.get(
+        '/{student_uuid}',
+        auth=NOT_SET,
+        permissions=[],
+        response={
+            status.HTTP_200_OK: StudentSchemaOut,
+            status.HTTP_400_BAD_REQUEST: ReturnSchema,
+            status.HTTP_500_INTERNAL_SERVER_ERROR: ReturnSchema,
+        },
+    )
+    def get_student(self, request: HttpRequest, student_uuid: str):
+        try:
+            student = StudentProfile.objects.get(uuid=student_uuid)
+        except StudentProfile.DoesNotExist:
+            return status.HTTP_400_BAD_REQUEST, ReturnSchema(detail='Student does not exist.')
+
+        return student
+
+
 @api_controller('/users', auth=NOT_SET, tags=['Users'])
 class UserController(TokenObtainPairController, TokenBlackListController):
     @route.post(
@@ -95,3 +119,20 @@ class UserController(TokenObtainPairController, TokenBlackListController):
             return status.HTTP_500_INTERNAL_SERVER_ERROR, ReturnSchema(detail=str(exc))
 
         return ReturnSchema(detail='Student created successfully.')
+
+    @route.post(
+        '/pair',
+        response={
+            status.HTTP_200_OK: UserSchemaLoginOut,
+            status.HTTP_400_BAD_REQUEST: ReturnSchema,
+            status.HTTP_500_INTERNAL_SERVER_ERROR: ReturnSchema,
+        },
+    )
+    def obtain_token(self, request: HttpRequest, user_token: schema.obtain_pair_schema):
+        user_token.check_user_authentication_rule()
+
+        user_schema = user_token.to_response_schema()
+
+        return status.HTTP_200_OK, UserSchemaLoginOut(
+            **dict(user_schema), role=User.objects.get(username=user_schema.username).role
+        )
