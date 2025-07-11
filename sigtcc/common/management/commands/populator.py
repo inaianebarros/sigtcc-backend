@@ -34,7 +34,7 @@ class Populator:
         user.set_password('1234567890')
 
         if type_user:
-            user.type_user = type_user
+            user.role = type_user
             user.save()
 
         return user
@@ -70,7 +70,15 @@ class Populator:
 
     def populate_institute(self) -> None:
         self.command.stdout.write(self.command.style.WARNING('Populating Institute...'))
-        for name in ['IEG', 'IBEF', 'ICED', 'ICTA', 'ISCO']:
+        for name in [
+            'Instituto de Engenharia e Geociências - IEG',
+            'Instituto de Ciências da Sociedade - ICS',
+            'Instituto de Ciências da Educação - ICED',
+            'Instituto de Biodiversidade e Florestas - IBEF',
+            'Instituto de Ciências e Tecnologia das Águas - ICTA',
+            'Instituto de Saúde Coletiva - ISCO',
+            'Instituto de Formação Interdisciplinar e Intercultural - IFII',
+        ]:
             try:
                 Institute.objects.create(name=name)
             except Exception as exc:
@@ -83,9 +91,10 @@ class Populator:
         self.command.stdout.write(self.command.style.WARNING('Populating Professor...'))
         for _ in range(100):
             try:
-                user = self._create_user(User.ROLE.PROFESSOR)
+                user = self._create_user(User.ROLE.PROFESSOR.value)
 
                 professor_profile = ProfessorProfile.objects.create(
+                    biography=self.fake.text(),
                     institute=self.fake.random_element(self._all_institutes()),
                     lattes_url=f'https://lattes.cnpq.br/{uuid4()}',
                     user=user,
