@@ -6,6 +6,7 @@ from django.db.models import DO_NOTHING
 from django.db.models import ForeignKey
 from django.db.models import ManyToManyField
 from django.db.models import TextChoices
+from django.db.models import TextField
 
 from academic.models import Course
 from academic.models import ExpertiseArea
@@ -14,6 +15,7 @@ from core.base_models import BaseModelWithHistory
 
 
 class ProfessorProfile(BaseModelWithHistory):
+    biography = TextField('Biografia', null=True)
     expertise_areas = ManyToManyField(
         ExpertiseArea,
         related_name='professors',
