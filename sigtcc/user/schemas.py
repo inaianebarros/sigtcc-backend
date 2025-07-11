@@ -2,7 +2,9 @@ from ninja import ModelSchema
 
 from academic.models import ExpertiseArea
 from academic.models import Institute
+from academic.schemas import CourseSchemaOut
 from user.models import ProfessorProfile
+from user.models import StudentProfile
 from user.models import User
 
 
@@ -30,6 +32,15 @@ class UserSchemaOut(ModelSchema):
         fields = ['email', 'first_name', 'uuid']
 
 
+class UserSchemaLoginOut(ModelSchema):
+    access: str
+    refresh: str
+
+    class Meta:
+        model = User
+        fields = ['role', 'username']
+
+
 class ProfessorSchemaOut(ModelSchema):
     expertise_areas: list[ExpertiseAreaSchemaOut]
     institute: InstituteSchemaOut
@@ -37,4 +48,13 @@ class ProfessorSchemaOut(ModelSchema):
 
     class Meta:
         model = ProfessorProfile
-        fields = ['uuid', 'lattes_url']
+        fields = ['biography', 'lattes_url', 'uuid']
+
+
+class StudentSchemaOut(ModelSchema):
+    course: CourseSchemaOut
+    user: UserSchemaOut
+
+    class Meta:
+        model = StudentProfile
+        fields = ['course', 'enrollment', 'uuid', 'user']
