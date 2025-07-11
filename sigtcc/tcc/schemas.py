@@ -2,6 +2,7 @@ from ninja import ModelSchema
 
 from tcc.models import SupervisionRequest
 from user.schemas import ProfessorSchemaOut
+from user.schemas import StudentSchemaOut
 
 
 class ProfessorAnswerSupervisionRequestSchemaIn(ModelSchema):
@@ -20,6 +21,7 @@ class StudentSupervisionRequestSchemaIn(ModelSchema):
 
 class StudentSupervisionRequestSchemaOut(ModelSchema):
     professor: ProfessorSchemaOut
+    student: StudentSchemaOut
 
     class Meta:
         model = SupervisionRequest
