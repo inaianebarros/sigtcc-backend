@@ -9,8 +9,8 @@ ME_URL = "/api/auth/me"
 REFRESH_COOKIE = "refresh_token"
 
 
-def post_json(client, url, payload):
-    return client.post(url, data=payload, content_type="application/json")
+def post_json(client, url, payload, **extra):
+    return client.post(url, data=payload, content_type="application/json", **extra)
 
 
 def errors_by_field(response):

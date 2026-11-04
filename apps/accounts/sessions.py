@@ -1,7 +1,9 @@
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from ninja_extra.exceptions import AuthenticationFailed, PermissionDenied
-from ninja_jwt.exceptions import TokenError
+from ninja_jwt.exceptions import TokenBackendError, TokenError
+from ninja_jwt.state import token_backend
+from ninja_jwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from ninja_jwt.tokens import RefreshToken
 
 from .models import User
@@ -39,9 +41,8 @@ def _set_refresh_cookie(response: HttpResponse, token: str) -> None:
 
 
 def ensure_trusted_origin(request: HttpRequest) -> None:
-    # Browsers always send Origin on cross-site POSTs; clients without it are not CSRF targets.
-    origin = request.headers.get("Origin")
-    if origin is not None and origin not in settings.JWT_TRUSTED_ORIGINS:
+    # Browsers send Origin on every POST, so the application's own requests always carry it.
+    if request.headers.get("Origin") not in settings.JWT_TRUSTED_ORIGINS:
         raise PermissionDenied("Origem não autorizada.")
 
 
@@ -50,8 +51,12 @@ def rotate_session(refresh_token: str | None, response: HttpResponse) -> str:
         raise AuthenticationFailed(INVALID_SESSION)
     try:
         current = RefreshToken(refresh_token)
+    except TokenError as error:
+        _revoke_sessions_if_token_was_reused(refresh_token)
+        raise AuthenticationFailed(INVALID_SESSION) from error
+    try:
         user = User.objects.get(id=current["user_id"])
-    except (TokenError, KeyError, User.DoesNotExist) as error:
+    except (KeyError, User.DoesNotExist) as error:
         raise AuthenticationFailed(INVALID_SESSION) from error
     if not user.is_active:
         raise AuthenticationFailed(INVALID_SESSION)
@@ -70,3 +75,21 @@ def end_session(refresh_token: str | None, response: HttpResponse) -> None:
         except TokenError:
             pass  # logout is idempotent: an invalid or expired token needs no blocking
     response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, path=settings.JWT_REFRESH_COOKIE_PATH)
+
+
+def revoke_user_sessions(user_id: int) -> None:
+    active_tokens = OutstandingToken.objects.filter(user_id=user_id, blacklistedtoken__isnull=True)
+    BlacklistedToken.objects.bulk_create(
+        [BlacklistedToken(token=token) for token in active_tokens], ignore_conflicts=True
+    )
+
+
+def _revoke_sessions_if_token_was_reused(refresh_token: str) -> None:
+    try:
+        payload = token_backend.decode(refresh_token, verify=True)
+    except TokenBackendError:
+        return
+    user_id = payload.get("user_id")
+    already_used = BlacklistedToken.objects.filter(token__jti=payload.get("jti")).exists()
+    if user_id is not None and already_used:
+        revoke_user_sessions(user_id)
