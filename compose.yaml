@@ -124,6 +124,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 15s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
 
   mailpit:
@@ -132,6 +134,8 @@ services:
     # O healthcheck vem da própria imagem (/mailpit readyz). Mensagens são efêmeras (sem volume).
     ports:
       - "127.0.0.1:8025:8025"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
 
   # --- Reservado: cron da expiração de solicitações (RN20, ADR backend 0003, issue #60) ---

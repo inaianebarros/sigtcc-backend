@@ -66,7 +66,6 @@ ASGI_APPLICATION = "config.asgi.application"
 
 DATABASES = {"default": env.db("DATABASE_URL")}
 
-# E-mail: no ambiente Docker de desenvolvimento aponta para o Mailpit (EMAIL_HOST=mailpit).
 EMAIL_HOST = env("EMAIL_HOST")
 EMAIL_PORT = env("EMAIL_PORT")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")

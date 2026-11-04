@@ -26,6 +26,7 @@ docker compose up --build
 
 - Na subida o backend aplica as migrations e carrega `fixtures/seed.json` se o arquivo existir (ainda não existe; caminho configurável por `SEED_FIXTURE`).
 - Teste de fumaça do RustFS (boto3) e do Mailpit: `docker compose run --rm backend python scripts/smoke_services.py`.
+  - Resultado verificado em 03/11/2026: o `boto3` funciona com o RustFS 1.0.4 (criar bucket, enviar, baixar e excluir objeto), com `s3v4`, endereçamento por caminho, região `us-east-1` e os checksums padrão do boto3.
 - Testes no host contra o PostgreSQL do Compose: ajuste `DATABASE_URL` no `.env` (host `127.0.0.1`, mesma senha) e rode `uv run pytest`. Dentro do contêiner: `docker compose run --rm backend pytest`.
 - Parar: `docker compose down` (mantém os dados). `docker compose down -v` APAGA os volumes (banco e objetos do RustFS).
 - Dependências do frontend mudaram (`package-lock.json`)? `docker compose build frontend`, depois recrie o volume de `node_modules`: `docker compose rm -sf frontend && docker volume rm sigtcc_frontend_node_modules && docker compose up -d frontend`.

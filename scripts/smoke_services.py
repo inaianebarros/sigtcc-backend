@@ -1,12 +1,10 @@
-"""Teste de fumaça do ambiente Docker: RustFS (S3 via boto3) e Mailpit (SMTP + API HTTP).
+"""Smoke test for the Docker environment: RustFS (S3 through boto3) and Mailpit (SMTP and HTTP API).
 
-Fora da suíte de testes. Execute dentro do Compose:
+Run inside Compose:
 
     docker compose run --rm backend python scripts/smoke_services.py
 
-Variáveis lidas do ambiente: AWS_S3_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
-AWS_S3_REGION_NAME, S3_BUCKET, EMAIL_HOST, EMAIL_PORT, MAILPIT_API_URL.
-Sai com código 0 somente se todos os passos passarem.
+Exits with code 0 only when every step passes.
 """
 
 import json
@@ -37,20 +35,20 @@ def smoke_storage() -> None:
 
     try:
         client.create_bucket(Bucket=bucket)
-        print(f"[storage] bucket criado: {bucket}")
+        print(f"[storage] bucket created: {bucket}")
     except client.exceptions.BucketAlreadyOwnedByYou:
-        print(f"[storage] bucket já existia: {bucket}")
+        print(f"[storage] bucket already existed: {bucket}")
     client.put_object(Bucket=bucket, Key=key, Body=payload)
-    print(f"[storage] objeto enviado: {key} ({len(payload)} bytes)")
+    print(f"[storage] object uploaded: {key} ({len(payload)} bytes)")
     downloaded = client.get_object(Bucket=bucket, Key=key)["Body"].read()
     if downloaded != payload:
-        raise AssertionError("conteúdo baixado difere do enviado")
-    print("[storage] objeto baixado e idêntico ao enviado")
+        raise AssertionError("downloaded content differs from the uploaded content")
+    print("[storage] object downloaded and identical to the upload")
     client.delete_object(Bucket=bucket, Key=key)
     remaining = client.list_objects_v2(Bucket=bucket, Prefix=key).get("KeyCount", 0)
     if remaining:
-        raise AssertionError("objeto ainda existe após a exclusão")
-    print("[storage] objeto excluído")
+        raise AssertionError("object still exists after deletion")
+    print("[storage] object deleted")
 
 
 def smoke_mail() -> None:
@@ -59,25 +57,25 @@ def smoke_mail() -> None:
 
     django.setup()
     api = os.environ.get("MAILPIT_API_URL", "http://mailpit:8025")
-    subject = f"Fumaça SIGTCC {uuid.uuid4()}"
+    subject = f"SIGTCC smoke {uuid.uuid4()}"
     sent = send_mail(
         subject,
-        "E-mail de teste do ambiente de desenvolvimento.",
+        "Test e-mail from the development environment.",
         None,
         ["aluno.teste@example.com"],
     )
     if sent != 1:
-        raise AssertionError("send_mail não reportou envio")
-    print(f"[mail] enviado via SMTP: {subject}")
+        raise AssertionError("send_mail did not report a sent message")
+    print(f"[mail] sent through SMTP: {subject}")
 
     for _ in range(10):
         with urllib.request.urlopen(f"{api}/api/v1/messages", timeout=5) as response:
             messages = json.load(response)["messages"]
         if any(message["Subject"] == subject for message in messages):
-            print("[mail] mensagem encontrada na API do Mailpit")
+            print("[mail] message found in the Mailpit API")
             return
         time.sleep(0.5)
-    raise AssertionError("mensagem não apareceu no Mailpit")
+    raise AssertionError("message did not appear in Mailpit")
 
 
 def main() -> int:
@@ -85,10 +83,10 @@ def main() -> int:
     for name, step in (("storage", smoke_storage), ("mail", smoke_mail)):
         try:
             step()
-        except Exception as exc:  # relatório explícito do erro exato
+        except Exception as exc:
             failed = True
-            print(f"[{name}] FALHOU: {type(exc).__name__}: {exc}", file=sys.stderr)
-    print("FALHA" if failed else "OK")
+            print(f"[{name}] FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+    print("FAILED" if failed else "OK")
     return 1 if failed else 0
 
 
