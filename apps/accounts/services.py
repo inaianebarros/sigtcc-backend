@@ -6,8 +6,8 @@ from django.db import models, transaction
 
 from config.errors import FieldValidationError
 
-from .models import AreaOfInterest, Course, Institute, Student, UserType
-from .schemas import ProfileRegistrationIn, StudentRegistrationIn
+from .models import AreaOfInterest, Course, Institute, Student, Teacher, UserType
+from .schemas import ProfileRegistrationIn, StudentRegistrationIn, TeacherRegistrationIn
 
 User = get_user_model()
 
@@ -82,6 +82,27 @@ def _validate_course(data: StudentRegistrationIn) -> dict[str, str]:
     return {}
 
 
+def _validate_courses(data: TeacherRegistrationIn) -> dict[str, str]:
+    course_ids = set(data.course_ids)
+    if not course_ids:
+        return {"course_ids": "Escolha ao menos um curso."}
+    courses = Course.objects.filter(id__in=course_ids)
+    if courses.count() != len(course_ids):
+        return {"course_ids": "Curso não encontrado."}
+    if courses.exclude(institute_id=data.institute_id).exists():
+        return {"course_ids": "Todos os cursos devem pertencer ao instituto informado."}
+    return {}
+
+
+def _create_user(data: ProfileRegistrationIn, user_type: UserType):
+    return User.objects.create_user(
+        email=data.email,
+        password=data.password,
+        full_name=data.full_name,
+        type=user_type,
+    )
+
+
 @transaction.atomic
 def register_student(data: StudentRegistrationIn) -> Student:
     errors = {
@@ -93,16 +114,30 @@ def register_student(data: StudentRegistrationIn) -> Student:
     if errors:
         raise FieldValidationError(errors)
 
-    user = User.objects.create_user(
-        email=data.email,
-        password=data.password,
-        full_name=data.full_name,
-        type=UserType.STUDENT,
-    )
     student = Student.objects.create(
-        user=user,
+        user=_create_user(data, UserType.STUDENT),
         course_id=data.course_id,
         registration_number=data.registration_number,
     )
     student.areas_of_interest.set(data.area_ids)
     return student
+
+
+@transaction.atomic
+def register_teacher(data: TeacherRegistrationIn) -> Teacher:
+    errors = {
+        **_validate_account(data),
+        **_validate_registration_number(data, Teacher),
+        **_validate_institute_and_areas(data),
+        **_validate_courses(data),
+    }
+    if errors:
+        raise FieldValidationError(errors)
+
+    teacher = Teacher.objects.create(
+        user=_create_user(data, UserType.TEACHER),
+        registration_number=data.registration_number,
+    )
+    teacher.courses.set(data.course_ids)
+    teacher.areas_of_interest.set(data.area_ids)
+    return teacher
