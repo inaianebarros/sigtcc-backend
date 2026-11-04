@@ -2,12 +2,12 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.accounts.models import Institute, Student, UserType
+from tests.api.helpers import PASSWORD, assert_rejected_on, errors_by_field, post_json
 from tests.factories import make_area, make_course, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
 
 REGISTER_URL = "/api/auth/register/aluno"
-PASSWORD = "Senha-Segura-2026"
 
 
 def valid_payload(**overrides):
@@ -27,7 +27,7 @@ def valid_payload(**overrides):
 
 
 def register(client, payload):
-    return client.post(REGISTER_URL, data=payload, content_type="application/json")
+    return post_json(client, REGISTER_URL, payload)
 
 
 def test_a_visitor_registers_as_a_student(client):
@@ -53,83 +53,71 @@ def test_a_visitor_registers_as_a_student(client):
     assert get_user_model().objects.count() == 1
 
 
-def errors_by_field(response):
-    return {error["loc"][-1]: error["msg"] for error in response.json()["detail"]}
-
-
-def assert_rejected_on(client, payload, field):
-    users_before = get_user_model().objects.count()
-
-    response = register(client, payload)
-
-    assert response.status_code == 422
-    assert field in errors_by_field(response)
-    assert get_user_model().objects.count() == users_before
-
-
 def test_duplicate_email_is_rejected_ignoring_case(client):
     assert register(client, valid_payload()).status_code == 201
     second = valid_payload(email="ANA.SOUZA@example.com", registration_number="202411002")
 
-    assert_rejected_on(client, second, "email")
+    assert_rejected_on(client, REGISTER_URL, second, "email")
 
 
 def test_invalid_email_is_rejected(client):
-    assert_rejected_on(client, valid_payload(email="isto-nao-e-um-email"), "email")
+    assert_rejected_on(client, REGISTER_URL, valid_payload(email="isto-nao-e-um-email"), "email")
 
 
 def test_password_confirmation_must_match(client):
     payload = valid_payload(password_confirmation="Outra-Senha-2026")
 
-    assert_rejected_on(client, payload, "password_confirmation")
+    assert_rejected_on(client, REGISTER_URL, payload, "password_confirmation")
 
 
 @pytest.mark.parametrize("weak_password", ["curta1", "12345678", "password"])
 def test_weak_password_is_rejected(client, weak_password):
     payload = valid_payload(password=weak_password, password_confirmation=weak_password)
 
-    assert_rejected_on(client, payload, "password")
+    assert_rejected_on(client, REGISTER_URL, payload, "password")
 
 
 def test_missing_required_field_is_reported_on_that_field(client):
     payload = valid_payload()
     del payload["full_name"]
 
-    assert_rejected_on(client, payload, "full_name")
+    assert_rejected_on(client, REGISTER_URL, payload, "full_name")
 
 
 @pytest.mark.parametrize("field", ["registration_number", "full_name"])
 def test_blank_text_fields_are_rejected(client, field):
-    assert_rejected_on(client, valid_payload(**{field: "   "}), field)
+    assert_rejected_on(client, REGISTER_URL, valid_payload(**{field: "   "}), field)
 
 
 def test_unknown_institute_is_rejected(client):
-    assert_rejected_on(client, valid_payload(institute_id=999999), "institute_id")
+    assert_rejected_on(client, REGISTER_URL, valid_payload(institute_id=999999), "institute_id")
 
 
 def test_unknown_course_is_rejected(client):
-    assert_rejected_on(client, valid_payload(course_id=999999), "course_id")
+    assert_rejected_on(client, REGISTER_URL, valid_payload(course_id=999999), "course_id")
 
 
 def test_course_must_belong_to_the_chosen_institute(client):
     other_institute = Institute.objects.create(name="Outro instituto")
     payload = valid_payload(institute_id=other_institute.id)
 
-    assert_rejected_on(client, payload, "course_id")
+    assert_rejected_on(client, REGISTER_URL, payload, "course_id")
 
 
 def test_at_least_one_area_of_interest_is_required(client):
-    assert_rejected_on(client, valid_payload(area_ids=[]), "area_ids")
+    assert_rejected_on(client, REGISTER_URL, valid_payload(area_ids=[]), "area_ids")
 
 
 def test_unknown_area_of_interest_is_rejected(client):
-    assert_rejected_on(client, valid_payload(area_ids=[make_area().id, 999999]), "area_ids")
+    assert_rejected_on(
+        client, REGISTER_URL, valid_payload(area_ids=[make_area().id, 999999]), "area_ids"
+    )
 
 
 def test_registration_number_must_be_unique_among_students(client):
     make_student(registration_number="202411001")
 
-    assert_rejected_on(client, valid_payload(), "registration_number")
+    assert_rejected_on(client, REGISTER_URL, valid_payload(), "registration_number")
 
 
 def test_registration_number_may_match_a_teachers(client):
@@ -157,7 +145,7 @@ def test_all_errors_are_reported_together_so_the_form_can_show_them_inline(clien
     ],
 )
 def test_values_longer_than_the_database_allows_are_rejected_on_that_field(client, field, too_long):
-    assert_rejected_on(client, valid_payload(**{field: too_long}), field)
+    assert_rejected_on(client, REGISTER_URL, valid_payload(**{field: too_long}), field)
 
 
 def test_surrounding_whitespace_is_trimmed_before_saving(client):

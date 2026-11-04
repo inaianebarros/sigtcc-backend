@@ -8,8 +8,10 @@ from .schemas import (
     InstituteOut,
     StudentOut,
     StudentRegistrationIn,
+    TeacherOut,
+    TeacherRegistrationIn,
 )
-from .services import register_student
+from .services import register_student, register_teacher
 
 
 @api_controller("/", tags=["Catálogos"])
@@ -47,3 +49,13 @@ class RegistrationController:
     def register_student(self, payload: StudentRegistrationIn):
         student = register_student(payload)
         return Status(201, StudentOut.from_student(student))
+
+    @http_post(
+        "/register/professor",
+        response={201: TeacherOut},
+        summary="Cadastra um Professor",
+        description="O tipo de conta é implícito pela rota (professor) e não é aceito no corpo.",
+    )
+    def register_teacher(self, payload: TeacherRegistrationIn):
+        teacher = register_teacher(payload)
+        return Status(201, TeacherOut.from_teacher(teacher))
