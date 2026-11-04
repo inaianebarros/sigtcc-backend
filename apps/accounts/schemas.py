@@ -1,4 +1,7 @@
+from typing import Annotated
+
 from ninja import Schema
+from pydantic import StringConstraints
 
 from .models import Student
 
@@ -19,15 +22,21 @@ class AreaOfInterestOut(Schema):
     name: str
 
 
-class StudentRegistrationIn(Schema):
-    registration_number: str
-    full_name: str
-    email: str
+StrippedStr = Annotated[str, StringConstraints(strip_whitespace=True)]
+
+
+class ProfileRegistrationIn(Schema):
+    registration_number: StrippedStr
+    full_name: StrippedStr
+    email: StrippedStr
     password: str
     password_confirmation: str
     institute_id: int
-    course_id: int
     area_ids: list[int]
+
+
+class StudentRegistrationIn(ProfileRegistrationIn):
+    course_id: int
 
 
 class StudentOut(Schema):

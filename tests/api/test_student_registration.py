@@ -145,4 +145,25 @@ def test_all_errors_are_reported_together_so_the_form_can_show_them_inline(clien
 
     response = register(client, payload)
 
-    assert set(errors_by_field(response)) >= {"email", "password_confirmation", "area_ids"}
+    assert set(errors_by_field(response)) == {"email", "password_confirmation", "area_ids"}
+
+
+@pytest.mark.parametrize(
+    ("field", "too_long"),
+    [
+        ("full_name", "A" * 151),
+        ("registration_number", "1" * 31),
+        ("email", "a" * 250 + "@example.com"),
+    ],
+)
+def test_values_longer_than_the_database_allows_are_rejected_on_that_field(client, field, too_long):
+    assert_rejected_on(client, valid_payload(**{field: too_long}), field)
+
+
+def test_surrounding_whitespace_is_trimmed_before_saving(client):
+    payload = valid_payload(full_name="  Ana Souza  ", registration_number=" 202411001 ")
+
+    body = register(client, payload).json()
+
+    assert body["full_name"] == "Ana Souza"
+    assert body["registration_number"] == "202411001"

@@ -42,6 +42,7 @@ class RegistrationController:
         "/register/aluno",
         response={201: StudentOut},
         summary="Cadastra um Aluno",
+        description="O tipo de conta é implícito pela rota (aluno) e não é aceito no corpo.",
     )
     def register_student(self, payload: StudentRegistrationIn):
         student = register_student(payload)
