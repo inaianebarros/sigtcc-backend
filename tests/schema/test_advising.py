@@ -9,8 +9,7 @@ from apps.advising.models import (
     AdvisingStatus,
     ThesisTopic,
 )
-
-from .factories import make_student, make_teacher
+from tests.factories import make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
 

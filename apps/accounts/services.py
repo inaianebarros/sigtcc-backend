@@ -1,0 +1,108 @@
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from django.db import models, transaction
+
+from config.errors import FieldValidationError
+
+from .models import AreaOfInterest, Course, Institute, Student, UserType
+from .schemas import ProfileRegistrationIn, StudentRegistrationIn
+
+User = get_user_model()
+
+
+def _max_length(model: type[models.Model], field: str) -> int:
+    return model._meta.get_field(field).max_length
+
+
+def _validate_account(data: ProfileRegistrationIn) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    if not data.full_name:
+        errors["full_name"] = "Informe o nome completo."
+    elif len(data.full_name) > _max_length(User, "full_name"):
+        errors["full_name"] = (
+            f"O nome deve ter no máximo {_max_length(User, 'full_name')} caracteres."
+        )
+
+    try:
+        validate_email(data.email)
+    except ValidationError:
+        errors["email"] = "Informe um e-mail válido."
+    else:
+        if len(data.email) > _max_length(User, "email"):
+            errors["email"] = (
+                f"O e-mail deve ter no máximo {_max_length(User, 'email')} caracteres."
+            )
+        elif User.objects.filter(email__iexact=data.email).exists():
+            errors["email"] = "Já existe uma conta com este e-mail."
+
+    if data.password != data.password_confirmation:
+        errors["password_confirmation"] = "As senhas não coincidem."
+
+    try:
+        validate_password(data.password, User(email=data.email, full_name=data.full_name))
+    except ValidationError as error:
+        errors["password"] = " ".join(error.messages)
+    return errors
+
+
+def _validate_registration_number(
+    data: ProfileRegistrationIn, profile_model: type[models.Model]
+) -> dict[str, str]:
+    max_length = _max_length(profile_model, "registration_number")
+    if not data.registration_number:
+        return {"registration_number": "Informe a matrícula."}
+    if len(data.registration_number) > max_length:
+        return {"registration_number": f"A matrícula deve ter no máximo {max_length} caracteres."}
+    if profile_model.objects.filter(registration_number=data.registration_number).exists():
+        return {"registration_number": "Já existe um cadastro com esta matrícula."}
+    return {}
+
+
+def _validate_institute_and_areas(data: ProfileRegistrationIn) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    if not Institute.objects.filter(id=data.institute_id).exists():
+        errors["institute_id"] = "Instituto não encontrado."
+
+    area_ids = set(data.area_ids)
+    if not area_ids:
+        errors["area_ids"] = "Escolha ao menos uma área de interesse."
+    elif AreaOfInterest.objects.filter(id__in=area_ids).count() != len(area_ids):
+        errors["area_ids"] = "Área de interesse não encontrada."
+    return errors
+
+
+def _validate_course(data: StudentRegistrationIn) -> dict[str, str]:
+    course = Course.objects.filter(id=data.course_id).first()
+    if course is None:
+        return {"course_id": "Curso não encontrado."}
+    if course.institute_id != data.institute_id:
+        return {"course_id": "O curso não pertence ao instituto informado."}
+    return {}
+
+
+@transaction.atomic
+def register_student(data: StudentRegistrationIn) -> Student:
+    errors = {
+        **_validate_account(data),
+        **_validate_registration_number(data, Student),
+        **_validate_institute_and_areas(data),
+        **_validate_course(data),
+    }
+    if errors:
+        raise FieldValidationError(errors)
+
+    user = User.objects.create_user(
+        email=data.email,
+        password=data.password,
+        full_name=data.full_name,
+        type=UserType.STUDENT,
+    )
+    student = Student.objects.create(
+        user=user,
+        course_id=data.course_id,
+        registration_number=data.registration_number,
+    )
+    student.areas_of_interest.set(data.area_ids)
+    return student

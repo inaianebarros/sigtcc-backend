@@ -1,6 +1,9 @@
 from django.db import connection
 from ninja_extra import NinjaExtraAPI, api_controller, http_get
 
+from apps.accounts.api import CatalogController, RegistrationController
+from config.errors import FieldValidationError
+
 api = NinjaExtraAPI(
     title="SIGTCC API",
     description="API do Sistema de Gestão de Trabalhos de Conclusão de Curso da UFOPA.",
@@ -17,4 +20,13 @@ class HealthController:
         return {"status": "ok"}
 
 
-api.register_controllers(HealthController)
+@api.exception_handler(FieldValidationError)
+def field_validation_error(request, exc: FieldValidationError):
+    detail = [
+        {"loc": ["body", "payload", field], "msg": message, "type": "value_error"}
+        for field, message in exc.errors.items()
+    ]
+    return api.create_response(request, {"detail": detail}, status=422)
+
+
+api.register_controllers(HealthController, CatalogController, RegistrationController)
