@@ -2,6 +2,7 @@ from django.db import connection
 from ninja_extra import NinjaExtraAPI, api_controller, http_get
 
 from apps.accounts.api import CatalogController, RegistrationController
+from apps.accounts.password_reset_api import PasswordResetController
 from apps.accounts.session_api import SessionController
 from config.errors import FieldValidationError
 
@@ -31,5 +32,9 @@ def field_validation_error(request, exc: FieldValidationError):
 
 
 api.register_controllers(
-    HealthController, CatalogController, RegistrationController, SessionController
+    HealthController,
+    CatalogController,
+    RegistrationController,
+    SessionController,
+    PasswordResetController,
 )

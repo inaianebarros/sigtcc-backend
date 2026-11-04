@@ -11,11 +11,15 @@ env = environ.Env(
     DJANGO_LOG_LEVEL=(str, "INFO"),
     EMAIL_HOST=(str, "localhost"),
     EMAIL_PORT=(int, 25),
+    EMAIL_HOST_USER=(str, ""),
+    EMAIL_HOST_PASSWORD=(str, ""),
+    EMAIL_USE_TLS=(bool, False),
     DEFAULT_FROM_EMAIL=(str, "SIGTCC <nao-responder@sigtcc.local>"),
     JWT_ACCESS_MINUTES=(int, 5),
     JWT_REFRESH_MINUTES=(int, 30),
     JWT_REFRESH_COOKIE_SECURE=(bool, True),
     JWT_TRUSTED_ORIGINS=(list, ["http://localhost:3000", "http://127.0.0.1:3000"]),
+    FRONTEND_URL=(str, "http://localhost:3000"),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -75,6 +79,9 @@ DATABASES = {"default": env.db("DATABASE_URL")}
 
 EMAIL_HOST = env("EMAIL_HOST")
 EMAIL_PORT = env("EMAIL_PORT")
+EMAIL_HOST_USER = env("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
+EMAIL_USE_TLS = env("EMAIL_USE_TLS")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 
 AUTH_USER_MODEL = "accounts.User"
@@ -116,3 +123,6 @@ JWT_REFRESH_COOKIE_NAME = "refresh_token"
 JWT_REFRESH_COOKIE_PATH = "/api/auth"
 JWT_REFRESH_COOKIE_SECURE = env("JWT_REFRESH_COOKIE_SECURE")
 JWT_TRUSTED_ORIGINS = env("JWT_TRUSTED_ORIGINS")
+
+PASSWORD_RESET_TIMEOUT = 60 * 60
+FRONTEND_URL = env("FRONTEND_URL")
