@@ -56,3 +56,11 @@ uv run python manage.py check
 ## Estrutura
 
 Apps por domínio em `apps/`: `accounts`, `advising`, `activities`, `meetings` e `notifications`. As decisões de arquitetura ficam nas ADRs do repositório de documentação do projeto.
+
+## Autenticação
+
+Sessão por JWT (ADR backend 0001 e 0006): `POST /api/auth/login` devolve o access token (5 minutos) no corpo e grava o refresh token em cookie `httpOnly` restrito a `/api/auth`. `POST /api/auth/refresh` troca o cookie por um novo par (cada refresh token vale uma vez; reapresentar um já usado revoga todas as sessões do usuário), `POST /api/auth/logout` bloqueia o refresh token e `GET /api/auth/me` devolve o usuário do access token (`Authorization: Bearer ...`). Login, refresh e logout exigem o cabeçalho `Origin` e só aceitam as origens de `JWT_TRUSTED_ORIGINS`: quem usa curl ou Postman precisa enviá-lo (por exemplo `-H "Origin: http://localhost:3000"`). Permissões por tipo de conta: `IsStudent`, `IsTeacher` e `IsAdministrator` em `apps/accounts/permissions.py`.
+
+## Execução local
+
+O sistema é executado **somente em ambiente local** (Docker Compose, HTTP em `localhost`), sem previsão de implantação em nuvem (ADR backend 0005). As configurações padrão assumem isso: o cookie de refresh não é `Secure` no Compose, a origem confiável é `http://localhost:3000`, e as credenciais do `.env.example` são de desenvolvimento. Nada disso deve ir para um ambiente exposto; o checklist do que mudar antes de qualquer implantação está na ADR 0005. Mesmo localmente, use um `DJANGO_SECRET_KEY` com 32 bytes ou mais (por exemplo `openssl rand -hex 32`), pois ele assina os tokens.

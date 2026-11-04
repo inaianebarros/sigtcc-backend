@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -11,6 +12,10 @@ env = environ.Env(
     EMAIL_HOST=(str, "localhost"),
     EMAIL_PORT=(int, 25),
     DEFAULT_FROM_EMAIL=(str, "SIGTCC <nao-responder@sigtcc.local>"),
+    JWT_ACCESS_MINUTES=(int, 5),
+    JWT_REFRESH_MINUTES=(int, 30),
+    JWT_REFRESH_COOKIE_SECURE=(bool, True),
+    JWT_TRUSTED_ORIGINS=(list, ["http://localhost:3000", "http://127.0.0.1:3000"]),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -26,6 +31,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "ninja_extra",
+    "ninja_jwt",
+    "ninja_jwt.token_blacklist",
     "apps.accounts",
     "apps.advising",
     "apps.activities",
@@ -98,3 +105,14 @@ LOGGING = {
         "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
     },
 }
+
+NINJA_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env("JWT_ACCESS_MINUTES")),
+    "REFRESH_TOKEN_LIFETIME": timedelta(minutes=env("JWT_REFRESH_MINUTES")),
+    "ROTATE_REFRESH_TOKENS": False,
+    "UPDATE_LAST_LOGIN": True,
+}
+JWT_REFRESH_COOKIE_NAME = "refresh_token"
+JWT_REFRESH_COOKIE_PATH = "/api/auth"
+JWT_REFRESH_COOKIE_SECURE = env("JWT_REFRESH_COOKIE_SECURE")
+JWT_TRUSTED_ORIGINS = env("JWT_TRUSTED_ORIGINS")

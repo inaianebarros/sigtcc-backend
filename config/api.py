@@ -2,6 +2,7 @@ from django.db import connection
 from ninja_extra import NinjaExtraAPI, api_controller, http_get
 
 from apps.accounts.api import CatalogController, RegistrationController
+from apps.accounts.session_api import SessionController
 from config.errors import FieldValidationError
 
 api = NinjaExtraAPI(
@@ -29,4 +30,6 @@ def field_validation_error(request, exc: FieldValidationError):
     return api.create_response(request, {"detail": detail}, status=422)
 
 
-api.register_controllers(HealthController, CatalogController, RegistrationController)
+api.register_controllers(
+    HealthController, CatalogController, RegistrationController, SessionController
+)

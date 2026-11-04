@@ -14,6 +14,7 @@ from apps.accounts.models import (
 from apps.activities.models import Activity
 from apps.advising.models import Advising, AdvisingRequest
 
+DEFAULT_PASSWORD = "senha-longa-123"
 _sequence = count(1)
 User = get_user_model()
 
@@ -22,7 +23,7 @@ def make_user(user_type=UserType.STUDENT, email=None):
     number = next(_sequence)
     return User.objects.create_user(
         email=email or f"user{number}@example.com",
-        password="senha-longa-123",
+        password=DEFAULT_PASSWORD,
         full_name=f"Usuario {number}",
         type=user_type,
     )
