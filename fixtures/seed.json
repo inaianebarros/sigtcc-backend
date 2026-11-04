@@ -1,0 +1,136 @@
+[
+  {
+    "model": "accounts.institute",
+    "pk": 1,
+    "fields": {
+      "name": "Instituto de Engenharia e Geociências"
+    }
+  },
+  {
+    "model": "accounts.course",
+    "pk": 1,
+    "fields": {
+      "institute": 1,
+      "name": "Ciência da Computação"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 1,
+    "fields": {
+      "name": "Inteligência Artificial"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 2,
+    "fields": {
+      "name": "Aprendizado de Máquina"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 3,
+    "fields": {
+      "name": "Ciência de Dados"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 4,
+    "fields": {
+      "name": "Engenharia de Software"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 5,
+    "fields": {
+      "name": "Banco de Dados"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 6,
+    "fields": {
+      "name": "Redes de Computadores"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 7,
+    "fields": {
+      "name": "Segurança da Informação"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 8,
+    "fields": {
+      "name": "Sistemas Distribuídos"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 9,
+    "fields": {
+      "name": "Computação em Nuvem"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 10,
+    "fields": {
+      "name": "Desenvolvimento Web"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 11,
+    "fields": {
+      "name": "Computação Móvel"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 12,
+    "fields": {
+      "name": "Interação Humano-Computador"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 13,
+    "fields": {
+      "name": "Informática na Educação"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 14,
+    "fields": {
+      "name": "Computação Gráfica"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 15,
+    "fields": {
+      "name": "Processamento de Imagens"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 16,
+    "fields": {
+      "name": "Algoritmos e Estruturas de Dados"
+    }
+  },
+  {
+    "model": "accounts.areaofinterest",
+    "pk": 17,
+    "fields": {
+      "name": "Sistemas Embarcados e IoT"
+    }
+  }
+]
