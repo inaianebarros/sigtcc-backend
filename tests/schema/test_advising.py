@@ -31,12 +31,16 @@ def test_student_may_request_again_after_the_previous_request_was_answered():
 
     AdvisingRequest.objects.create(student=student, teacher=make_teacher())
 
+    assert student.advising_requests.count() == 2
+
 
 def test_different_students_may_each_have_a_pending_request():
     teacher = make_teacher()
     AdvisingRequest.objects.create(student=make_student(), teacher=teacher)
 
     AdvisingRequest.objects.create(student=make_student(), teacher=teacher)
+
+    assert teacher.advising_requests.count() == 2
 
 
 def test_student_cannot_have_two_active_advisings():
@@ -55,6 +59,8 @@ def test_student_may_start_a_new_advising_after_the_previous_one_ended():
     first.save()
 
     Advising.objects.create(student=student, teacher=make_teacher())
+
+    assert student.advisings.count() == 2
 
 
 def test_ended_advising_must_have_an_end_date_and_active_must_not():

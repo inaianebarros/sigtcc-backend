@@ -43,17 +43,22 @@ def test_course_name_is_unique_within_an_institute():
         Course.objects.create(institute=institute, name="Ciência da Computação")
 
 
-def test_published_article_belongs_to_exactly_one_profile():
-    student = make_student()
-    teacher = make_teacher()
-
+def test_published_article_requires_an_owner():
     with pytest.raises(IntegrityError), transaction.atomic():
         PublishedArticle.objects.create(title="Sem dono", year=2024)
+
+
+def test_published_article_cannot_belong_to_a_student_and_a_teacher():
     with pytest.raises(IntegrityError), transaction.atomic():
         PublishedArticle.objects.create(
-            title="Dois donos", year=2024, student=student, teacher=teacher
+            title="Dois donos", year=2024, student=make_student(), teacher=make_teacher()
         )
-    PublishedArticle.objects.create(title="De aluno", year=2024, student=student)
+
+
+def test_published_article_may_belong_to_a_single_profile():
+    article = PublishedArticle.objects.create(title="De aluno", year=2024, student=make_student())
+
+    assert article.teacher is None
 
 
 def test_a_course_in_use_cannot_be_deleted():

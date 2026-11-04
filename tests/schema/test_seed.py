@@ -1,11 +1,12 @@
 import pytest
+from django.conf import settings
 from django.core.management import call_command
 
 from apps.accounts.models import AreaOfInterest, Course, Institute
 
 pytestmark = pytest.mark.django_db
 
-SEED_FIXTURE = "fixtures/seed.json"
+SEED_FIXTURE = settings.BASE_DIR / "fixtures" / "seed.json"
 
 EXPECTED_AREAS = {
     "Inteligência Artificial",

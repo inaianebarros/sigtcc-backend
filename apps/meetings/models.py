@@ -27,7 +27,7 @@ class Meeting(models.Model):
     class Meta:
         constraints = [
             models.CheckConstraint(
-                condition=~Q(status="rejected") | ~Q(rejection_reason=""),
+                condition=~Q(status=MeetingStatus.REJECTED) | ~Q(rejection_reason=""),
                 name="meeting_rejection_requires_reason",
             ),
         ]

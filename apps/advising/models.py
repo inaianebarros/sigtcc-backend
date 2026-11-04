@@ -29,7 +29,7 @@ class AdvisingRequest(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["student"],
-                condition=Q(status="pending"),
+                condition=Q(status=AdvisingRequestStatus.PENDING),
                 name="advising_request_one_pending_per_student",
             ),
         ]
@@ -51,12 +51,12 @@ class Advising(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["student"],
-                condition=Q(status="active"),
+                condition=Q(status=AdvisingStatus.ACTIVE),
                 name="advising_one_active_per_student",
             ),
             models.CheckConstraint(
-                condition=(Q(status="ended", ended_at__isnull=False))
-                | (Q(status="active", ended_at__isnull=True)),
+                condition=Q(status=AdvisingStatus.ENDED, ended_at__isnull=False)
+                | Q(status=AdvisingStatus.ACTIVE, ended_at__isnull=True),
                 name="advising_end_date_matches_status",
             ),
         ]

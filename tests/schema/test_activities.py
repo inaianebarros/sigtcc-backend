@@ -1,10 +1,7 @@
-import datetime
-
 import pytest
 from django.db import IntegrityError, transaction
 
 from apps.activities.models import (
-    Activity,
     ActivityStatus,
     Comment,
     Review,
@@ -13,7 +10,7 @@ from apps.activities.models import (
     SubmissionFile,
 )
 
-from .factories import make_advising
+from .factories import make_activity
 
 pytestmark = pytest.mark.django_db
 
@@ -21,14 +18,7 @@ MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 
 def make_submission():
-    advising = make_advising()
-    activity = Activity.objects.create(
-        advising=advising,
-        title="Revisão bibliográfica",
-        description="Entregar o capítulo 2",
-        deadline=datetime.date(2026, 11, 20),
-    )
-    return Submission.objects.create(activity=activity)
+    return Submission.objects.create(activity=make_activity())
 
 
 def create_file(submission, size_bytes, storage_key="k/1"):
@@ -42,10 +32,10 @@ def create_file(submission, size_bytes, storage_key="k/1"):
 
 
 def test_new_activity_starts_pending_and_not_deleted():
-    submission = make_submission()
+    activity = make_activity()
 
-    assert submission.activity.status == ActivityStatus.PENDING
-    assert submission.activity.deleted_at is None
+    assert activity.status == ActivityStatus.PENDING
+    assert activity.deleted_at is None
 
 
 def test_submission_file_accepts_sizes_from_one_byte_up_to_ten_megabytes():
@@ -72,13 +62,12 @@ def test_submission_file_storage_key_must_be_unique():
 
 
 def test_review_and_comment_attach_to_an_activity():
-    submission = make_submission()
-    activity = submission.activity
+    activity = make_activity()
 
     Review.objects.create(activity=activity, decision=ReviewDecision.ACCEPTED)
     Comment.objects.create(
         activity=activity, author=activity.advising.teacher.user, text="Bom trabalho"
     )
 
-    assert activity.reviews.count() == 1
-    assert activity.comments.count() == 1
+    assert activity.reviews.get().decision == ReviewDecision.ACCEPTED
+    assert activity.comments.get().text == "Bom trabalho"
