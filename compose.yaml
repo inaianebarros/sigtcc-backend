@@ -35,6 +35,11 @@ services:
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1},backend
       DJANGO_LOG_LEVEL: ${DJANGO_LOG_LEVEL:-INFO}
       SEED_FIXTURE: ${SEED_FIXTURE:-fixtures/seed.json}
+      # Sessão (ADR backend 0001). Em desenvolvimento por HTTP o cookie de refresh não pode ser Secure.
+      JWT_REFRESH_COOKIE_SECURE: ${JWT_REFRESH_COOKIE_SECURE:-false}
+      JWT_TRUSTED_ORIGINS: ${JWT_TRUSTED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      JWT_ACCESS_MINUTES: ${JWT_ACCESS_MINUTES:-10}
+      JWT_REFRESH_MINUTES: ${JWT_REFRESH_MINUTES:-30}
       DATABASE_URL: postgres://${POSTGRES_USER:-sigtcc}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sigtcc}
       EMAIL_HOST: mailpit
       EMAIL_PORT: "1025"

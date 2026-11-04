@@ -1,7 +1,7 @@
 import pytest
 from django.db import IntegrityError, transaction
 
-from tests.factories import make_user
+from tests.factories import DEFAULT_PASSWORD, make_user
 
 pytestmark = pytest.mark.django_db
 
@@ -17,5 +17,5 @@ def test_password_is_stored_hashed_never_in_plain_text():
     user = make_user()
     user.refresh_from_db()
 
-    assert user.password != "senha-longa-123"
-    assert user.check_password("senha-longa-123")
+    assert user.password != DEFAULT_PASSWORD
+    assert user.check_password(DEFAULT_PASSWORD)

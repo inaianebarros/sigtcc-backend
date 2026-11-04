@@ -92,3 +92,24 @@ class TeacherOut(Schema):
             area_ids=list(teacher.areas_of_interest.values_list("id", flat=True)),
             is_available=teacher.is_available,
         )
+
+
+class LoginIn(Schema):
+    email: str
+    password: str
+
+
+class SessionUserOut(Schema):
+    id: int
+    full_name: str
+    email: str
+    type: str
+
+
+class LoginOut(Schema):
+    access_token: str
+    user: SessionUserOut
+
+
+class AccessTokenOut(Schema):
+    access_token: str
