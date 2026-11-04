@@ -58,4 +58,4 @@ class RegistrationController:
     )
     def register_teacher(self, payload: TeacherRegistrationIn):
         teacher = register_teacher(payload)
-        return Status(201, TeacherOut.from_teacher(teacher, payload.institute_id))
+        return Status(201, TeacherOut.from_teacher(teacher))

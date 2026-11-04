@@ -79,15 +79,16 @@ class TeacherOut(Schema):
     is_available: bool
 
     @classmethod
-    def from_teacher(cls, teacher: Teacher, institute_id: int) -> "TeacherOut":
+    def from_teacher(cls, teacher: Teacher) -> "TeacherOut":
+        courses = list(teacher.courses.all())
         return cls(
             id=teacher.user_id,
             full_name=teacher.user.full_name,
             email=teacher.user.email,
             type=teacher.user.type,
             registration_number=teacher.registration_number,
-            institute_id=institute_id,
-            course_ids=list(teacher.courses.values_list("id", flat=True)),
+            institute_id=courses[0].institute_id,
+            course_ids=[course.id for course in courses],
             area_ids=list(teacher.areas_of_interest.values_list("id", flat=True)),
             is_available=teacher.is_available,
         )

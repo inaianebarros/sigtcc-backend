@@ -44,6 +44,7 @@ def test_a_visitor_registers_as_a_teacher_with_several_courses(client):
     assert body["type"] == "teacher"
     assert body["registration_number"] == "P2024001"
     assert body["is_available"] is True
+    assert body["institute_id"] == payload["institute_id"]
     assert sorted(body["course_ids"]) == sorted(payload["course_ids"])
     assert sorted(body["area_ids"]) == sorted(payload["area_ids"])
     assert "password" not in body and "password_confirmation" not in body
@@ -78,10 +79,37 @@ def test_password_confirmation_must_match(client):
     assert_rejected_on(client, REGISTER_URL, payload, "password_confirmation")
 
 
-def test_weak_password_is_rejected(client):
-    payload = valid_payload(password="password", password_confirmation="password")
+@pytest.mark.parametrize("weak_password", ["curta1", "12345678", "password"])
+def test_weak_password_is_rejected(client, weak_password):
+    payload = valid_payload(password=weak_password, password_confirmation=weak_password)
 
     assert_rejected_on(client, REGISTER_URL, payload, "password")
+
+
+def test_email_already_used_by_another_teacher_is_rejected_ignoring_case(client):
+    teacher = make_teacher()
+
+    assert_rejected_on(
+        client, REGISTER_URL, valid_payload(email=teacher.user.email.upper()), "email"
+    )
+
+
+def test_invalid_email_is_rejected(client):
+    assert_rejected_on(client, REGISTER_URL, valid_payload(email="isto-nao-e-um-email"), "email")
+
+
+@pytest.mark.parametrize("field", ["registration_number", "full_name"])
+def test_blank_text_fields_are_rejected(client, field):
+    assert_rejected_on(client, REGISTER_URL, valid_payload(**{field: "   "}), field)
+
+
+def test_surrounding_whitespace_is_trimmed_before_saving(client):
+    payload = valid_payload(full_name="  Beatriz Lima  ", registration_number=" P2024001 ")
+
+    body = register(client, payload).json()
+
+    assert body["full_name"] == "Beatriz Lima"
+    assert body["registration_number"] == "P2024001"
 
 
 def test_registration_number_must_be_unique_among_teachers(client):
