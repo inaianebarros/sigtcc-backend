@@ -1,0 +1,156 @@
+# Ambiente de DESENVOLVIMENTO local do SIGTCC (não é configuração de produção; ver issue #64).
+# Uso:  cp .env.example .env  (preencha os segredos)  e depois  docker compose up --build
+# Todas as portas são publicadas apenas em 127.0.0.1.
+name: sigtcc
+
+services:
+  db:
+    image: postgres:17.11
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sigtcc}
+      POSTGRES_USER: ${POSTGRES_USER:-sigtcc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      # Para "uv run pytest" e ferramentas no host.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      target: runtime
+    command: ["sh", "docker/dev-start.sh"]
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?defina DJANGO_SECRET_KEY no .env}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
+      # "backend" é necessário porque o proxy do Vite repassa Host: backend:8000.
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1},backend
+      DJANGO_LOG_LEVEL: ${DJANGO_LOG_LEVEL:-INFO}
+      SEED_FIXTURE: ${SEED_FIXTURE:-fixtures/seed.json}
+      DATABASE_URL: postgres://${POSTGRES_USER:-sigtcc}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sigtcc}
+      EMAIL_HOST: mailpit
+      EMAIL_PORT: "1025"
+      MAILPIT_API_URL: http://mailpit:8025
+      # Nomes esperados pelo django-storages/boto3 (issue #49). Em dev usa a credencial raiz do RustFS.
+      AWS_S3_ENDPOINT_URL: http://rustfs:9000
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:?defina RUSTFS_ACCESS_KEY no .env}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:?defina RUSTFS_SECRET_KEY no .env}
+      AWS_S3_REGION_NAME: us-east-1
+      S3_BUCKET: ${S3_BUCKET:-sigtcc-dev}
+    volumes:
+      # Código-fonte montado para recarga automática (runserver). O venv fica em /opt/venv, fora do mount.
+      - .:/app
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      # Clone vizinho do sigtcc-frontend; o Dockerfile fica no repositório do frontend.
+      context: ${FRONTEND_CONTEXT:-../sigtcc-frontend}
+    environment:
+      # Proxy same-origin: o navegador fala só com :3000 e o Vite repassa /api ao backend (sem CORS).
+      DEV_PROXY_TARGET: http://backend:8000
+      VITE_API_BASE_URL: /api
+    volumes:
+      - ${FRONTEND_CONTEXT:-../sigtcc-frontend}:/app
+      # Mantém as dependências instaladas na imagem (binários Linux) em vez das do host.
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  rustfs:
+    # Tag fixa (estável mais recente em 2026-11-03). O contêiner roda como UID 10001, por isso o volume é nomeado.
+    image: rustfs/rustfs:1.0.4
+    command: ["/data"]
+    environment:
+      # Nomes conforme docs.rustfs.com. Sem credenciais o Compose se recusa a subir.
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?defina RUSTFS_ACCESS_KEY no .env}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?defina RUSTFS_SECRET_KEY no .env}
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - rustfs_data:/data
+    ports:
+      - "127.0.0.1:9000:9000" # API S3
+      - "127.0.0.1:9001:9001" # Console web
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    # SMTP (1025) só na rede do Compose; interface web e API HTTP em 127.0.0.1:8025.
+    # O healthcheck vem da própria imagem (/mailpit readyz). Mensagens são efêmeras (sem volume).
+    ports:
+      - "127.0.0.1:8025:8025"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  # --- Reservado: cron da expiração de solicitações (RN20, ADR backend 0003, issue #60) ---
+  # Quando o comando de gerenciamento existir, adicione aqui um serviço com a MESMA imagem do
+  # backend, sem portas, dependendo do db saudável, que execute o comando de expiração em
+  # intervalo fixo (por exemplo um loop/cron chamando "python manage.py <comando-da-#60>").
+  # Não implementado nesta issue.
+  #
+  # expiration-cron:
+  #   build: { context: ., target: runtime }
+  #   environment: {}   # reutilizar as variáveis de ambiente do serviço backend
+  #   depends_on:
+  #     db: { condition: service_healthy }
+
+volumes:
+  db_data:
+  rustfs_data:
+  frontend_node_modules:
