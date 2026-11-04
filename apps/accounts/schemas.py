@@ -113,3 +113,18 @@ class LoginOut(Schema):
 
 class AccessTokenOut(Schema):
     access_token: str
+
+
+class ForgotPasswordIn(Schema):
+    email: str
+
+
+class ResetPasswordIn(Schema):
+    uid: str
+    token: str
+    password: str
+    password_confirmation: str
+
+
+class MessageOut(Schema):
+    detail: str

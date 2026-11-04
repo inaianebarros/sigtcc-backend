@@ -1,5 +1,4 @@
 from django.contrib.auth import get_user_model
-from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import models, transaction
@@ -7,6 +6,7 @@ from django.db import models, transaction
 from config.errors import FieldValidationError
 
 from .models import AreaOfInterest, Course, Institute, Student, Teacher, UserType
+from .passwords import validate_new_password
 from .schemas import ProfileRegistrationIn, StudentRegistrationIn, TeacherRegistrationIn
 
 User = get_user_model()
@@ -37,13 +37,13 @@ def _validate_account(data: ProfileRegistrationIn) -> dict[str, str]:
         elif User.objects.filter(email__iexact=data.email).exists():
             errors["email"] = "Já existe uma conta com este e-mail."
 
-    if data.password != data.password_confirmation:
-        errors["password_confirmation"] = "As senhas não coincidem."
-
-    try:
-        validate_password(data.password, User(email=data.email, full_name=data.full_name))
-    except ValidationError as error:
-        errors["password"] = " ".join(error.messages)
+    errors.update(
+        validate_new_password(
+            data.password,
+            data.password_confirmation,
+            User(email=data.email, full_name=data.full_name),
+        )
+    )
     return errors
 
 

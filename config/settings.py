@@ -16,6 +16,7 @@ env = environ.Env(
     JWT_REFRESH_MINUTES=(int, 30),
     JWT_REFRESH_COOKIE_SECURE=(bool, True),
     JWT_TRUSTED_ORIGINS=(list, ["http://localhost:3000", "http://127.0.0.1:3000"]),
+    FRONTEND_URL=(str, "http://localhost:3000"),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -116,3 +117,6 @@ JWT_REFRESH_COOKIE_NAME = "refresh_token"
 JWT_REFRESH_COOKIE_PATH = "/api/auth"
 JWT_REFRESH_COOKIE_SECURE = env("JWT_REFRESH_COOKIE_SECURE")
 JWT_TRUSTED_ORIGINS = env("JWT_TRUSTED_ORIGINS")
+
+PASSWORD_RESET_TIMEOUT = 60 * 60
+FRONTEND_URL = env("FRONTEND_URL")
