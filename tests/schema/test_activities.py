@@ -9,8 +9,7 @@ from apps.activities.models import (
     Submission,
     SubmissionFile,
 )
-
-from .factories import make_activity
+from tests.factories import make_activity
 
 pytestmark = pytest.mark.django_db
 

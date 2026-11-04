@@ -3,8 +3,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 
 from apps.accounts.models import Course, Institute, PublishedArticle
-
-from .factories import make_course, make_student, make_teacher
+from tests.factories import make_course, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
 

@@ -4,8 +4,7 @@ from django.utils import timezone
 
 from apps.meetings.models import Meeting, MeetingStatus
 from apps.notifications.models import Notification, NotificationType
-
-from .factories import make_advising
+from tests.factories import make_advising
 
 pytestmark = pytest.mark.django_db
 

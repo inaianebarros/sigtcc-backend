@@ -1,7 +1,7 @@
 import pytest
 from django.db.models import ProtectedError
 
-from .factories import (
+from tests.factories import (
     make_activity,
     make_advising,
     make_advising_request,
