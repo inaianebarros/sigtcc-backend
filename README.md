@@ -60,4 +60,3 @@ Apps por domínio em `apps/`: `accounts`, `advising`, `activities`, `meetings` e
 ## Autenticação
 
 Sessão por JWT (ADR backend 0001): `POST /api/auth/login` devolve o access token (curta duração) no corpo e grava o refresh token em cookie `httpOnly` restrito a `/api/auth`. `POST /api/auth/refresh` troca o cookie por um novo par (cada refresh token vale uma vez), `POST /api/auth/logout` bloqueia o refresh token e `GET /api/auth/me` devolve o usuário do access token (`Authorization: Bearer ...`). Login, refresh e logout só aceitam as origens de `JWT_TRUSTED_ORIGINS`. Permissões por tipo de conta: `IsStudent`, `IsTeacher` e `IsAdministrator` em `apps/accounts/permissions.py`. Em produção use um `DJANGO_SECRET_KEY` com 32 bytes ou mais, pois ele assina os tokens.
-

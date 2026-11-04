@@ -4,6 +4,7 @@ from ninja.responses import Status
 from ninja_extra import api_controller, http_get, http_post
 from ninja_jwt.authentication import JWTAuth
 
+from .models import User
 from .schemas import AccessTokenOut, LoginIn, LoginOut, SessionUserOut
 from .sessions import (
     authenticate_credentials,
@@ -14,7 +15,7 @@ from .sessions import (
 )
 
 
-def _user_out(user) -> SessionUserOut:
+def _user_out(user: User) -> SessionUserOut:
     return SessionUserOut(id=user.id, full_name=user.full_name, email=user.email, type=user.type)
 
 

@@ -1,17 +1,16 @@
 from django.conf import settings
-from django.contrib.auth import get_user_model
 from django.http import HttpRequest, HttpResponse
 from ninja_extra.exceptions import AuthenticationFailed, PermissionDenied
 from ninja_jwt.exceptions import TokenError
 from ninja_jwt.tokens import RefreshToken
 
-User = get_user_model()
+from .models import User
 
 INVALID_CREDENTIALS = "E-mail ou senha inválidos."
 INVALID_SESSION = "Sessão inválida ou expirada."
 
 
-def authenticate_credentials(email: str, password: str):
+def authenticate_credentials(email: str, password: str) -> User:
     user = User.objects.filter(email__iexact=email).first()
     if user is None:
         User().set_password(password)
@@ -21,7 +20,7 @@ def authenticate_credentials(email: str, password: str):
     return user
 
 
-def start_session(user, response: HttpResponse) -> str:
+def start_session(user: User, response: HttpResponse) -> str:
     refresh = RefreshToken.for_user(user)
     _set_refresh_cookie(response, str(refresh))
     return str(refresh.access_token)
@@ -40,6 +39,7 @@ def _set_refresh_cookie(response: HttpResponse, token: str) -> None:
 
 
 def ensure_trusted_origin(request: HttpRequest) -> None:
+    # Browsers always send Origin on cross-site POSTs; clients without it are not CSRF targets.
     origin = request.headers.get("Origin")
     if origin is not None and origin not in settings.JWT_TRUSTED_ORIGINS:
         raise PermissionDenied("Origem não autorizada.")
@@ -51,7 +51,7 @@ def rotate_session(refresh_token: str | None, response: HttpResponse) -> str:
     try:
         current = RefreshToken(refresh_token)
         user = User.objects.get(id=current["user_id"])
-    except (TokenError, User.DoesNotExist) as error:
+    except (TokenError, KeyError, User.DoesNotExist) as error:
         raise AuthenticationFailed(INVALID_SESSION) from error
     if not user.is_active:
         raise AuthenticationFailed(INVALID_SESSION)
@@ -68,5 +68,5 @@ def end_session(refresh_token: str | None, response: HttpResponse) -> None:
         try:
             RefreshToken(refresh_token).blacklist()
         except TokenError:
-            pass
+            pass  # logout is idempotent: an invalid or expired token needs no blocking
     response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, path=settings.JWT_REFRESH_COOKIE_PATH)

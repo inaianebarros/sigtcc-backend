@@ -1,14 +1,10 @@
 import pytest
 from django.test import override_settings
 
-from tests.api.helpers import post_json
+from tests.api.helpers import LOGIN_URL, ME_URL, REFRESH_COOKIE, post_json
 from tests.factories import DEFAULT_PASSWORD, make_user
 
 pytestmark = pytest.mark.django_db
-
-LOGIN_URL = "/api/auth/login"
-ME_URL = "/api/auth/me"
-REFRESH_COOKIE = "refresh_token"
 
 
 def login(client, email, password=DEFAULT_PASSWORD):

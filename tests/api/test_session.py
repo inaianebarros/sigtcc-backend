@@ -3,16 +3,20 @@ from datetime import timedelta
 import pytest
 from ninja_jwt.tokens import RefreshToken
 
-from tests.api.helpers import post_json
+from tests.api.helpers import (
+    LOGIN_URL,
+    LOGOUT_URL,
+    ME_URL,
+    REFRESH_URL,
+    post_json,
+)
+from tests.api.helpers import (
+    REFRESH_COOKIE as COOKIE,
+)
 from tests.factories import DEFAULT_PASSWORD, make_user
 
 pytestmark = pytest.mark.django_db
 
-LOGIN_URL = "/api/auth/login"
-REFRESH_URL = "/api/auth/refresh"
-LOGOUT_URL = "/api/auth/logout"
-ME_URL = "/api/auth/me"
-COOKIE = "refresh_token"
 TRUSTED_ORIGIN = "http://localhost:3000"
 UNTRUSTED_ORIGIN = "https://evil.example"
 
@@ -64,6 +68,12 @@ def test_an_expired_refresh_token_is_rejected(client):
     expired = RefreshToken.for_user(user)
     expired.set_exp(lifetime=-timedelta(seconds=1))
     client.cookies[COOKIE] = str(expired)
+
+    assert refresh(client).status_code == 401
+
+
+def test_a_signed_token_that_does_not_identify_a_user_is_rejected(client):
+    client.cookies[COOKIE] = str(RefreshToken())
 
     assert refresh(client).status_code == 401
 
