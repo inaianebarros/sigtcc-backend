@@ -42,8 +42,12 @@ services:
       JWT_REFRESH_MINUTES: ${JWT_REFRESH_MINUTES:-30}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       DATABASE_URL: postgres://${POSTGRES_USER:-sigtcc}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sigtcc}
-      EMAIL_HOST: mailpit
-      EMAIL_PORT: "1025"
+      # Padrão: Mailpit local. Para um SMTP real na demonstração, defina estas variáveis no .env.
+      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+      EMAIL_PORT: ${EMAIL_PORT:-1025}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-false}
       MAILPIT_API_URL: http://mailpit:8025
       # Nomes esperados pelo django-storages/boto3 (issue #49). Em dev usa a credencial raiz do RustFS.
       AWS_S3_ENDPOINT_URL: http://rustfs:9000

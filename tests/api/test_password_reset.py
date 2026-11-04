@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.test import Client
+from django.test import Client, override_settings
 
 from apps.accounts.models import User
 from tests.api.conftest import TRUSTED_ORIGIN
@@ -17,6 +17,7 @@ pytestmark = pytest.mark.django_db
 FORGOT_URL = "/api/auth/forgot-password"
 RESET_URL = "/api/auth/reset-password"
 NEW_PASSWORD = "Nova-Senha-Segura-2026"
+UID_OF_NO_ONE = "MTAwMDAw"
 GENERIC_RESPONSE = {
     "detail": "Se o e-mail estiver cadastrado, enviaremos um link para redefinir a senha."
 }
@@ -97,6 +98,23 @@ def test_unknown_and_inactive_accounts_get_the_same_response_and_no_email(client
     assert mailoutbox == []
 
 
+@override_settings(EMAIL_BACKEND="tests.api.failing_email_backend.FailingEmailBackend")
+def test_a_failing_mail_server_does_not_reveal_which_accounts_exist(client):
+    make_user(email="ana@example.com")
+
+    existing = request_reset(client, "ana@example.com")
+    unknown = request_reset(client, "ninguem@example.com")
+
+    assert existing.status_code == unknown.status_code == 200
+    assert existing.json() == unknown.json() == GENERIC_RESPONSE
+
+
+def test_reset_requests_are_rate_limited_per_client(client, mailoutbox):
+    statuses = [request_reset(client, f"pessoa{n}@example.com").status_code for n in range(6)]
+
+    assert statuses == [200] * 5 + [429]
+
+
 def test_the_request_requires_an_email_field(client):
     assert post_json(client, FORGOT_URL, {}).status_code == 422
 
@@ -138,7 +156,7 @@ def test_a_tampered_link_is_rejected(client, mailoutbox, tamper):
     if tamper == "token":
         token = token[:-1] + ("a" if token[-1] != "a" else "b")
     else:
-        uid = "MTAwMDAw"
+        uid = UID_OF_NO_ONE
 
     assert reset(client, uid, token).status_code == 400
 

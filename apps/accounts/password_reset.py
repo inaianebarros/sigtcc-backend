@@ -1,3 +1,6 @@
+import logging
+from smtplib import SMTPException
+
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
@@ -10,6 +13,8 @@ from config.errors import FieldValidationError
 from .models import User
 from .passwords import validate_new_password
 from .sessions import revoke_user_sessions
+
+logger = logging.getLogger(__name__)
 
 EMAIL_SUBJECT = "Redefinição de senha - SIGTCC"
 EMAIL_BODY = """Olá, {name}.
@@ -34,7 +39,11 @@ def send_reset_link(email: str) -> None:
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
     link = f"{settings.FRONTEND_URL}/redefinir-senha?uid={uid}&token={token}"
-    send_mail(EMAIL_SUBJECT, EMAIL_BODY.format(name=user.full_name, link=link), None, [user.email])
+    body = EMAIL_BODY.format(name=user.full_name, link=link)
+    try:
+        send_mail(EMAIL_SUBJECT, body, None, [user.email])
+    except (OSError, SMTPException):
+        logger.exception("failed to send the password reset e-mail to user %s", user.pk)
 
 
 def _user_for_link(uid: str, token: str) -> User:

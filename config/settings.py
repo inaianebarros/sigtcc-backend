@@ -11,6 +11,9 @@ env = environ.Env(
     DJANGO_LOG_LEVEL=(str, "INFO"),
     EMAIL_HOST=(str, "localhost"),
     EMAIL_PORT=(int, 25),
+    EMAIL_HOST_USER=(str, ""),
+    EMAIL_HOST_PASSWORD=(str, ""),
+    EMAIL_USE_TLS=(bool, False),
     DEFAULT_FROM_EMAIL=(str, "SIGTCC <nao-responder@sigtcc.local>"),
     JWT_ACCESS_MINUTES=(int, 5),
     JWT_REFRESH_MINUTES=(int, 30),
@@ -76,6 +79,9 @@ DATABASES = {"default": env.db("DATABASE_URL")}
 
 EMAIL_HOST = env("EMAIL_HOST")
 EMAIL_PORT = env("EMAIL_PORT")
+EMAIL_HOST_USER = env("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
+EMAIL_USE_TLS = env("EMAIL_USE_TLS")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 
 AUTH_USER_MODEL = "accounts.User"
