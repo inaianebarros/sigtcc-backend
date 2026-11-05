@@ -60,6 +60,26 @@ def test_published_article_may_belong_to_a_single_profile():
     assert article.teacher is None
 
 
+@pytest.mark.parametrize("owner", ["student", "teacher"])
+def test_a_profile_cannot_repeat_an_article_with_the_same_title_and_year(owner):
+    profile = make_student() if owner == "student" else make_teacher()
+    PublishedArticle.objects.create(title="Redes Neurais", year=2024, **{owner: profile})
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        PublishedArticle.objects.create(title="  REDES   neurais ", year=2024, **{owner: profile})
+    with pytest.raises(IntegrityError), transaction.atomic():
+        PublishedArticle.objects.create(title="Rédes Neuráis", year=2024, **{owner: profile})
+
+
+def test_the_same_title_is_allowed_in_another_year_or_for_another_profile():
+    student = make_student()
+    PublishedArticle.objects.create(title="Redes Neurais", year=2024, student=student)
+
+    PublishedArticle.objects.create(title="Redes Neurais", year=2025, student=student)
+    PublishedArticle.objects.create(title="Redes Neurais", year=2024, student=make_student())
+    PublishedArticle.objects.create(title="Redes Neurais", year=2024, teacher=make_teacher())
+
+
 def test_a_course_in_use_cannot_be_deleted():
     course = make_course()
     make_student(course=course)

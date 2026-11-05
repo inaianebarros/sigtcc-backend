@@ -5,13 +5,14 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 from django.utils import timezone
 
-from .models import AreaOfInterest, PublishedArticle
+from .models import AreaOfInterest, PublishedArticle, normalize_title
 from .schemas import ArticleIn
 
 User = get_user_model()
 
 MAX_ARTICLES = 50
 FIRST_ARTICLE_YEAR = 1900
+REPEATED_ARTICLES_MESSAGE = "Há artigos repetidos: informe cada artigo (título e ano) uma só vez."
 NULL_ARTICLES_MESSAGE = "Envie a lista de artigos; use uma lista vazia para removê-los todos."
 _url_validator = URLValidator(schemes=["http", "https"])
 
@@ -68,6 +69,9 @@ def validate_articles(articles: list[ArticleIn] | None) -> dict[str, str]:
         message = _article_error(article, current_year)
         if message:
             return {"articles": message}
+    unique_keys = {(normalize_title(article.title), article.year) for article in articles}
+    if len(unique_keys) != len(articles):
+        return {"articles": REPEATED_ARTICLES_MESSAGE}
     return {}
 
 

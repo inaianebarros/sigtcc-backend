@@ -2,18 +2,35 @@ from django.db import transaction
 
 from config.errors import FieldValidationError
 
-from .models import PublishedArticle, Student
+from .models import Student, normalize_title
 from .profile_validation import (
     validate_area_ids,
     validate_articles,
     validate_full_name,
     validate_unknown_fields,
 )
-from .schemas import StudentProfileIn
+from .schemas import ArticleIn, StudentProfileIn
 
 STUDENT_READ_ONLY_FIELDS = frozenset(
     {"email", "password", "registration_number", "institute_id", "course_id"}
 )
+
+
+def replace_articles(owner: Student, articles: list[ArticleIn]) -> None:
+    """Sincroniza os artigos do dono com a lista enviada, mantendo o id dos que continuam."""
+    existing = {(a.title_key, a.year): a for a in owner.articles.all()}
+    incoming = {(normalize_title(a.title), a.year): a for a in articles}
+
+    for key, article in existing.items():
+        if key not in incoming:
+            article.delete()
+    for key, data in incoming.items():
+        if key in existing:
+            article = existing[key]
+            article.title, article.url = data.title, data.url
+            article.save()
+        else:
+            owner.articles.create(title=data.title, year=data.year, url=data.url)
 
 
 @transaction.atomic
@@ -37,9 +54,5 @@ def update_student_profile(student: Student, data: StudentProfileIn) -> Student:
     if "area_ids" in sent:
         student.areas_of_interest.set(data.area_ids or [])
     if "articles" in sent:
-        student.articles.all().delete()
-        PublishedArticle.objects.bulk_create(
-            PublishedArticle(student=student, title=a.title, year=a.year, url=a.url)
-            for a in data.articles or []
-        )
+        replace_articles(student, data.articles or [])
     return student

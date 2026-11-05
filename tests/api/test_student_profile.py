@@ -179,7 +179,9 @@ def test_the_articles_are_validated_and_nothing_changes_on_error(client, article
 def test_fifty_articles_are_accepted(client):
     student = make_student()
 
-    response = patch(client, student.user, {"articles": [article() for _ in range(50)]})
+    response = patch(
+        client, student.user, {"articles": [article(title=f"Artigo {n}") for n in range(50)]}
+    )
 
     assert response.status_code == 200
     assert student.articles.count() == 50
@@ -301,3 +303,56 @@ def test_the_openapi_lists_only_the_editable_fields(client):
 
     properties = schema["components"]["schemas"]["StudentProfileIn"]["properties"]
     assert set(properties) == {"full_name", "area_ids", "articles"}
+
+
+def test_repeated_articles_in_the_same_request_are_rejected(client):
+    student = make_student()
+    PublishedArticle.objects.create(student=student, title="Antigo", year=2020)
+    repeated = [article(title="Redes Neurais"), article(title="  rédes   neurais ")]
+
+    response = patch(client, student.user, {"articles": repeated})
+
+    assert response.status_code == 422
+    assert errors_by_field(response) == {
+        "articles": "Há artigos repetidos: informe cada artigo (título e ano) uma só vez."
+    }
+    assert list(student.articles.values_list("title", flat=True)) == ["Antigo"]
+
+
+def test_the_same_title_in_different_years_is_accepted(client):
+    student = make_student()
+
+    response = patch(
+        client,
+        student.user,
+        {"articles": [article(title="Redes", year=2023), article(title="Redes", year=2024)]},
+    )
+
+    assert response.status_code == 200
+    assert student.articles.count() == 2
+
+
+def test_resending_an_article_updates_it_in_place_and_keeps_its_id(client):
+    student = make_student()
+    kept = PublishedArticle.objects.create(
+        student=student, title="Redes Neurais", year=2024, url="https://old.example.com"
+    )
+    removed = PublishedArticle.objects.create(student=student, title="Sai", year=2020)
+
+    response = patch(
+        client,
+        student.user,
+        {
+            "articles": [
+                article(title="redes neurais", year=2024, url="https://new.example.com"),
+                article(title="Novo", year=2025),
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    kept.refresh_from_db()
+    assert kept.title == "redes neurais"
+    assert kept.url == "https://new.example.com"
+    assert not PublishedArticle.objects.filter(pk=removed.pk).exists()
+    assert student.articles.count() == 2
