@@ -225,3 +225,79 @@ def test_a_teacher_cannot_use_the_student_profile(client, method):
     )
 
     assert response.status_code == 403
+
+
+def test_an_empty_body_changes_nothing(client):
+    student = make_student()
+    PublishedArticle.objects.create(student=student, title="Antigo", year=2020)
+
+    response = patch(client, student.user, {})
+
+    assert response.status_code == 200
+    assert [a["title"] for a in response.json()["articles"]] == ["Antigo"]
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("full_name", "Informe o nome completo."),
+        ("area_ids", "Escolha ao menos uma área de interesse."),
+        ("articles", "Envie a lista de artigos; use uma lista vazia para removê-los todos."),
+    ],
+)
+def test_an_explicit_null_is_rejected_and_nothing_is_removed(client, field, message):
+    student = make_student()
+    area = make_area()
+    student.areas_of_interest.add(area)
+    PublishedArticle.objects.create(student=student, title="Antigo", year=2020)
+
+    response = patch(client, student.user, {field: None})
+
+    assert response.status_code == 422
+    assert errors_by_field(response) == {field: message}
+    assert student.articles.count() == 1
+    assert student.areas_of_interest.count() == 1
+
+
+@pytest.mark.parametrize(
+    ("item", "message"),
+    [
+        ({"year": 2024}, "Informe o título de cada artigo."),
+        ({"title": "Sem ano"}, "O ano do artigo deve estar entre 1900 e o ano atual."),
+    ],
+)
+def test_an_article_missing_a_field_gets_a_portuguese_message(client, item, message):
+    student = make_student()
+
+    response = patch(client, student.user, {"articles": [item]})
+
+    assert response.status_code == 422
+    assert errors_by_field(response) == {"articles": message}
+
+
+def test_a_url_with_exactly_500_characters_is_accepted(client):
+    student = make_student()
+    url = "https://example.com/" + "a" * (500 - len("https://example.com/"))
+
+    response = patch(client, student.user, {"articles": [article(url=url)]})
+
+    assert response.status_code == 200
+    assert student.articles.get().url == url
+
+
+def test_an_inactive_student_cannot_use_the_profile(client):
+    student = make_student()
+    headers = bearer(student.user)
+    student.user.is_active = False
+    student.user.save(update_fields=["is_active"])
+
+    response = client.get(PROFILE_URL, headers=headers)
+
+    assert response.status_code == 401
+
+
+def test_the_openapi_lists_only_the_editable_fields(client):
+    schema = client.get("/api/openapi.json").json()
+
+    properties = schema["components"]["schemas"]["StudentProfileIn"]["properties"]
+    assert set(properties) == {"full_name", "area_ids", "articles"}

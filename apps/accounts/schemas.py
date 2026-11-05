@@ -105,8 +105,8 @@ class ArticleOut(Schema):
 
 
 class ArticleIn(BaseModel):
-    title: StrippedStr
-    year: int
+    title: StrippedStr = ""
+    year: int | None = None
     url: StrippedStr = ""
 
 

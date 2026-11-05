@@ -5,8 +5,9 @@ from django.db import models, transaction
 
 from config.errors import FieldValidationError
 
-from .models import AreaOfInterest, Course, Institute, Student, Teacher, UserType
+from .models import Course, Institute, Student, Teacher, UserType
 from .passwords import validate_new_password
+from .profile_validation import validate_area_ids, validate_full_name
 from .schemas import ProfileRegistrationIn, StudentRegistrationIn, TeacherRegistrationIn
 
 User = get_user_model()
@@ -17,13 +18,7 @@ def _max_length(model: type[models.Model], field: str) -> int:
 
 
 def _validate_account(data: ProfileRegistrationIn) -> dict[str, str]:
-    errors: dict[str, str] = {}
-    if not data.full_name:
-        errors["full_name"] = "Informe o nome completo."
-    elif len(data.full_name) > _max_length(User, "full_name"):
-        errors["full_name"] = (
-            f"O nome deve ter no máximo {_max_length(User, 'full_name')} caracteres."
-        )
+    errors = validate_full_name(data.full_name)
 
     try:
         validate_email(data.email)
@@ -65,11 +60,7 @@ def _validate_institute_and_areas(data: ProfileRegistrationIn) -> dict[str, str]
     if not Institute.objects.filter(id=data.institute_id).exists():
         errors["institute_id"] = "Instituto não encontrado."
 
-    area_ids = set(data.area_ids)
-    if not area_ids:
-        errors["area_ids"] = "Escolha ao menos uma área de interesse."
-    elif AreaOfInterest.objects.filter(id__in=area_ids).count() != len(area_ids):
-        errors["area_ids"] = "Área de interesse não encontrada."
+    errors.update(validate_area_ids(data.area_ids))
     return errors
 
 
