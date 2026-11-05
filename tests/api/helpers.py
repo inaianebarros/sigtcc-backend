@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from ninja_jwt.tokens import RefreshToken
 
 PASSWORD = "Senha-Segura-2026"
 
@@ -25,3 +26,7 @@ def assert_rejected_on(client, url, payload, field):
     assert response.status_code == 422
     assert field in errors_by_field(response)
     assert get_user_model().objects.count() == users_before
+
+
+def bearer(user):
+    return {"Authorization": f"Bearer {RefreshToken.for_user(user).access_token}"}

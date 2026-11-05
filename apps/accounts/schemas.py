@@ -1,9 +1,9 @@
 from typing import Annotated
 
 from ninja import Schema
-from pydantic import StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
-from .models import Student, Teacher
+from .models import PublishedArticle, Student, Teacher
 
 
 class InstituteOut(Schema):
@@ -91,6 +91,54 @@ class TeacherOut(Schema):
             course_ids=[course.id for course in courses],
             area_ids=list(teacher.areas_of_interest.values_list("id", flat=True)),
             is_available=teacher.is_available,
+        )
+
+
+class ArticleOut(Schema):
+    title: str
+    year: int
+    url: str
+
+    @classmethod
+    def from_article(cls, article: PublishedArticle) -> "ArticleOut":
+        return cls(title=article.title, year=article.year, url=article.url)
+
+
+class ArticleIn(BaseModel):
+    title: StrippedStr
+    year: int
+    url: StrippedStr = ""
+
+
+class StudentProfileIn(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    full_name: StrippedStr | None = None
+    area_ids: list[int] | None = None
+    articles: list[ArticleIn] | None = None
+
+
+class StudentProfileOut(Schema):
+    full_name: str
+    email: str
+    registration_number: str
+    institute_id: int
+    course_id: int
+    area_ids: list[int]
+    articles: list[ArticleOut]
+
+    @classmethod
+    def from_student(cls, student: Student) -> "StudentProfileOut":
+        return cls(
+            full_name=student.user.full_name,
+            email=student.user.email,
+            registration_number=student.registration_number,
+            institute_id=student.course.institute_id,
+            course_id=student.course_id,
+            area_ids=sorted(student.areas_of_interest.values_list("id", flat=True)),
+            articles=[
+                ArticleOut.from_article(article) for article in student.articles.order_by("id")
+            ],
         )
 
 
