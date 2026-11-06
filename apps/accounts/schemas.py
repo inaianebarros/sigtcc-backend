@@ -210,5 +210,11 @@ class ResetPasswordIn(Schema):
     password_confirmation: str
 
 
+class ChangePasswordIn(Schema):
+    current_password: str
+    password: str
+    password_confirmation: str
+
+
 class MessageOut(Schema):
     detail: str
