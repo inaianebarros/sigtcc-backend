@@ -1,5 +1,5 @@
 from django.db import models
-from django.db.models import Q
+from django.db.models import Case, CharField, F, Q, Value, When
 
 from apps.accounts.models import Student, Teacher
 
@@ -22,6 +22,20 @@ class AdvisingRequestQuerySet(models.QuerySet):
     def overdue_pending(self):
         """Pendentes cujo prazo de resposta venceu, ainda que o comando agendado não tenha rodado."""
         return self.filter(status=AdvisingRequestStatus.PENDING, requested_at__lte=answer_cutoff())
+
+    def with_effective_status(self):
+        """Anota `effective_status`: a pendente vencida aparece como não respondida."""
+        return self.annotate(
+            effective_status=Case(
+                When(
+                    status=AdvisingRequestStatus.PENDING,
+                    requested_at__lte=answer_cutoff(),
+                    then=Value(AdvisingRequestStatus.UNANSWERED),
+                ),
+                default=F("status"),
+                output_field=CharField(),
+            )
+        )
 
     def valid_pending(self):
         return self.filter(status=AdvisingRequestStatus.PENDING, requested_at__gt=answer_cutoff())
