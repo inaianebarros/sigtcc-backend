@@ -110,12 +110,21 @@ class ArticleIn(BaseModel):
     url: StrippedStr = ""
 
 
-class StudentProfileIn(BaseModel):
+class ProfileChangesIn(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     full_name: StrippedStr | None = None
     area_ids: list[int] | None = None
     articles: list[ArticleIn] | None = None
+
+
+class StudentProfileIn(ProfileChangesIn):
+    pass
+
+
+class TeacherProfileIn(ProfileChangesIn):
+    course_ids: list[int] | None = None
+    is_available: bool | None = None
 
 
 class StudentProfileOut(Schema):
@@ -138,6 +147,33 @@ class StudentProfileOut(Schema):
             area_ids=sorted(student.areas_of_interest.values_list("id", flat=True)),
             articles=[
                 ArticleOut.from_article(article) for article in student.articles.order_by("id")
+            ],
+        )
+
+
+class TeacherProfileOut(Schema):
+    full_name: str
+    email: str
+    registration_number: str
+    institute_id: int
+    course_ids: list[int]
+    area_ids: list[int]
+    is_available: bool
+    articles: list[ArticleOut]
+
+    @classmethod
+    def from_teacher(cls, teacher: Teacher) -> "TeacherProfileOut":
+        courses = list(teacher.courses.order_by("id"))
+        return cls(
+            full_name=teacher.user.full_name,
+            email=teacher.user.email,
+            registration_number=teacher.registration_number,
+            institute_id=courses[0].institute_id,
+            course_ids=[course.id for course in courses],
+            area_ids=sorted(teacher.areas_of_interest.values_list("id", flat=True)),
+            is_available=teacher.is_available,
+            articles=[
+                ArticleOut.from_article(article) for article in teacher.articles.order_by("id")
             ],
         )
 
