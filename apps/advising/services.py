@@ -1,4 +1,5 @@
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from ninja.errors import HttpError
 
 from apps.accounts.models import Student, Teacher
@@ -9,7 +10,14 @@ from apps.notifications.models import (
 )
 from config.errors import ConflictError
 
-from .models import Advising, AdvisingRequest, AdvisingRequestStatus, AdvisingStatus
+from .models import (
+    ANSWERED_STATUSES,
+    Advising,
+    AdvisingRequest,
+    AdvisingRequestStatus,
+    AdvisingStatus,
+)
+from .schemas import AnswerAction
 
 ACTIVE_ADVISING_MESSAGE = "Você já tem um orientador ativo."
 PENDING_REQUEST_MESSAGE = "Você já tem uma solicitação pendente."
@@ -77,3 +85,59 @@ def list_received_requests(teacher: Teacher, status: AdvisingRequestStatus | Non
         .order_by("-requested_at", "-id")
     )
     return received.filter(effective_status=status) if status else received
+
+
+ALREADY_ANSWERED_MESSAGE = "Esta solicitação já foi respondida."
+DEADLINE_PASSED_MESSAGE = "O prazo para responder esta solicitação terminou."
+INACTIVE_STUDENT_MESSAGE = "Este aluno não está mais ativo."
+STUDENT_HAS_ADVISING_MESSAGE = "O aluno já tem um orientador ativo."
+
+
+def _ensure_can_be_answered(advising_request: AdvisingRequest, student: Student) -> None:
+    if advising_request.effective_status in ANSWERED_STATUSES:
+        raise ConflictError(ALREADY_ANSWERED_MESSAGE)
+    if advising_request.effective_status == AdvisingRequestStatus.UNANSWERED:
+        raise ConflictError(DEADLINE_PASSED_MESSAGE)
+    if not student.user.is_active:
+        raise ConflictError(INACTIVE_STUDENT_MESSAGE)
+
+
+def _start_advising(advising_request: AdvisingRequest, student: Student, teacher: Teacher) -> None:
+    if Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE).exists():
+        raise ConflictError(STUDENT_HAS_ADVISING_MESSAGE)
+    try:
+        with transaction.atomic():
+            Advising.objects.create(student=student, teacher=teacher, request=advising_request)
+    except IntegrityError as error:
+        raise ConflictError(STUDENT_HAS_ADVISING_MESSAGE) from error
+
+
+@transaction.atomic
+def answer_request(teacher: Teacher, request_id: int, action: AnswerAction) -> AdvisingRequest:
+    student_id = (
+        AdvisingRequest.objects.filter(pk=request_id, teacher=teacher)
+        .values_list("student_id", flat=True)
+        .first()
+    )
+    if student_id is None:
+        raise HttpError(404, "Solicitação não encontrada.")
+    student = Student.objects.select_for_update().select_related("user").get(pk=student_id)
+    advising_request = (
+        AdvisingRequest.objects.select_for_update().with_effective_status().get(pk=request_id)
+    )
+    _ensure_can_be_answered(advising_request, student)
+
+    if action == AnswerAction.ACCEPT:
+        _start_advising(advising_request, student, teacher)
+        advising_request.status = AdvisingRequestStatus.ACCEPTED
+    else:
+        advising_request.status = AdvisingRequestStatus.REJECTED
+    advising_request.responded_at = timezone.now()
+    advising_request.save(update_fields=["status", "responded_at"])
+    Notification.objects.create(
+        recipient=student.user,
+        type=NotificationType.ADVISING_REQUEST_ANSWERED,
+        reference_type=ADVISING_REQUEST_REFERENCE,
+        reference_id=advising_request.id,
+    )
+    return AdvisingRequest.objects.with_effective_status().get(pk=request_id)

@@ -13,6 +13,9 @@ class AdvisingRequestStatus(models.TextChoices):
     UNANSWERED = "unanswered", "Não respondida"
 
 
+ANSWERED_STATUSES = (AdvisingRequestStatus.ACCEPTED, AdvisingRequestStatus.REJECTED)
+
+
 class AdvisingStatus(models.TextChoices):
     ACTIVE = "active", "Ativa"
     ENDED = "ended", "Encerrada"
