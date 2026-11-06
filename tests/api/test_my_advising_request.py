@@ -213,10 +213,13 @@ def test_one_clock_reading_decides_both_the_displayed_status_and_the_eligibility
     make_advising_request(student=student, teacher=teacher)
     headers = bearer(student.user)
 
-    with patch("apps.advising.services.answer_cutoff", wraps=answer_cutoff) as cutoff_reading:
+    with (
+        patch("apps.advising.services.answer_cutoff", wraps=answer_cutoff) as service_reading,
+        patch("apps.advising.models.answer_cutoff", wraps=answer_cutoff) as model_reading,
+    ):
         client.get(STATUS_URL, headers=headers)
 
-    assert cutoff_reading.call_count == 1
+    assert service_reading.call_count + model_reading.call_count == 1
 
 
 def test_requests_with_the_same_timestamp_return_the_one_with_the_highest_id(client):
