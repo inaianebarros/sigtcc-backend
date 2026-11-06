@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+ADVISING_REQUEST_REFERENCE = "advising_request"
+
 
 class NotificationType(models.TextChoices):
     ADVISING_REQUEST_RECEIVED = "advising_request_received", "Nova solicitação de orientação"

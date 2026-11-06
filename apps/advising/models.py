@@ -3,6 +3,8 @@ from django.db.models import Q
 
 from apps.accounts.models import Student, Teacher
 
+from .deadlines import answer_cutoff
+
 
 class AdvisingRequestStatus(models.TextChoices):
     PENDING = "pending", "Pendente"
@@ -16,7 +18,18 @@ class AdvisingStatus(models.TextChoices):
     ENDED = "ended", "Encerrada"
 
 
+class AdvisingRequestQuerySet(models.QuerySet):
+    def overdue_pending(self):
+        """Pendentes cujo prazo de resposta venceu, ainda que o comando agendado não tenha rodado."""
+        return self.filter(status=AdvisingRequestStatus.PENDING, requested_at__lte=answer_cutoff())
+
+    def valid_pending(self):
+        return self.filter(status=AdvisingRequestStatus.PENDING, requested_at__gt=answer_cutoff())
+
+
 class AdvisingRequest(models.Model):
+    objects = AdvisingRequestQuerySet.as_manager()
+
     student = models.ForeignKey(Student, on_delete=models.PROTECT, related_name="advising_requests")
     teacher = models.ForeignKey(Teacher, on_delete=models.PROTECT, related_name="advising_requests")
     status = models.CharField(
