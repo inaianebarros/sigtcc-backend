@@ -291,3 +291,21 @@ def test_administrators_are_forbidden(client):
     admin = make_user(UserType.ADMIN)
 
     assert list_requests(client, admin).status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("status", "days_ago", "has_deadline"),
+    [
+        (AdvisingRequestStatus.PENDING, 1, True),
+        (AdvisingRequestStatus.UNANSWERED, 9, True),
+        (AdvisingRequestStatus.ACCEPTED, 1, False),
+        (AdvisingRequestStatus.REJECTED, 1, False),
+    ],
+)
+def test_the_deadline_is_null_only_for_answered_requests(client, status, days_ago, has_deadline):
+    teacher = make_teacher()
+    make_received(teacher, status, days_ago=days_ago)
+
+    item = list_requests(client, teacher.user).json()["items"][0]
+
+    assert (item["expires_at"] is not None) is has_deadline

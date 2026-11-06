@@ -5,7 +5,9 @@ from ninja import Schema
 from apps.accounts.schemas import AreaOfInterestOut
 
 from .deadlines import answer_deadline_of
-from .models import AdvisingRequest
+from .models import AdvisingRequest, AdvisingRequestStatus
+
+ANSWERED_STATUSES = (AdvisingRequestStatus.ACCEPTED, AdvisingRequestStatus.REJECTED)
 
 
 class AdvisingRequestIn(Schema):
@@ -51,7 +53,7 @@ class AdvisingRequestItemOut(Schema):
     status: str
     requested_at: datetime
     responded_at: datetime | None
-    expires_at: datetime
+    expires_at: datetime | None
     student: StudentSummaryOut
 
     @staticmethod
@@ -59,7 +61,9 @@ class AdvisingRequestItemOut(Schema):
         return obj.effective_status
 
     @staticmethod
-    def resolve_expires_at(obj: AdvisingRequest) -> datetime:
+    def resolve_expires_at(obj: AdvisingRequest) -> datetime | None:
+        if obj.effective_status in ANSWERED_STATUSES:
+            return None
         return answer_deadline_of(obj.requested_at)
 
     @staticmethod
