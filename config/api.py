@@ -3,6 +3,7 @@ from ninja_extra import NinjaExtraAPI, api_controller, http_get
 
 from apps.accounts.api import CatalogController, RegistrationController
 from apps.accounts.password_reset_api import PasswordResetController
+from apps.accounts.profile_api import StudentProfileController
 from apps.accounts.session_api import SessionController
 from config.errors import FieldValidationError
 
@@ -37,4 +38,5 @@ api.register_controllers(
     RegistrationController,
     SessionController,
     PasswordResetController,
+    StudentProfileController,
 )

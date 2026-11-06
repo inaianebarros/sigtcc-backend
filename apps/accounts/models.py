@@ -1,3 +1,5 @@
+import unicodedata
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.db.models.functions import Lower
@@ -101,6 +103,12 @@ class Teacher(models.Model):
         return self.user.full_name
 
 
+def normalize_title(title: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", title)
+    without_accents = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(without_accents.casefold().split())
+
+
 class PublishedArticle(models.Model):
     student = models.ForeignKey(
         Student, null=True, blank=True, on_delete=models.PROTECT, related_name="articles"
@@ -109,6 +117,7 @@ class PublishedArticle(models.Model):
         Teacher, null=True, blank=True, on_delete=models.PROTECT, related_name="articles"
     )
     title = models.CharField(max_length=255)
+    title_key = models.CharField(max_length=1000, editable=False, default="")
     year = models.PositiveSmallIntegerField()
     url = models.URLField(max_length=500, blank=True)
 
@@ -119,7 +128,21 @@ class PublishedArticle(models.Model):
                 | models.Q(student__isnull=True, teacher__isnull=False),
                 name="published_article_has_exactly_one_owner",
             ),
+            models.UniqueConstraint(
+                fields=["student", "title_key", "year"],
+                condition=models.Q(student__isnull=False),
+                name="published_article_unique_per_student",
+            ),
+            models.UniqueConstraint(
+                fields=["teacher", "title_key", "year"],
+                condition=models.Q(teacher__isnull=False),
+                name="published_article_unique_per_teacher",
+            ),
         ]
+
+    def save(self, *args, **kwargs):
+        self.title_key = normalize_title(self.title)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return self.title
