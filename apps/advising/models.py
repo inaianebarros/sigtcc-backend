@@ -20,16 +20,16 @@ class AdvisingStatus(models.TextChoices):
 
 class AdvisingRequestQuerySet(models.QuerySet):
     def overdue_pending(self):
-        """Pendentes cujo prazo de resposta venceu, ainda que o comando agendado não tenha rodado."""
-        return self.filter(status=AdvisingRequestStatus.PENDING, requested_at__lte=answer_cutoff())
+        return self.filter(_overdue_pending_condition())
+
+    def valid_pending(self):
+        return self.filter(status=AdvisingRequestStatus.PENDING, requested_at__gt=answer_cutoff())
 
     def with_effective_status(self):
-        """Anota `effective_status`: a pendente vencida aparece como não respondida."""
         return self.annotate(
             effective_status=Case(
                 When(
-                    status=AdvisingRequestStatus.PENDING,
-                    requested_at__lte=answer_cutoff(),
+                    _overdue_pending_condition(),
                     then=Value(AdvisingRequestStatus.UNANSWERED),
                 ),
                 default=F("status"),
@@ -37,8 +37,9 @@ class AdvisingRequestQuerySet(models.QuerySet):
             )
         )
 
-    def valid_pending(self):
-        return self.filter(status=AdvisingRequestStatus.PENDING, requested_at__gt=answer_cutoff())
+
+def _overdue_pending_condition() -> Q:
+    return Q(status=AdvisingRequestStatus.PENDING, requested_at__lte=answer_cutoff())
 
 
 class AdvisingRequest(models.Model):

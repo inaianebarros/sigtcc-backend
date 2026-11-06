@@ -6,6 +6,7 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
+from apps.accounts.models import UserType
 from apps.advising.models import AdvisingRequest, AdvisingRequestStatus
 from tests.api.helpers import bearer
 from tests.factories import (
@@ -14,6 +15,7 @@ from tests.factories import (
     make_course,
     make_student,
     make_teacher,
+    make_user,
 )
 
 pytestmark = pytest.mark.django_db
@@ -230,3 +232,62 @@ def test_the_openapi_documents_the_filters_and_the_page_parameters(client):
     operation = schema["paths"]["/api/orientacao/solicitacoes"]["get"]
     assert {"status", "limit", "offset"} <= {p["name"] for p in operation["parameters"]}
     assert "200" in operation["responses"]
+
+
+@pytest.mark.parametrize("params", [{"offset": 10**30}, {"offset": 2**63}, {"status": ""}])
+def test_extreme_or_empty_parameters_are_client_errors_and_not_server_errors(client, params):
+    teacher = make_teacher()
+    make_received(teacher)
+
+    response = list_requests(client, teacher.user, **params)
+
+    assert response.status_code == 422
+
+
+def test_the_maximum_page_size_is_accepted(client):
+    teacher = make_teacher()
+    make_received(teacher)
+
+    response = list_requests(client, teacher.user, limit=100)
+
+    assert response.status_code == 200
+
+
+def test_the_count_follows_the_filter_and_not_the_page(client):
+    teacher = make_teacher()
+    pending = [make_received(teacher) for _ in range(5)]
+    make_received(teacher, AdvisingRequestStatus.ACCEPTED)
+
+    response = list_requests(client, teacher.user, status="pending", limit=2, offset=4)
+
+    assert response.json()["count"] == 5
+    assert len(response.json()["items"]) == 1
+    assert ids(response) == [min(r.id for r in pending)]
+
+
+def test_a_teacher_never_sees_the_requests_of_another_teacher(client):
+    mine, theirs = make_teacher(), make_teacher()
+    own = make_received(mine)
+    make_received(theirs)
+
+    response = list_requests(client, mine.user)
+
+    assert ids(response) == [own.id]
+    assert response.json()["count"] == 1
+
+
+def test_requests_of_inactive_students_stay_in_the_history(client):
+    teacher = make_teacher()
+    received = make_received(teacher)
+    received.student.user.is_active = False
+    received.student.user.save(update_fields=["is_active"])
+
+    response = list_requests(client, teacher.user)
+
+    assert ids(response) == [received.id]
+
+
+def test_administrators_are_forbidden(client):
+    admin = make_user(UserType.ADMIN)
+
+    assert list_requests(client, admin).status_code == 403

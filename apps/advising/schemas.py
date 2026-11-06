@@ -4,7 +4,7 @@ from ninja import Schema
 
 from apps.accounts.schemas import AreaOfInterestOut
 
-from .deadlines import ANSWER_DEADLINE
+from .deadlines import answer_deadline_of
 from .models import AdvisingRequest
 
 
@@ -60,7 +60,7 @@ class AdvisingRequestItemOut(Schema):
 
     @staticmethod
     def resolve_expires_at(obj: AdvisingRequest) -> datetime:
-        return obj.requested_at + ANSWER_DEADLINE
+        return answer_deadline_of(obj.requested_at)
 
     @staticmethod
     def resolve_student(obj: AdvisingRequest) -> StudentSummaryOut:

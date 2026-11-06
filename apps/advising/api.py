@@ -1,15 +1,15 @@
 from django.http import HttpRequest
-from ninja.pagination import LimitOffsetPagination
 from ninja.responses import Status
 from ninja_extra import api_controller, http_get, http_post, paginate
 from ninja_jwt.authentication import JWTAuth
 
 from apps.accounts.permissions import IsStudent, IsTeacher
+from config.pagination import BoundedLimitOffsetPagination
 from config.schemas import ErrorOut, Page
 
-from .models import AdvisingRequest, AdvisingRequestStatus
+from .models import AdvisingRequestStatus
 from .schemas import AdvisingRequestIn, AdvisingRequestItemOut, AdvisingRequestOut
-from .services import request_advising
+from .services import list_received_requests, request_advising
 
 
 @api_controller("/orientacao", tags=["Orientação"], auth=JWTAuth())
@@ -34,13 +34,6 @@ class AdvisingRequestController:
             "não respondida (ADR 0003)."
         ),
     )
-    @paginate(LimitOffsetPagination)
+    @paginate(BoundedLimitOffsetPagination)
     def list_requests(self, request: HttpRequest, status: AdvisingRequestStatus | None = None):
-        received = (
-            AdvisingRequest.objects.filter(teacher=request.user.teacher)
-            .with_effective_status()
-            .select_related("student__user", "student__course")
-            .prefetch_related("student__areas_of_interest")
-            .order_by("-requested_at", "-id")
-        )
-        return received.filter(effective_status=status) if status else received
+        return list_received_requests(request.user.teacher, status)
