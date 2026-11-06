@@ -2,6 +2,7 @@ from django.db import connection
 from ninja_extra import NinjaExtraAPI, api_controller, http_get
 
 from apps.accounts.api import CatalogController, RegistrationController
+from apps.accounts.password_change_api import PasswordChangeController
 from apps.accounts.password_reset_api import PasswordResetController
 from apps.accounts.profile_api import StudentProfileController, TeacherProfileController
 from apps.accounts.session_api import SessionController
@@ -55,6 +56,7 @@ api.register_controllers(
     RegistrationController,
     SessionController,
     PasswordResetController,
+    PasswordChangeController,
     StudentProfileController,
     TeacherProfileController,
     AdvisingRequestController,
