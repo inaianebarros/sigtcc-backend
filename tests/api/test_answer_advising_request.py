@@ -3,7 +3,7 @@ from threading import Barrier, Thread
 from unittest.mock import patch
 
 import pytest
-from django.db import connection
+from django.db import IntegrityError, connection
 from django.test import Client
 from django.utils import timezone
 
@@ -95,14 +95,20 @@ def test_a_teacher_rejects_a_pending_request_without_creating_an_advising(client
     notification = Notification.objects.get()
     assert notification.recipient == received.student.user
     assert notification.type == NotificationType.ADVISING_REQUEST_ANSWERED
+    assert (notification.reference_type, notification.reference_id) == (
+        ADVISING_REQUEST_REFERENCE,
+        received.id,
+    )
 
 
-def assert_untouched(received, before_status, message, response):
+def stored_state(received):
+    return AdvisingRequest.objects.values_list("status", "responded_at").get(pk=received.pk)
+
+
+def assert_untouched(received, state_before, message, response):
     assert response.status_code == 409
     assert response.json() == {"detail": message}
-    received.refresh_from_db()
-    assert received.status == before_status
-    assert received.responded_at is None or before_status != AdvisingRequestStatus.PENDING
+    assert stored_state(received) == state_before
     assert not Advising.objects.exists()
     assert not Notification.objects.exists()
 
@@ -113,9 +119,11 @@ def test_an_answered_request_cannot_be_answered_again(client, first, action):
     received = make_received()
     AdvisingRequest.objects.filter(pk=received.pk).update(status=first, responded_at=timezone.now())
 
+    state_before = stored_state(received)
+
     response = answer(client, received.teacher.user, received.id, action)
 
-    assert_untouched(received, first, "Esta solicitação já foi respondida.", response)
+    assert_untouched(received, state_before, "Esta solicitação já foi respondida.", response)
 
 
 @pytest.mark.parametrize("action", ["accept", "reject"])
@@ -129,10 +137,12 @@ def test_an_overdue_request_cannot_be_answered(client, action, status, days_ago)
         status=status, requested_at=timezone.now() - timedelta(days=days_ago)
     )
 
+    state_before = stored_state(received)
+
     response = answer(client, received.teacher.user, received.id, action)
 
     assert_untouched(
-        received, status, "O prazo para responder esta solicitação terminou.", response
+        received, state_before, "O prazo para responder esta solicitação terminou.", response
     )
 
 
@@ -142,11 +152,11 @@ def test_a_request_from_an_inactive_student_cannot_be_answered(client, action):
     received.student.user.is_active = False
     received.student.user.save(update_fields=["is_active"])
 
+    state_before = stored_state(received)
+
     response = answer(client, received.teacher.user, received.id, action)
 
-    assert_untouched(
-        received, AdvisingRequestStatus.PENDING, "Este aluno não está mais ativo.", response
-    )
+    assert_untouched(received, state_before, "Este aluno não está mais ativo.", response)
 
 
 def test_accepting_is_refused_if_the_student_already_has_an_active_advising(client):
@@ -236,7 +246,9 @@ def test_a_failing_notification_leaves_the_request_pending_and_creates_no_advisi
 
 
 @pytest.mark.django_db(transaction=True)
-@pytest.mark.parametrize("actions", [("accept", "accept"), ("accept", "reject")])
+@pytest.mark.parametrize(
+    "actions", [("accept", "accept"), ("accept", "reject"), ("reject", "reject")]
+)
 def test_two_simultaneous_answers_leave_exactly_one_winner(actions):
     received = make_received()
     headers = bearer(received.teacher.user)
@@ -280,3 +292,78 @@ def test_the_openapi_documents_the_answer_endpoint(client):
 
     operation = schema["paths"]["/api/orientacao/solicitacoes/{request_id}/responder"]["post"]
     assert {"200", "404", "409"} <= set(operation["responses"])
+
+
+@pytest.mark.parametrize("request_id", [-1, 0, 2**63, 10**30])
+def test_an_out_of_range_request_id_is_not_found_and_not_a_server_error(client, request_id):
+    received = make_received()
+
+    response = answer(client, received.teacher.user, request_id, "accept")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize("action", ["ACCEPT", "Reject", " accept"])
+def test_the_action_is_case_sensitive(client, action):
+    received = make_received()
+
+    response = answer(client, received.teacher.user, received.id, action)
+
+    assert response.status_code == 422
+
+
+def test_the_first_violated_rule_wins_in_the_documented_order(client):
+    inactive_and_answered = make_received()
+    AdvisingRequest.objects.filter(pk=inactive_and_answered.pk).update(
+        status=AdvisingRequestStatus.ACCEPTED
+    )
+    inactive_and_overdue = make_received()
+    AdvisingRequest.objects.filter(pk=inactive_and_overdue.pk).update(
+        requested_at=timezone.now() - timedelta(days=8)
+    )
+    inactive_with_advising = make_received()
+    make_advising(
+        student=inactive_with_advising.student,
+        teacher=make_teacher(courses=[inactive_with_advising.student.course]),
+    )
+    for received in (inactive_and_answered, inactive_and_overdue, inactive_with_advising):
+        received.student.user.is_active = False
+        received.student.user.save(update_fields=["is_active"])
+
+    answered = answer(
+        client, inactive_and_answered.teacher.user, inactive_and_answered.id, "accept"
+    )
+    overdue = answer(client, inactive_and_overdue.teacher.user, inactive_and_overdue.id, "accept")
+    inactive = answer(
+        client, inactive_with_advising.teacher.user, inactive_with_advising.id, "accept"
+    )
+
+    assert answered.json() == {"detail": "Esta solicitação já foi respondida."}
+    assert overdue.json() == {"detail": "O prazo para responder esta solicitação terminou."}
+    assert inactive.json() == {"detail": "Este aluno não está mais ativo."}
+
+
+def test_a_failing_advising_creation_leaves_the_request_pending_and_sends_nothing():
+    received = make_received()
+    quiet_client = Client(raise_request_exception=False)
+
+    with patch("apps.advising.services.Advising.objects.create", side_effect=RuntimeError("boom")):
+        response = answer(quiet_client, received.teacher.user, received.id, "accept")
+
+    assert response.status_code == 500
+    received.refresh_from_db()
+    assert received.status == AdvisingRequestStatus.PENDING
+    assert received.responded_at is None
+    assert not Notification.objects.exists()
+
+
+def test_a_database_conflict_when_starting_the_advising_answers_409(client):
+    received = make_received()
+
+    with patch("apps.advising.services.Advising.objects.create", side_effect=IntegrityError("dup")):
+        response = answer(client, received.teacher.user, received.id, "accept")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "O aluno já tem um orientador ativo."}
+    received.refresh_from_db()
+    assert received.status == AdvisingRequestStatus.PENDING

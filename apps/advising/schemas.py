@@ -1,12 +1,11 @@
 from datetime import datetime
-from enum import StrEnum
 
 from ninja import Schema
 
 from apps.accounts.schemas import AreaOfInterestOut
 
 from .deadlines import answer_deadline_of
-from .models import ANSWERED_STATUSES, Advising, AdvisingRequest
+from .models import ANSWERED_STATUSES, Advising, AdvisingRequest, AnswerAction
 
 
 class AdvisingRequestIn(Schema):
@@ -75,11 +74,6 @@ class AdvisingRequestItemOut(Schema):
             course=CourseSummaryOut(id=student.course_id, name=student.course.name),
             areas=[AreaOfInterestOut(id=area.id, name=area.name) for area in areas],
         )
-
-
-class AnswerAction(StrEnum):
-    ACCEPT = "accept"
-    REJECT = "reject"
 
 
 class AdvisingRequestAnswerIn(Schema):

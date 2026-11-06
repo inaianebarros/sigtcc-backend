@@ -16,18 +16,22 @@ from .models import (
     AdvisingRequest,
     AdvisingRequestStatus,
     AdvisingStatus,
+    AnswerAction,
 )
-from .schemas import AnswerAction
 
 ACTIVE_ADVISING_MESSAGE = "Você já tem um orientador ativo."
 PENDING_REQUEST_MESSAGE = "Você já tem uma solicitação pendente."
 OTHER_COURSE_MESSAGE = "Este professor não orienta o seu curso."
 UNAVAILABLE_TEACHER_MESSAGE = "Este professor não está disponível para novas solicitações."
+ALREADY_ANSWERED_MESSAGE = "Esta solicitação já foi respondida."
+DEADLINE_PASSED_MESSAGE = "O prazo para responder esta solicitação terminou."
+INACTIVE_STUDENT_MESSAGE = "Este aluno não está mais ativo."
+STUDENT_HAS_ADVISING_MESSAGE = "O aluno já tem um orientador ativo."
 
 
-def _ensure_no_active_advising(student: Student) -> None:
+def _ensure_no_active_advising(student: Student, message: str) -> None:
     if Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE).exists():
-        raise ConflictError(ACTIVE_ADVISING_MESSAGE)
+        raise ConflictError(message)
 
 
 def _ensure_no_pending_request(student: Student) -> None:
@@ -56,7 +60,7 @@ def request_advising(student: Student, teacher_id: int) -> AdvisingRequest:
     if teacher is None:
         raise HttpError(404, "Professor não encontrado.")
 
-    _ensure_no_active_advising(locked_student)
+    _ensure_no_active_advising(locked_student, ACTIVE_ADVISING_MESSAGE)
     _ensure_no_pending_request(locked_student)
     _ensure_teacher_accepts_requests(locked_student, teacher)
 
@@ -87,12 +91,6 @@ def list_received_requests(teacher: Teacher, status: AdvisingRequestStatus | Non
     return received.filter(effective_status=status) if status else received
 
 
-ALREADY_ANSWERED_MESSAGE = "Esta solicitação já foi respondida."
-DEADLINE_PASSED_MESSAGE = "O prazo para responder esta solicitação terminou."
-INACTIVE_STUDENT_MESSAGE = "Este aluno não está mais ativo."
-STUDENT_HAS_ADVISING_MESSAGE = "O aluno já tem um orientador ativo."
-
-
 def _ensure_can_be_answered(advising_request: AdvisingRequest, student: Student) -> None:
     if advising_request.effective_status in ANSWERED_STATUSES:
         raise ConflictError(ALREADY_ANSWERED_MESSAGE)
@@ -103,8 +101,7 @@ def _ensure_can_be_answered(advising_request: AdvisingRequest, student: Student)
 
 
 def _start_advising(advising_request: AdvisingRequest, student: Student, teacher: Teacher) -> None:
-    if Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE).exists():
-        raise ConflictError(STUDENT_HAS_ADVISING_MESSAGE)
+    _ensure_no_active_advising(student, STUDENT_HAS_ADVISING_MESSAGE)
     try:
         with transaction.atomic():
             Advising.objects.create(student=student, teacher=teacher, request=advising_request)
@@ -114,6 +111,7 @@ def _start_advising(advising_request: AdvisingRequest, student: Student, teacher
 
 @transaction.atomic
 def answer_request(teacher: Teacher, request_id: int, action: AnswerAction) -> AdvisingRequest:
+    # Trava o Aluno antes da solicitação, na mesma ordem de request_advising, para evitar deadlock.
     student_id = (
         AdvisingRequest.objects.filter(pk=request_id, teacher=teacher)
         .values_list("student_id", flat=True)

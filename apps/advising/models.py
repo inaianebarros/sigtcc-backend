@@ -1,3 +1,5 @@
+from enum import StrEnum
+
 from django.db import models
 from django.db.models import Case, CharField, F, Q, Value, When
 
@@ -14,6 +16,11 @@ class AdvisingRequestStatus(models.TextChoices):
 
 
 ANSWERED_STATUSES = (AdvisingRequestStatus.ACCEPTED, AdvisingRequestStatus.REJECTED)
+
+
+class AnswerAction(StrEnum):
+    ACCEPT = "accept"
+    REJECT = "reject"
 
 
 class AdvisingStatus(models.TextChoices):
