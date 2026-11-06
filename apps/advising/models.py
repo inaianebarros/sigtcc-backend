@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 
 from django.db import models
@@ -34,17 +35,21 @@ class AdvisingStatus(models.TextChoices):
 
 
 class AdvisingRequestQuerySet(models.QuerySet):
-    def overdue_pending(self):
-        return self.filter(_overdue_pending_condition())
+    """Filters take an optional cutoff so that one read can decide every rule with one clock."""
 
-    def valid_pending(self):
-        return self.filter(status=AdvisingRequestStatus.PENDING, requested_at__gt=answer_cutoff())
+    def overdue_pending(self, cutoff: datetime | None = None):
+        return self.filter(_overdue_pending_condition(cutoff))
 
-    def with_effective_status(self):
+    def valid_pending(self, cutoff: datetime | None = None):
+        return self.filter(
+            status=AdvisingRequestStatus.PENDING, requested_at__gt=cutoff or answer_cutoff()
+        )
+
+    def with_effective_status(self, cutoff: datetime | None = None):
         return self.annotate(
             effective_status=Case(
                 When(
-                    _overdue_pending_condition(),
+                    _overdue_pending_condition(cutoff),
                     then=Value(AdvisingRequestStatus.UNANSWERED),
                 ),
                 default=F("status"),
@@ -53,8 +58,8 @@ class AdvisingRequestQuerySet(models.QuerySet):
         )
 
 
-def _overdue_pending_condition() -> Q:
-    return Q(status=AdvisingRequestStatus.PENDING, requested_at__lte=answer_cutoff())
+def _overdue_pending_condition(cutoff: datetime | None = None) -> Q:
+    return Q(status=AdvisingRequestStatus.PENDING, requested_at__lte=cutoff or answer_cutoff())
 
 
 class AdvisingRequest(models.Model):

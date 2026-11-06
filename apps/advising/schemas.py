@@ -2,6 +2,7 @@ from datetime import datetime
 
 from ninja import Schema
 
+from apps.accounts.models import Teacher
 from apps.accounts.schemas import AreaOfInterestOut
 
 from .deadlines import answer_deadline_of
@@ -15,6 +16,10 @@ class AdvisingRequestIn(Schema):
 class TeacherSummaryOut(Schema):
     id: int
     full_name: str
+
+    @classmethod
+    def from_teacher(cls, teacher: Teacher) -> "TeacherSummaryOut":
+        return cls(id=teacher.user_id, full_name=teacher.user.full_name)
 
 
 class AdvisingRequestOut(Schema):
@@ -30,7 +35,7 @@ class AdvisingRequestOut(Schema):
             id=advising_request.id,
             status=advising_request.status,
             requested_at=advising_request.requested_at,
-            teacher=TeacherSummaryOut(id=teacher.user_id, full_name=teacher.user.full_name),
+            teacher=TeacherSummaryOut.from_teacher(teacher),
         )
 
 
@@ -46,13 +51,12 @@ class StudentSummaryOut(Schema):
     areas: list[AreaOfInterestOut]
 
 
-class AdvisingRequestItemOut(Schema):
+class AdvisingRequestTimingOut(Schema):
     id: int
     status: str
     requested_at: datetime
     responded_at: datetime | None
     expires_at: datetime | None
-    student: StudentSummaryOut
 
     @staticmethod
     def resolve_status(obj: AdvisingRequest) -> str:
@@ -63,6 +67,10 @@ class AdvisingRequestItemOut(Schema):
         if obj.effective_status in ANSWERED_STATUSES:
             return None
         return answer_deadline_of(obj.requested_at)
+
+
+class AdvisingRequestItemOut(AdvisingRequestTimingOut):
+    student: StudentSummaryOut
 
     @staticmethod
     def resolve_student(obj: AdvisingRequest) -> StudentSummaryOut:
@@ -101,30 +109,15 @@ class AdvisingWithTeacherOut(AdvisingOut):
 
     @staticmethod
     def resolve_teacher(obj: Advising) -> TeacherSummaryOut:
-        return TeacherSummaryOut(id=obj.teacher.user_id, full_name=obj.teacher.user.full_name)
+        return TeacherSummaryOut.from_teacher(obj.teacher)
 
 
-class StudentRequestOut(Schema):
-    id: int
-    status: str
-    requested_at: datetime
-    responded_at: datetime | None
-    expires_at: datetime | None
+class StudentRequestOut(AdvisingRequestTimingOut):
     teacher: TeacherSummaryOut
 
     @staticmethod
-    def resolve_status(obj: AdvisingRequest) -> str:
-        return obj.effective_status
-
-    @staticmethod
-    def resolve_expires_at(obj: AdvisingRequest) -> datetime | None:
-        if obj.effective_status in ANSWERED_STATUSES:
-            return None
-        return answer_deadline_of(obj.requested_at)
-
-    @staticmethod
     def resolve_teacher(obj: AdvisingRequest) -> TeacherSummaryOut:
-        return TeacherSummaryOut(id=obj.teacher.user_id, full_name=obj.teacher.user.full_name)
+        return TeacherSummaryOut.from_teacher(obj.teacher)
 
 
 class RequestStatusOut(Schema):

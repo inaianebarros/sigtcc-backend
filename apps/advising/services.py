@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -12,6 +13,7 @@ from apps.notifications.models import (
 )
 from config.errors import ConflictError
 
+from .deadlines import answer_cutoff
 from .models import (
     ANSWERED_STATUSES,
     Advising,
@@ -32,17 +34,19 @@ INACTIVE_STUDENT_MESSAGE = "Este aluno não está mais ativo."
 STUDENT_HAS_ADVISING_MESSAGE = "O aluno já tem um orientador ativo."
 
 
-def _ensure_no_active_advising(student: Student, message: str) -> None:
+def eligibility_block_of(student: Student, cutoff: datetime | None = None) -> BlockedReason | None:
+    """Why the student cannot send a new request (RN04, RN05), or None. Active advising wins."""
     if Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE).exists():
-        raise ConflictError(message)
+        return BlockedReason.ACTIVE_ADVISING
+    if AdvisingRequest.objects.filter(student=student).valid_pending(cutoff).exists():
+        return BlockedReason.PENDING_REQUEST
+    return None
 
 
-def _ensure_no_pending_request(student: Student) -> None:
-    """Falha se há solicitação pendente no prazo; marca como não respondida a que venceu."""
-    student_requests = AdvisingRequest.objects.filter(student=student)
-    if student_requests.valid_pending().exists():
-        raise ConflictError(PENDING_REQUEST_MESSAGE)
-    student_requests.overdue_pending().update(status=AdvisingRequestStatus.UNANSWERED)
+_BLOCK_MESSAGES = {
+    BlockedReason.ACTIVE_ADVISING: ACTIVE_ADVISING_MESSAGE,
+    BlockedReason.PENDING_REQUEST: PENDING_REQUEST_MESSAGE,
+}
 
 
 def _ensure_teacher_accepts_requests(student: Student, teacher: Teacher) -> None:
@@ -63,9 +67,13 @@ def request_advising(student: Student, teacher_id: int) -> AdvisingRequest:
     if teacher is None:
         raise HttpError(404, "Professor não encontrado.")
 
-    _ensure_no_active_advising(locked_student, ACTIVE_ADVISING_MESSAGE)
-    _ensure_no_pending_request(locked_student)
+    blocked_reason = eligibility_block_of(locked_student)
+    if blocked_reason is not None:
+        raise ConflictError(_BLOCK_MESSAGES[blocked_reason])
     _ensure_teacher_accepts_requests(locked_student, teacher)
+    AdvisingRequest.objects.filter(student=locked_student).overdue_pending().update(
+        status=AdvisingRequestStatus.UNANSWERED
+    )
 
     try:
         with transaction.atomic():
@@ -104,7 +112,8 @@ def _ensure_can_be_answered(advising_request: AdvisingRequest, student: Student)
 
 
 def _start_advising(advising_request: AdvisingRequest, student: Student, teacher: Teacher) -> None:
-    _ensure_no_active_advising(student, STUDENT_HAS_ADVISING_MESSAGE)
+    if Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE).exists():
+        raise ConflictError(STUDENT_HAS_ADVISING_MESSAGE)
     try:
         with transaction.atomic():
             Advising.objects.create(student=student, teacher=teacher, request=advising_request)
@@ -156,10 +165,11 @@ class StudentRequestStatus:
 
 
 def student_request_status(student: Student) -> StudentRequestStatus:
-    """Read-only view of the student's latest request, active advising and eligibility (RN04, RN05)."""
-    own_requests = AdvisingRequest.objects.filter(student=student)
+    """Read-only view of the student's latest request, active advising and eligibility."""
+    cutoff = answer_cutoff()
     latest_request = (
-        own_requests.with_effective_status()
+        AdvisingRequest.objects.filter(student=student)
+        .with_effective_status(cutoff)
         .select_related("teacher__user")
         .order_by("-requested_at", "-id")
         .first()
@@ -169,10 +179,6 @@ def student_request_status(student: Student) -> StudentRequestStatus:
         .select_related("teacher__user")
         .first()
     )
-    if active_advising is not None:
-        blocked_reason = BlockedReason.ACTIVE_ADVISING
-    elif own_requests.valid_pending().exists():
-        blocked_reason = BlockedReason.PENDING_REQUEST
-    else:
-        blocked_reason = None
-    return StudentRequestStatus(latest_request, active_advising, blocked_reason)
+    return StudentRequestStatus(
+        latest_request, active_advising, eligibility_block_of(student, cutoff)
+    )
