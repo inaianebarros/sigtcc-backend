@@ -46,11 +46,13 @@ def make_student(registration_number=None, course=None):
     )
 
 
-def make_teacher(registration_number=None):
-    return Teacher.objects.create(
+def make_teacher(registration_number=None, courses=()):
+    teacher = Teacher.objects.create(
         user=make_user(UserType.TEACHER),
         registration_number=registration_number or f"P{next(_sequence):06d}",
     )
+    teacher.courses.set(courses)
+    return teacher
 
 
 def make_advising_request(student=None, teacher=None):

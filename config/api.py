@@ -5,7 +5,8 @@ from apps.accounts.api import CatalogController, RegistrationController
 from apps.accounts.password_reset_api import PasswordResetController
 from apps.accounts.profile_api import StudentProfileController, TeacherProfileController
 from apps.accounts.session_api import SessionController
-from config.errors import FieldValidationError
+from apps.advising.api import AdvisingRequestController
+from config.errors import ConflictError, FieldValidationError
 
 api = NinjaExtraAPI(
     title="SIGTCC API",
@@ -32,6 +33,11 @@ def field_validation_error(request, exc: FieldValidationError):
     return api.create_response(request, {"detail": detail}, status=422)
 
 
+@api.exception_handler(ConflictError)
+def conflict_error(request, exc: ConflictError):
+    return api.create_response(request, {"detail": exc.detail}, status=409)
+
+
 api.register_controllers(
     HealthController,
     CatalogController,
@@ -40,4 +46,5 @@ api.register_controllers(
     PasswordResetController,
     StudentProfileController,
     TeacherProfileController,
+    AdvisingRequestController,
 )
