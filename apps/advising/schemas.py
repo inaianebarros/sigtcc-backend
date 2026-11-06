@@ -2,7 +2,12 @@ from datetime import datetime
 
 from ninja import Schema
 
-from .models import AdvisingRequest
+from apps.accounts.schemas import AreaOfInterestOut
+
+from .deadlines import answer_deadline_of
+from .models import AdvisingRequest, AdvisingRequestStatus
+
+ANSWERED_STATUSES = (AdvisingRequestStatus.ACCEPTED, AdvisingRequestStatus.REJECTED)
 
 
 class AdvisingRequestIn(Schema):
@@ -28,4 +33,46 @@ class AdvisingRequestOut(Schema):
             status=advising_request.status,
             requested_at=advising_request.requested_at,
             teacher=TeacherSummaryOut(id=teacher.user_id, full_name=teacher.user.full_name),
+        )
+
+
+class CourseSummaryOut(Schema):
+    id: int
+    name: str
+
+
+class StudentSummaryOut(Schema):
+    id: int
+    full_name: str
+    course: CourseSummaryOut
+    areas: list[AreaOfInterestOut]
+
+
+class AdvisingRequestItemOut(Schema):
+    id: int
+    status: str
+    requested_at: datetime
+    responded_at: datetime | None
+    expires_at: datetime | None
+    student: StudentSummaryOut
+
+    @staticmethod
+    def resolve_status(obj: AdvisingRequest) -> str:
+        return obj.effective_status
+
+    @staticmethod
+    def resolve_expires_at(obj: AdvisingRequest) -> datetime | None:
+        if obj.effective_status in ANSWERED_STATUSES:
+            return None
+        return answer_deadline_of(obj.requested_at)
+
+    @staticmethod
+    def resolve_student(obj: AdvisingRequest) -> StudentSummaryOut:
+        student = obj.student
+        areas = sorted(student.areas_of_interest.all(), key=lambda area: area.name)
+        return StudentSummaryOut(
+            id=student.user_id,
+            full_name=student.user.full_name,
+            course=CourseSummaryOut(id=student.course_id, name=student.course.name),
+            areas=[AreaOfInterestOut(id=area.id, name=area.name) for area in areas],
         )
