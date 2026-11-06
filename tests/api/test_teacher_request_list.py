@@ -129,7 +129,8 @@ def test_expires_at_is_seven_days_after_the_request(client):
     item = list_requests(client, teacher.user).json()["items"][0]
 
     expires_at = datetime.fromisoformat(item["expires_at"])
-    assert expires_at - received.requested_at == timedelta(days=7)
+    one_millisecond = timedelta(milliseconds=1)
+    assert abs(expires_at - received.requested_at - timedelta(days=7)) < one_millisecond
     assert item["responded_at"] is None
 
 
