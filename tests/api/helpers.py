@@ -1,3 +1,7 @@
+import time
+from contextlib import contextmanager
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from ninja_jwt.tokens import RefreshToken
 
@@ -30,3 +34,14 @@ def assert_rejected_on(client, url, payload, field):
 
 def bearer(user):
     return {"Authorization": f"Bearer {RefreshToken.for_user(user).access_token}"}
+
+
+TOO_MANY_REQUESTS = {"detail": "Muitas tentativas. Aguarde antes de tentar novamente."}
+
+
+@contextmanager
+def travel(seconds):
+    """Move the clock seen by the cache and the rate-limit counters forward."""
+    real_time = time.time
+    with patch("time.time", side_effect=lambda: real_time() + seconds):
+        yield

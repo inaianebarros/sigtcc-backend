@@ -1,7 +1,18 @@
 import json
 import logging
 
-REQUEST_FIELDS = ("method", "path", "status_code", "duration_ms")
+LOG_FIELDS = (
+    "method",
+    "path",
+    "status_code",
+    "duration_ms",
+    "event",
+    "scope",
+    "user_id",
+    "failures",
+    "retry_after",
+    "client_ip",
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -12,7 +23,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        for field in REQUEST_FIELDS:
+        for field in LOG_FIELDS:
             if hasattr(record, field):
                 payload[field] = getattr(record, field)
         if record.exc_info:

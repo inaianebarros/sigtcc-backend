@@ -13,3 +13,8 @@ def browser():
 @pytest.fixture(autouse=True)
 def clean_rate_limit_counters():
     cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def fast_password_hasher(settings):
+    settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

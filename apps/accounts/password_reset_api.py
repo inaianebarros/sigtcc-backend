@@ -1,5 +1,9 @@
+from django.http import HttpRequest
+from ninja.responses import Status
 from ninja_extra import api_controller, http_post
-from ninja_extra.throttling import AnonRateThrottle
+
+from config.rate_limit import enforce_ip_limit
+from config.schemas import ErrorOut
 
 from .password_reset import reset_password, send_reset_link
 from .schemas import ForgotPasswordIn, MessageOut, ResetPasswordIn
@@ -10,29 +14,25 @@ FORGOT_PASSWORD_RESPONSE = (
 PASSWORD_CHANGED_RESPONSE = "Senha redefinida com sucesso."
 
 
-class ResetRequestThrottle(AnonRateThrottle):
-    scope = "password_reset_request"
-    rate = "5/hour"
-
-
 @api_controller("/auth", tags=["Autenticação"])
 class PasswordResetController:
     @http_post(
         "/forgot-password",
-        response=MessageOut,
-        throttle=[ResetRequestThrottle()],
+        response={200: MessageOut, 429: ErrorOut},
         summary="Envia o link de redefinição de senha",
         description="A resposta é sempre a mesma, exista ou não uma conta ativa com o e-mail.",
     )
-    def request_reset_link(self, payload: ForgotPasswordIn) -> MessageOut:
+    def request_reset_link(self, request: HttpRequest, payload: ForgotPasswordIn):
+        enforce_ip_limit("forgot_ip", request)
         send_reset_link(payload.email)
-        return MessageOut(detail=FORGOT_PASSWORD_RESPONSE)
+        return Status(200, MessageOut(detail=FORGOT_PASSWORD_RESPONSE))
 
     @http_post(
         "/reset-password",
-        response=MessageOut,
+        response={200: MessageOut, 429: ErrorOut},
         summary="Define uma nova senha com o link recebido por e-mail",
     )
-    def confirm_password_reset(self, payload: ResetPasswordIn) -> MessageOut:
+    def confirm_password_reset(self, request: HttpRequest, payload: ResetPasswordIn):
+        enforce_ip_limit("reset_ip", request)
         reset_password(payload.uid, payload.token, payload.password, payload.password_confirmation)
-        return MessageOut(detail=PASSWORD_CHANGED_RESPONSE)
+        return Status(200, MessageOut(detail=PASSWORD_CHANGED_RESPONSE))
