@@ -14,8 +14,14 @@ from .schemas import (
     AdvisingRequestIn,
     AdvisingRequestItemOut,
     AdvisingRequestOut,
+    RequestStatusOut,
 )
-from .services import answer_request, list_received_requests, request_advising
+from .services import (
+    answer_request,
+    list_received_requests,
+    request_advising,
+    student_request_status,
+)
 
 
 @api_controller("/orientacao", tags=["Orientação"], auth=JWTAuth())
@@ -53,3 +59,16 @@ class AdvisingRequestController:
     )
     def answer(self, request: HttpRequest, request_id: int, payload: AdvisingRequestAnswerIn):
         return answer_request(request.user.teacher, request_id, payload.action)
+
+    @http_get(
+        "/minha-solicitacao",
+        response=RequestStatusOut,
+        permissions=[IsStudent],
+        summary="Situação da solicitação e da orientação do Aluno",
+        description=(
+            "Devolve a solicitação mais recente (ou nada), a orientação ativa e se o Aluno "
+            "pode solicitar de novo. A pendente com mais de 7 dias aparece como não respondida."
+        ),
+    )
+    def my_request(self, request: HttpRequest):
+        return student_request_status(request.user.student)

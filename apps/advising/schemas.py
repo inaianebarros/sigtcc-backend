@@ -5,7 +5,7 @@ from ninja import Schema
 from apps.accounts.schemas import AreaOfInterestOut
 
 from .deadlines import answer_deadline_of
-from .models import ANSWERED_STATUSES, Advising, AdvisingRequest, AnswerAction
+from .models import ANSWERED_STATUSES, Advising, AdvisingRequest, AnswerAction, BlockedReason
 
 
 class AdvisingRequestIn(Schema):
@@ -94,3 +94,41 @@ class AdvisingRequestAnswerOut(AdvisingRequestItemOut):
         if advising is None:
             return None
         return AdvisingOut(id=advising.id, started_at=advising.started_at)
+
+
+class AdvisingWithTeacherOut(AdvisingOut):
+    teacher: TeacherSummaryOut
+
+    @staticmethod
+    def resolve_teacher(obj: Advising) -> TeacherSummaryOut:
+        return TeacherSummaryOut(id=obj.teacher.user_id, full_name=obj.teacher.user.full_name)
+
+
+class StudentRequestOut(Schema):
+    id: int
+    status: str
+    requested_at: datetime
+    responded_at: datetime | None
+    expires_at: datetime | None
+    teacher: TeacherSummaryOut
+
+    @staticmethod
+    def resolve_status(obj: AdvisingRequest) -> str:
+        return obj.effective_status
+
+    @staticmethod
+    def resolve_expires_at(obj: AdvisingRequest) -> datetime | None:
+        if obj.effective_status in ANSWERED_STATUSES:
+            return None
+        return answer_deadline_of(obj.requested_at)
+
+    @staticmethod
+    def resolve_teacher(obj: AdvisingRequest) -> TeacherSummaryOut:
+        return TeacherSummaryOut(id=obj.teacher.user_id, full_name=obj.teacher.user.full_name)
+
+
+class RequestStatusOut(Schema):
+    request: StudentRequestOut | None
+    advising: AdvisingWithTeacherOut | None
+    can_request: bool
+    blocked_reason: BlockedReason | None

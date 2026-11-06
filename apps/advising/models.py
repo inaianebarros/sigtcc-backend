@@ -23,6 +23,11 @@ class AnswerAction(StrEnum):
     REJECT = "reject"
 
 
+class BlockedReason(StrEnum):
+    ACTIVE_ADVISING = "active_advising"
+    PENDING_REQUEST = "pending_request"
+
+
 class AdvisingStatus(models.TextChoices):
     ACTIVE = "active", "Ativa"
     ENDED = "ended", "Encerrada"

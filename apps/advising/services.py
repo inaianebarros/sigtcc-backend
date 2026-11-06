@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from ninja.errors import HttpError
@@ -17,6 +19,7 @@ from .models import (
     AdvisingRequestStatus,
     AdvisingStatus,
     AnswerAction,
+    BlockedReason,
 )
 
 ACTIVE_ADVISING_MESSAGE = "Você já tem um orientador ativo."
@@ -139,3 +142,37 @@ def answer_request(teacher: Teacher, request_id: int, action: AnswerAction) -> A
         reference_id=advising_request.id,
     )
     return AdvisingRequest.objects.with_effective_status().get(pk=request_id)
+
+
+@dataclass(frozen=True)
+class StudentRequestStatus:
+    request: AdvisingRequest | None
+    advising: Advising | None
+    blocked_reason: BlockedReason | None
+
+    @property
+    def can_request(self) -> bool:
+        return self.blocked_reason is None
+
+
+def student_request_status(student: Student) -> StudentRequestStatus:
+    """Read-only view of the student's latest request, active advising and eligibility (RN04, RN05)."""
+    own_requests = AdvisingRequest.objects.filter(student=student)
+    latest_request = (
+        own_requests.with_effective_status()
+        .select_related("teacher__user")
+        .order_by("-requested_at", "-id")
+        .first()
+    )
+    active_advising = (
+        Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE)
+        .select_related("teacher__user")
+        .first()
+    )
+    if active_advising is not None:
+        blocked_reason = BlockedReason.ACTIVE_ADVISING
+    elif own_requests.valid_pending().exists():
+        blocked_reason = BlockedReason.PENDING_REQUEST
+    else:
+        blocked_reason = None
+    return StudentRequestStatus(latest_request, active_advising, blocked_reason)
