@@ -5,10 +5,6 @@ from ninja import Schema
 from .models import AdvisingRequest
 
 
-class ErrorOut(Schema):
-    detail: str
-
-
 class AdvisingRequestIn(Schema):
     teacher_id: int
 

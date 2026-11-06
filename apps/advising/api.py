@@ -4,8 +4,9 @@ from ninja_extra import api_controller, http_post
 from ninja_jwt.authentication import JWTAuth
 
 from apps.accounts.permissions import IsStudent
+from config.schemas import ErrorOut
 
-from .schemas import AdvisingRequestIn, AdvisingRequestOut, ErrorOut
+from .schemas import AdvisingRequestIn, AdvisingRequestOut
 from .services import request_advising
 
 
