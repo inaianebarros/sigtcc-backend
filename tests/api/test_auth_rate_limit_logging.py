@@ -36,7 +36,8 @@ def test_each_failure_is_logged_with_the_user_id_and_the_running_count(browser, 
     for _ in range(3):
         attempt(browser)
 
-    failed = events(auth_log, "login_failed")
+    failed = events(auth_log, "attempt_failed")
+    assert {record.scope for record in failed} == {"login_failures"}
     assert [(record.user_id, record.failures) for record in failed] == [
         (user.id, 1),
         (user.id, 2),
@@ -47,7 +48,7 @@ def test_each_failure_is_logged_with_the_user_id_and_the_running_count(browser, 
 def test_a_failure_for_an_unknown_email_is_logged_without_a_user_id(browser, auth_log):
     attempt(browser, email="ninguem@example.com")
 
-    (record,) = events(auth_log, "login_failed")
+    (record,) = events(auth_log, "attempt_failed")
     assert record.user_id is None
     assert record.failures == 1
 
@@ -59,7 +60,7 @@ def test_the_block_is_logged_with_the_failure_count_and_the_wait_time(browser, a
 
     attempt(browser)
 
-    (record,) = events(auth_log, "login_blocked")
+    (record,) = events(auth_log, "attempt_blocked")
     assert record.failures == 5
     assert 0 < record.retry_after <= 15 * 60
     assert record.levelno == logging.WARNING

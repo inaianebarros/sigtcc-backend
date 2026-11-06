@@ -2,6 +2,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -127,22 +128,26 @@ JWT_TRUSTED_ORIGINS = env("JWT_TRUSTED_ORIGINS")
 
 CACHES = {"default": env.cache_url("CACHE_URL", default="locmemcache://")}
 
-# Quantos proxies confiáveis ficam entre o cliente e a aplicação (0 = nenhum). Com N > 0, o IP do
-# cliente é o N-ésimo endereço de X-Forwarded-For contado do fim, que o proxy conhecido acrescentou.
+# How many trusted proxies sit between the client and the application (0 = none). With N > 0 the
+# client address is the N-th entry of X-Forwarded-For counted from the end, which the known proxy added.
 NUM_PROXIES = env.int("NUM_PROXIES", default=0)
 
 
 def _auth_rate(name: str, limit: int, window_seconds: int) -> tuple[int, int]:
-    return (
-        env.int(f"AUTH_{name}_LIMIT", default=limit),
-        env.int(f"AUTH_{name}_WINDOW_SECONDS", default=window_seconds),
-    )
+    configured_limit = env.int(f"AUTH_{name}_LIMIT", default=limit)
+    configured_window = env.int(f"AUTH_{name}_WINDOW_SECONDS", default=window_seconds)
+    if configured_limit < 1 or configured_window < 1:
+        raise ImproperlyConfigured(
+            f"AUTH_{name}_LIMIT and AUTH_{name}_WINDOW_SECONDS must be at least 1."
+        )
+    return configured_limit, configured_window
 
 
-# RNF25: (limite, janela em segundos) por escopo. As falhas de login contam por conta e IP;
-# os demais escopos contam as requisições de cada IP.
+# RNF25: (limit, window in seconds) per scope. Failure scopes count wrong secrets per account and
+# client address; the *_ip scopes count every request of a client address.
 AUTH_RATE_LIMITS = {
     "login_failures": _auth_rate("LOGIN_FAILURES", 5, 15 * 60),
+    "change_password_failures": _auth_rate("CHANGE_PASSWORD_FAILURES", 5, 15 * 60),
     "login_ip": _auth_rate("LOGIN_IP", 20, 60),
     "refresh_ip": _auth_rate("REFRESH_IP", 30, 60),
     "logout_ip": _auth_rate("LOGOUT_IP", 30, 60),

@@ -10,7 +10,15 @@ from tests.api.helpers import LOGIN_URL, post_json
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 RATE_LIMIT_VARIABLES = ["NUM_PROXIES", "CACHE_URL"] + [
     f"AUTH_{scope}_{suffix}"
-    for scope in ("LOGIN_FAILURES", "LOGIN_IP", "REFRESH_IP", "LOGOUT_IP", "RESET_IP", "FORGOT_IP")
+    for scope in (
+        "LOGIN_FAILURES",
+        "CHANGE_PASSWORD_FAILURES",
+        "LOGIN_IP",
+        "REFRESH_IP",
+        "LOGOUT_IP",
+        "RESET_IP",
+        "FORGOT_IP",
+    )
     for suffix in ("LIMIT", "WINDOW_SECONDS")
 ]
 
@@ -107,3 +115,25 @@ def test_the_environment_example_does_not_enable_the_proxy_trust_by_default():
     active = [line for line in lines if not line.startswith("#")]
 
     assert not any(line.startswith("NUM_PROXIES") for line in active)
+
+
+@override_settings(NUM_PROXIES=1)
+@pytest.mark.parametrize("forged", ["203.0.113.7:51234", "not-an-address", "", "999.1.1.1"])
+def test_a_malformed_forwarded_address_falls_back_to_the_connection_address(forged):
+    request = request_from("172.18.0.3", forged)
+
+    assert client_ip(request) == "172.18.0.3"
+
+
+@override_settings(NUM_PROXIES=1)
+def test_an_ipv6_client_address_is_accepted():
+    request = request_from("172.18.0.3", "2001:db8::1")
+
+    assert client_ip(request) == "2001:db8::1"
+
+
+def test_a_missing_connection_address_gets_a_single_placeholder():
+    request = RequestFactory().get("/")
+    request.META.pop("REMOTE_ADDR", None)
+
+    assert client_ip(request) == "unknown"

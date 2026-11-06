@@ -1,27 +1,14 @@
-import time
-from contextlib import contextmanager
-from unittest.mock import patch
-
 import pytest
 from django.conf import settings
 from django.test import override_settings
 
-from tests.api.helpers import LOGOUT_URL, REFRESH_URL, post_json
+from tests.api.helpers import LOGOUT_URL, REFRESH_URL, TOO_MANY_REQUESTS, post_json, travel
 
 pytestmark = pytest.mark.django_db
 
 FORGOT_URL = "/api/auth/forgot-password"
 RESET_URL = "/api/auth/reset-password"
 
-
-@contextmanager
-def travel(seconds):
-    real_time = time.time
-    with patch("time.time", side_effect=lambda: real_time() + seconds):
-        yield
-
-
-TOO_MANY = {"detail": "Muitas tentativas. Aguarde antes de tentar novamente."}
 
 RESET_BODY = {
     "uid": "x",
@@ -50,7 +37,7 @@ def test_each_endpoint_is_limited_per_address_with_the_standard_429(browser, url
 
     assert 429 not in statuses
     assert blocked.status_code == 429
-    assert blocked.json() == TOO_MANY
+    assert blocked.json() == TOO_MANY_REQUESTS
     assert 0 < int(blocked["Retry-After"]) <= 60 * 60
 
 

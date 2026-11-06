@@ -12,13 +12,19 @@ INVALID_CREDENTIALS = "E-mail ou senha inválidos."
 INVALID_SESSION = "Sessão inválida ou expirada."
 
 
+class InvalidCredentialsError(AuthenticationFailed):
+    def __init__(self, user_id: int | None = None):
+        super().__init__(INVALID_CREDENTIALS)
+        self.user_id = user_id
+
+
 def authenticate_credentials(email: str, password: str) -> User:
     user = User.objects.filter(email__iexact=email).first()
     if user is None:
         User().set_password(password)
-        raise AuthenticationFailed(INVALID_CREDENTIALS)
+        raise InvalidCredentialsError()
     if not user.check_password(password) or not user.is_active:
-        raise AuthenticationFailed(INVALID_CREDENTIALS)
+        raise InvalidCredentialsError(user.id)
     return user
 
 
