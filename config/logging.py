@@ -1,7 +1,18 @@
 import json
 import logging
 
-REQUEST_FIELDS = ("method", "path", "status_code", "duration_ms")
+REQUEST_FIELDS = (
+    "method",
+    "path",
+    "status_code",
+    "duration_ms",
+    "event",
+    "scope",
+    "user_id",
+    "failures",
+    "retry_after",
+    "client_ip",
+)
 
 
 class JsonFormatter(logging.Formatter):

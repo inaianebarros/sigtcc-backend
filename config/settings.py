@@ -109,6 +109,7 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": env("DJANGO_LOG_LEVEL")},
     "loggers": {
         "sigtcc.request": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "sigtcc.auth": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
     },
 }
@@ -123,6 +124,31 @@ JWT_REFRESH_COOKIE_NAME = "refresh_token"
 JWT_REFRESH_COOKIE_PATH = "/api/auth"
 JWT_REFRESH_COOKIE_SECURE = env("JWT_REFRESH_COOKIE_SECURE")
 JWT_TRUSTED_ORIGINS = env("JWT_TRUSTED_ORIGINS")
+
+CACHES = {"default": env.cache_url("CACHE_URL", default="locmemcache://")}
+
+# Quantos proxies confiáveis ficam entre o cliente e a aplicação (0 = nenhum). Com N > 0, o IP do
+# cliente é o N-ésimo endereço de X-Forwarded-For contado do fim, que o proxy conhecido acrescentou.
+NUM_PROXIES = env.int("NUM_PROXIES", default=0)
+
+
+def _auth_rate(name: str, limit: int, window_seconds: int) -> tuple[int, int]:
+    return (
+        env.int(f"AUTH_{name}_LIMIT", default=limit),
+        env.int(f"AUTH_{name}_WINDOW_SECONDS", default=window_seconds),
+    )
+
+
+# RNF25: (limite, janela em segundos) por escopo. As falhas de login contam por conta e IP;
+# os demais escopos contam as requisições de cada IP.
+AUTH_RATE_LIMITS = {
+    "login_failures": _auth_rate("LOGIN_FAILURES", 5, 15 * 60),
+    "login_ip": _auth_rate("LOGIN_IP", 20, 60),
+    "refresh_ip": _auth_rate("REFRESH_IP", 30, 60),
+    "logout_ip": _auth_rate("LOGOUT_IP", 30, 60),
+    "reset_ip": _auth_rate("RESET_IP", 10, 60 * 60),
+    "forgot_ip": _auth_rate("FORGOT_IP", 5, 60 * 60),
+}
 
 PASSWORD_RESET_TIMEOUT = 60 * 60
 FRONTEND_URL = env("FRONTEND_URL")

@@ -6,7 +6,7 @@ from apps.accounts.password_reset_api import PasswordResetController
 from apps.accounts.profile_api import StudentProfileController, TeacherProfileController
 from apps.accounts.session_api import SessionController
 from apps.advising.api import AdvisingRequestController
-from config.errors import ConflictError, FieldValidationError
+from config.errors import ConflictError, FieldValidationError, TooManyRequestsError
 
 api = NinjaExtraAPI(
     title="SIGTCC API",
@@ -36,6 +36,17 @@ def field_validation_error(request, exc: FieldValidationError):
 @api.exception_handler(ConflictError)
 def conflict_error(request, exc: ConflictError):
     return api.create_response(request, {"detail": exc.detail}, status=409)
+
+
+@api.exception_handler(TooManyRequestsError)
+def too_many_requests(request, exc: TooManyRequestsError):
+    response = api.create_response(
+        request,
+        {"detail": "Muitas tentativas. Aguarde antes de tentar novamente."},
+        status=429,
+    )
+    response["Retry-After"] = str(exc.retry_after)
+    return response
 
 
 api.register_controllers(
