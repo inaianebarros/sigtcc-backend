@@ -7,7 +7,7 @@ from config.errors import FieldValidationError
 
 from .models import Course, Institute, Student, Teacher, UserType
 from .passwords import validate_new_password
-from .profile_validation import validate_area_ids, validate_full_name
+from .profile_validation import validate_area_ids, validate_course_ids, validate_full_name
 from .schemas import ProfileRegistrationIn, StudentRegistrationIn, TeacherRegistrationIn
 
 User = get_user_model()
@@ -74,15 +74,11 @@ def _validate_course(data: StudentRegistrationIn) -> dict[str, str]:
 
 
 def _validate_courses(data: TeacherRegistrationIn) -> dict[str, str]:
-    course_ids = set(data.course_ids)
-    if not course_ids:
-        return {"course_ids": "Escolha ao menos um curso."}
-    courses = Course.objects.filter(id__in=course_ids)
-    if courses.count() != len(course_ids):
-        return {"course_ids": "Curso não encontrado."}
-    if courses.exclude(institute_id=data.institute_id).exists():
-        return {"course_ids": "Todos os cursos devem pertencer ao instituto informado."}
-    return {}
+    return validate_course_ids(
+        data.course_ids,
+        data.institute_id,
+        "Todos os cursos devem pertencer ao instituto informado.",
+    )
 
 
 def _create_user(data: ProfileRegistrationIn, user_type: UserType):

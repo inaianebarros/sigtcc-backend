@@ -35,15 +35,19 @@ def validate_area_ids(area_ids: Collection[int]) -> dict[str, str]:
     return {}
 
 
-def validate_course_ids(course_ids: Collection[int], institute_id: int) -> dict[str, str]:
+def validate_course_ids(
+    course_ids: Collection[int], institute_id: int | None, outside_institute_message: str
+) -> dict[str, str]:
     unique_ids = set(course_ids)
     if not unique_ids:
         return {"course_ids": "Escolha ao menos um curso."}
     courses = Course.objects.filter(id__in=unique_ids)
     if courses.count() != len(unique_ids):
         return {"course_ids": "Curso não encontrado."}
+    if institute_id is None:
+        institute_id = courses.values_list("institute_id", flat=True).first()
     if courses.exclude(institute_id=institute_id).exists():
-        return {"course_ids": "Todos os cursos devem pertencer ao seu instituto."}
+        return {"course_ids": outside_institute_message}
     return {}
 
 

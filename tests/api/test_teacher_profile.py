@@ -259,3 +259,74 @@ def test_the_openapi_lists_only_the_editable_fields(client):
 
     properties = schema["components"]["schemas"]["TeacherProfileIn"]["properties"]
     assert set(properties) == {"full_name", "area_ids", "articles", "course_ids", "is_available"}
+
+
+def test_a_teacher_without_courses_can_still_read_and_recover_the_profile(client):
+    teacher = make_teacher()
+    course = make_course()
+    sibling = make_course(course.institute)
+
+    read = client.get(PROFILE_URL, headers=bearer(teacher.user))
+    fixed = patch(client, teacher.user, {"course_ids": [course.id, sibling.id]})
+
+    assert read.status_code == 200
+    assert read.json()["institute_id"] is None
+    assert read.json()["course_ids"] == []
+    assert fixed.status_code == 200
+    assert fixed.json()["institute_id"] == course.institute_id
+
+
+def test_a_teacher_without_courses_must_still_pick_courses_from_a_single_institute(client):
+    teacher = make_teacher()
+
+    response = patch(client, teacher.user, {"course_ids": [make_course().id, make_course().id]})
+
+    assert response.status_code == 422
+    assert errors_by_field(response) == {
+        "course_ids": "Todos os cursos devem pertencer ao seu instituto."
+    }
+    assert not teacher.courses.exists()
+
+
+@pytest.mark.parametrize("value", ["true", "yes", 1, 0, "abc"])
+def test_availability_must_be_a_real_boolean(client, value):
+    teacher = make_teacher_with_courses()
+
+    response = patch(client, teacher.user, {"is_available": value})
+
+    assert response.status_code == 422
+    assert "is_available" in errors_by_field(response)
+    teacher.refresh_from_db()
+    assert teacher.is_available is True
+
+
+def test_an_empty_body_changes_nothing(client):
+    teacher = make_teacher_with_courses()
+    PublishedArticle.objects.create(teacher=teacher, title="Antigo", year=2020)
+
+    response = patch(client, teacher.user, {})
+
+    assert response.status_code == 200
+    assert [a["title"] for a in response.json()["articles"]] == ["Antigo"]
+
+
+def test_repeated_course_ids_are_treated_as_one(client):
+    first = make_course()
+    second = make_course(first.institute)
+    teacher = make_teacher_with_courses(first)
+
+    response = patch(client, teacher.user, {"course_ids": [second.id, second.id]})
+
+    assert response.status_code == 200
+    assert response.json()["course_ids"] == [second.id]
+
+
+def test_an_inactive_teacher_cannot_use_the_profile(client):
+    teacher = make_teacher_with_courses()
+    headers = bearer(teacher.user)
+    teacher.user.is_active = False
+    teacher.user.save(update_fields=["is_active"])
+
+    response = client.get(PROFILE_URL, headers=headers)
+
+    assert response.status_code == 401

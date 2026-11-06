@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from ninja import Schema
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, StrictBool, StringConstraints
 
 from .models import PublishedArticle, Student, Teacher
 
@@ -124,7 +124,7 @@ class StudentProfileIn(ProfileChangesIn):
 
 class TeacherProfileIn(ProfileChangesIn):
     course_ids: list[int] | None = None
-    is_available: bool | None = None
+    is_available: StrictBool | None = None
 
 
 class StudentProfileOut(Schema):
@@ -155,7 +155,7 @@ class TeacherProfileOut(Schema):
     full_name: str
     email: str
     registration_number: str
-    institute_id: int
+    institute_id: int | None
     course_ids: list[int]
     area_ids: list[int]
     is_available: bool
@@ -168,7 +168,7 @@ class TeacherProfileOut(Schema):
             full_name=teacher.user.full_name,
             email=teacher.user.email,
             registration_number=teacher.registration_number,
-            institute_id=courses[0].institute_id,
+            institute_id=courses[0].institute_id if courses else None,
             course_ids=[course.id for course in courses],
             area_ids=sorted(teacher.areas_of_interest.values_list("id", flat=True)),
             is_available=teacher.is_available,
