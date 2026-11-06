@@ -41,9 +41,9 @@ class AdvisingRequestQuerySet(models.QuerySet):
         return self.filter(_overdue_pending_condition(cutoff))
 
     def valid_pending(self, cutoff: datetime | None = None):
-        return self.filter(
-            status=AdvisingRequestStatus.PENDING, requested_at__gt=cutoff or answer_cutoff()
-        )
+        if cutoff is None:
+            cutoff = answer_cutoff()
+        return self.filter(status=AdvisingRequestStatus.PENDING, requested_at__gt=cutoff)
 
     def with_effective_status(self, cutoff: datetime | None = None):
         return self.annotate(
@@ -59,7 +59,9 @@ class AdvisingRequestQuerySet(models.QuerySet):
 
 
 def _overdue_pending_condition(cutoff: datetime | None = None) -> Q:
-    return Q(status=AdvisingRequestStatus.PENDING, requested_at__lte=cutoff or answer_cutoff())
+    if cutoff is None:
+        cutoff = answer_cutoff()
+    return Q(status=AdvisingRequestStatus.PENDING, requested_at__lte=cutoff)
 
 
 class AdvisingRequest(models.Model):

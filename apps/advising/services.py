@@ -34,13 +34,23 @@ INACTIVE_STUDENT_MESSAGE = "Este aluno não está mais ativo."
 STUDENT_HAS_ADVISING_MESSAGE = "O aluno já tem um orientador ativo."
 
 
-def eligibility_block_of(student: Student, cutoff: datetime | None = None) -> BlockedReason | None:
-    """Why the student cannot send a new request (RN04, RN05), or None. Active advising wins."""
-    if Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE).exists():
+def has_active_advising(student: Student) -> bool:
+    return Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE).exists()
+
+
+def _block_reason(
+    student: Student, has_advising: bool, cutoff: datetime | None
+) -> BlockedReason | None:
+    if has_advising:
         return BlockedReason.ACTIVE_ADVISING
     if AdvisingRequest.objects.filter(student=student).valid_pending(cutoff).exists():
         return BlockedReason.PENDING_REQUEST
     return None
+
+
+def eligibility_block_of(student: Student, cutoff: datetime | None = None) -> BlockedReason | None:
+    """Why the student cannot send a new request (RN04, RN05), or None. Active advising wins."""
+    return _block_reason(student, has_active_advising(student), cutoff)
 
 
 _BLOCK_MESSAGES = {
@@ -112,7 +122,7 @@ def _ensure_can_be_answered(advising_request: AdvisingRequest, student: Student)
 
 
 def _start_advising(advising_request: AdvisingRequest, student: Student, teacher: Teacher) -> None:
-    if Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE).exists():
+    if has_active_advising(student):
         raise ConflictError(STUDENT_HAS_ADVISING_MESSAGE)
     try:
         with transaction.atomic():
@@ -179,6 +189,5 @@ def student_request_status(student: Student) -> StudentRequestStatus:
         .select_related("teacher__user")
         .first()
     )
-    return StudentRequestStatus(
-        latest_request, active_advising, eligibility_block_of(student, cutoff)
-    )
+    blocked_reason = _block_reason(student, active_advising is not None, cutoff)
+    return StudentRequestStatus(latest_request, active_advising, blocked_reason)

@@ -67,7 +67,8 @@ class AdvisingRequestController:
         summary="Situação da solicitação e da orientação do Aluno",
         description=(
             "Devolve a solicitação mais recente (ou nada), a orientação ativa e se o Aluno "
-            "pode solicitar de novo. A pendente com mais de 7 dias aparece como não respondida."
+            "pode solicitar de novo. A pendente com mais de 7 dias aparece como não respondida. "
+            "O can_request é consultivo: a solicitação ainda pode ser recusada com 409."
         ),
     )
     def my_request(self, request: HttpRequest):
