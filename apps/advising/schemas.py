@@ -5,9 +5,7 @@ from ninja import Schema
 from apps.accounts.schemas import AreaOfInterestOut
 
 from .deadlines import answer_deadline_of
-from .models import AdvisingRequest, AdvisingRequestStatus
-
-ANSWERED_STATUSES = (AdvisingRequestStatus.ACCEPTED, AdvisingRequestStatus.REJECTED)
+from .models import ANSWERED_STATUSES, Advising, AdvisingRequest, AnswerAction
 
 
 class AdvisingRequestIn(Schema):
@@ -76,3 +74,23 @@ class AdvisingRequestItemOut(Schema):
             course=CourseSummaryOut(id=student.course_id, name=student.course.name),
             areas=[AreaOfInterestOut(id=area.id, name=area.name) for area in areas],
         )
+
+
+class AdvisingRequestAnswerIn(Schema):
+    action: AnswerAction
+
+
+class AdvisingOut(Schema):
+    id: int
+    started_at: datetime
+
+
+class AdvisingRequestAnswerOut(AdvisingRequestItemOut):
+    advising: AdvisingOut | None
+
+    @staticmethod
+    def resolve_advising(obj: AdvisingRequest) -> AdvisingOut | None:
+        advising = Advising.objects.filter(request=obj).first()
+        if advising is None:
+            return None
+        return AdvisingOut(id=advising.id, started_at=advising.started_at)

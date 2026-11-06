@@ -8,8 +8,14 @@ from config.pagination import BoundedLimitOffsetPagination
 from config.schemas import ErrorOut, Page
 
 from .models import AdvisingRequestStatus
-from .schemas import AdvisingRequestIn, AdvisingRequestItemOut, AdvisingRequestOut
-from .services import list_received_requests, request_advising
+from .schemas import (
+    AdvisingRequestAnswerIn,
+    AdvisingRequestAnswerOut,
+    AdvisingRequestIn,
+    AdvisingRequestItemOut,
+    AdvisingRequestOut,
+)
+from .services import answer_request, list_received_requests, request_advising
 
 
 @api_controller("/orientacao", tags=["Orientação"], auth=JWTAuth())
@@ -37,3 +43,13 @@ class AdvisingRequestController:
     @paginate(BoundedLimitOffsetPagination)
     def list_requests(self, request: HttpRequest, status: AdvisingRequestStatus | None = None):
         return list_received_requests(request.user.teacher, status)
+
+    @http_post(
+        "/solicitacoes/{request_id}/responder",
+        response={200: AdvisingRequestAnswerOut, 404: ErrorOut, 409: ErrorOut},
+        permissions=[IsTeacher],
+        summary="O Professor aceita ou recusa uma solicitação",
+        description="A recusa não tem justificativa. Aceitar cria a orientação ativa.",
+    )
+    def answer(self, request: HttpRequest, request_id: int, payload: AdvisingRequestAnswerIn):
+        return answer_request(request.user.teacher, request_id, payload.action)
