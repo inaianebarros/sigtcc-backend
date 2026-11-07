@@ -10,6 +10,7 @@ from config.schemas import ErrorOut, Page
 
 from .advisor_profile import advisor_profile
 from .advisor_search import search_advisors
+from .schemas import CourseSummaryOut, ProfileAreaOut
 
 
 class AdvisorBaseOut(Schema):
@@ -56,17 +57,8 @@ class AdvisorSearchController:
         return search_advisors(request.user.student, name)
 
 
-class AdvisorCourseOut(Schema):
-    id: int
-    name: str
-
-
-class ProfileAreaOut(AreaOfInterestOut):
-    is_common: bool
-
-
 class AdvisorProfileOut(AdvisorBaseOut):
-    courses: list[AdvisorCourseOut]
+    courses: list[CourseSummaryOut]
     areas: list[ProfileAreaOut]
     articles: list[ArticleOut]
 
@@ -76,11 +68,7 @@ class AdvisorProfileOut(AdvisorBaseOut):
 
     @staticmethod
     def resolve_areas(obj) -> list[ProfileAreaOut]:
-        common_ids = {area.id for area in obj.common_areas}
-        return [
-            ProfileAreaOut(id=area.id, name=area.name, is_common=area.id in common_ids)
-            for area in obj.all_areas
-        ]
+        return ProfileAreaOut.mark_common(obj.all_areas, {area.id for area in obj.common_areas})
 
 
 @api_controller("/professores", tags=["Orientadores"], auth=JWTAuth())

@@ -44,6 +44,14 @@ class CourseSummaryOut(Schema):
     name: str
 
 
+class ProfileAreaOut(AreaOfInterestOut):
+    is_common: bool
+
+    @classmethod
+    def mark_common(cls, areas, common_ids: set[int]) -> "list[ProfileAreaOut]":
+        return [cls(id=area.id, name=area.name, is_common=area.id in common_ids) for area in areas]
+
+
 class StudentSummaryOut(Schema):
     id: int
     full_name: str
