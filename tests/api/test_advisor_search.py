@@ -121,7 +121,7 @@ def test_each_item_carries_the_institute_and_the_availability_without_changing_t
     )
     available = make_teacher(courses=[course], areas=[], full_name="Ana Livre", is_available=True)
 
-    items = search(client, student.user).json()["items"]
+    items = search(client, student.user, only_available="false").json()["items"]
 
     assert [item["id"] for item in items] == [unavailable.user_id, available.user_id]
     assert [item["is_available"] for item in items] == [False, True]
@@ -339,6 +339,7 @@ def test_the_openapi_documents_the_search_and_its_parameters(client):
     operation = schema["paths"]["/api/orientadores/busca"]["get"]
     assert {parameter["name"] for parameter in operation["parameters"]} == {
         "name",
+        "only_available",
         "limit",
         "offset",
     }
@@ -375,3 +376,138 @@ def test_the_alphabetical_tie_break_ignores_accents_and_case(client):
         "beto Lima",
         "Zélia Souza",
     ]
+
+
+def only_available_flag(client):
+    schema = client.get("/api/openapi.json").json()
+    operation = schema["paths"]["/api/orientadores/busca"]["get"]
+    return next(p for p in operation["parameters"] if p["name"] == "only_available")
+
+
+def teachers_with_availability(course, areas):
+    """Ana e Bruno disponíveis, Zilda indisponível e com a maior compatibilidade."""
+    return {
+        "ana": make_teacher(courses=[course], areas=areas[:1], full_name="Ana Livre"),
+        "zilda": make_teacher(
+            courses=[course], areas=areas, full_name="Zilda Ocupada", is_available=False
+        ),
+        "bruno": make_teacher(courses=[course], areas=areas[:2], full_name="Bruno Livre"),
+    }
+
+
+def course_student_and_teachers():
+    course = make_course()
+    areas = [make_area() for _ in range(3)]
+    student = make_student(course=course, areas=areas)
+    return student, teachers_with_availability(course, areas)
+
+
+def test_by_default_only_the_available_teachers_are_listed_and_counted(client):
+    student, teachers = course_student_and_teachers()
+
+    body = search(client, student.user).json()
+
+    assert body["count"] == 2
+    assert {item["id"] for item in body["items"]} == {
+        teachers["ana"].user_id,
+        teachers["bruno"].user_id,
+    }
+    assert all(item["is_available"] for item in body["items"])
+
+
+def test_asking_for_everybody_also_lists_the_unavailable_teachers(client):
+    student, teachers = course_student_and_teachers()
+
+    body = search(client, student.user, only_available="false").json()
+
+    assert body["count"] == 3
+    assert {item["id"]: item["is_available"] for item in body["items"]} == {
+        teachers["ana"].user_id: True,
+        teachers["zilda"].user_id: False,
+        teachers["bruno"].user_id: True,
+    }
+
+
+def test_the_order_is_the_same_in_both_modes_and_availability_never_moves_anybody(client):
+    student, teachers = course_student_and_teachers()
+    ana, zilda, bruno = (teachers[key].user_id for key in ("ana", "zilda", "bruno"))
+
+    everybody = [
+        i["id"] for i in search(client, student.user, only_available="false").json()["items"]
+    ]
+    available = [
+        i["id"] for i in search(client, student.user, only_available="true").json()["items"]
+    ]
+
+    assert everybody == [zilda, bruno, ana]
+    assert available == [bruno, ana]
+
+
+def test_a_teacher_who_becomes_unavailable_leaves_the_default_list(client):
+    student, teachers = course_student_and_teachers()
+    ana = teachers["ana"]
+    assert ana.user_id in [i["id"] for i in search(client, student.user).json()["items"]]
+
+    ana.is_available = False
+    ana.save(update_fields=["is_available"])
+
+    assert ana.user_id not in [i["id"] for i in search(client, student.user).json()["items"]]
+
+
+def test_the_availability_filter_combines_with_the_name_filter(client):
+    student, course = student_and_course()
+    make_teacher(courses=[course], full_name="Maria Livre")
+    make_teacher(courses=[course], full_name="Maria Ocupada", is_available=False)
+    make_teacher(courses=[course], full_name="Pedro Livre")
+
+    default = search(client, student.user, name="maria").json()
+    everybody = search(client, student.user, name="maria", only_available="false").json()
+
+    assert [item["full_name"] for item in default["items"]] == ["Maria Livre"]
+    assert default["count"] == 1
+    assert [item["full_name"] for item in everybody["items"]] == ["Maria Livre", "Maria Ocupada"]
+    assert everybody["count"] == 2
+
+
+def test_the_count_and_the_pages_follow_the_filter(client):
+    student, course = student_and_course()
+    for number in range(5):
+        make_teacher(courses=[course], full_name=f"Disponível {number}")
+    for number in range(3):
+        make_teacher(courses=[course], full_name=f"Indisponível {number}", is_available=False)
+
+    first = search(client, student.user, limit=2).json()
+    last = search(client, student.user, limit=2, offset=4).json()
+    everybody = search(client, student.user, limit=2, only_available="false").json()
+
+    assert (first["count"], len(first["items"])) == (5, 2)
+    assert (last["count"], len(last["items"])) == (5, 1)
+    assert everybody["count"] == 8
+
+
+@pytest.mark.parametrize(
+    ("spelling", "lists_everybody"),
+    [("true", False), ("1", False), ("false", True), ("0", True), ("FALSE", True)],
+)
+def test_the_accepted_spellings_of_the_availability_filter(client, spelling, lists_everybody):
+    student, course = student_and_course()
+    make_teacher(courses=[course], full_name="Livre")
+    make_teacher(courses=[course], full_name="Ocupado", is_available=False)
+
+    count = search(client, student.user, only_available=spelling).json()["count"]
+
+    assert count == (2 if lists_everybody else 1)
+
+
+def test_an_invalid_value_for_the_availability_filter_is_rejected(client):
+    student, _ = student_and_course()
+
+    assert search(client, student.user, only_available="talvez").status_code == 422
+
+
+def test_the_openapi_documents_the_availability_filter_and_its_default(client):
+    parameter = only_available_flag(client)
+
+    assert parameter["schema"]["type"] == "boolean"
+    assert parameter["schema"]["default"] is True
+    assert parameter["description"]

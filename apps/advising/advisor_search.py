@@ -5,10 +5,12 @@ from django.db.models.functions import Lower
 from apps.accounts.models import AreaOfInterest, Student, Teacher
 
 
-def search_advisors(student: Student, name: str | None = None):
+def search_advisors(student: Student, name: str | None = None, *, only_available: bool):
     student_areas = list(student.areas_of_interest.values_list("id", flat=True))
     common_areas = AreaOfInterest.objects.filter(id__in=student_areas).order_by("name")
     teachers = Teacher.objects.filter(courses=student.course_id, user__is_active=True)
+    if only_available:
+        teachers = teachers.filter(is_available=True)
     name = (name or "").strip()
     if "\x00" in name:
         teachers = teachers.none()

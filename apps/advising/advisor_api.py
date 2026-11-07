@@ -48,13 +48,25 @@ class AdvisorSearchController:
         description=(
             "Só Professores ativos do curso do Aluno (RN28), do que tem mais Áreas em comum para o "
             "que tem menos (RN23), depois por nome e id. O parâmetro name filtra por parte do "
-            "nome, sem diferenciar maiúsculas e acentos. A disponibilidade é informada e não "
-            "altera a ordem. Paginada com limit (padrão 20, máximo 100) e offset."
+            "nome, sem diferenciar maiúsculas e acentos. Por padrão só aparecem os professores "
+            "disponíveis; only_available=false inclui os indisponíveis (RN26). A disponibilidade "
+            "é informada e não altera a ordem. Paginada com limit (padrão 20, máximo 100) e offset."
         ),
     )
     @paginate(BoundedLimitOffsetPagination)
-    def search(self, request: HttpRequest, name: str | None = Query(None, max_length=150)):
-        return search_advisors(request.user.student, name)
+    def search(
+        self,
+        request: HttpRequest,
+        name: str | None = Query(None, max_length=150),
+        only_available: bool = Query(
+            True,
+            description=(
+                "Verdadeiro (padrão): só professores disponíveis para orientar. "
+                "Falso: também os indisponíveis."
+            ),
+        ),
+    ):
+        return search_advisors(request.user.student, name, only_available=only_available)
 
 
 class AdvisorProfileOut(AdvisorBaseOut):
