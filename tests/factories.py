@@ -19,13 +19,14 @@ _sequence = count(1)
 User = get_user_model()
 
 
-def make_user(user_type=UserType.STUDENT, email=None):
+def make_user(user_type=UserType.STUDENT, email=None, full_name=None, is_active=True):
     number = next(_sequence)
     return User.objects.create_user(
         email=email or f"user{number}@example.com",
         password=DEFAULT_PASSWORD,
-        full_name=f"Usuario {number}",
+        full_name=full_name or f"Usuario {number}",
         type=user_type,
+        is_active=is_active,
     )
 
 
@@ -38,20 +39,31 @@ def make_area():
     return AreaOfInterest.objects.create(name=f"Area {next(_sequence)}")
 
 
-def make_student(registration_number=None, course=None):
-    return Student.objects.create(
+def make_student(registration_number=None, course=None, areas=()):
+    student = Student.objects.create(
         user=make_user(UserType.STUDENT),
         course=course or make_course(),
         registration_number=registration_number or f"A{next(_sequence):06d}",
     )
+    student.areas_of_interest.set(areas)
+    return student
 
 
-def make_teacher(registration_number=None, courses=()):
+def make_teacher(
+    registration_number=None,
+    courses=(),
+    areas=(),
+    full_name=None,
+    is_available=True,
+    is_active=True,
+):
     teacher = Teacher.objects.create(
-        user=make_user(UserType.TEACHER),
+        user=make_user(UserType.TEACHER, full_name=full_name, is_active=is_active),
         registration_number=registration_number or f"P{next(_sequence):06d}",
+        is_available=is_available,
     )
     teacher.courses.set(courses)
+    teacher.areas_of_interest.set(areas)
     return teacher
 
 

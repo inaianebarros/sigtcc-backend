@@ -6,6 +6,7 @@ from apps.accounts.password_change_api import PasswordChangeController
 from apps.accounts.password_reset_api import PasswordResetController
 from apps.accounts.profile_api import StudentProfileController, TeacherProfileController
 from apps.accounts.session_api import SessionController
+from apps.advising.advisor_api import AdvisorSearchController
 from apps.advising.api import AdvisingRequestController
 from config.errors import ConflictError, FieldValidationError, TooManyRequestsError
 
@@ -60,4 +61,5 @@ api.register_controllers(
     StudentProfileController,
     TeacherProfileController,
     AdvisingRequestController,
+    AdvisorSearchController,
 )
