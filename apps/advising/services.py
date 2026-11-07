@@ -7,7 +7,7 @@ from ninja.errors import HttpError
 
 from apps.accounts.models import Student, Teacher
 from apps.activities.models import Activity, ActivityStatus
-from apps.meetings.models import Meeting, MeetingStatus
+from apps.meetings.models import SYSTEM_CANCELLATION_REASON, Meeting, MeetingStatus
 from apps.notifications.models import (
     ADVISING_REQUEST_REFERENCE,
     Notification,
@@ -208,7 +208,11 @@ def close_advising(advising: Advising, reason: str) -> None:
     ).update(status=ActivityStatus.ARCHIVED)
     Meeting.objects.filter(
         advising=advising, status__in=CANCELLED_ON_END, scheduled_at__gt=now
-    ).update(status=MeetingStatus.CANCELLED)
+    ).update(
+        status=MeetingStatus.CANCELLED,
+        cancelled_by_system=True,
+        cancellation_reason=SYSTEM_CANCELLATION_REASON,
+    )
     advising.status = AdvisingStatus.ENDED
     advising.ended_at = now
     advising.end_reason = reason

@@ -363,3 +363,29 @@ def test_closing_an_advising_that_already_ended_is_refused_and_keeps_its_data():
     advising.refresh_from_db()
     assert advising.ended_at == first_end
     assert advising.end_reason == "Primeiro motivo registrado."
+
+
+SYSTEM_MESSAGE = (
+    "Esta reunião foi cancelada automaticamente pelo sistema porque a orientação foi encerrada."
+)
+
+
+def test_the_meetings_cancelled_by_the_end_carry_the_system_mark_and_the_friendly_message(client):
+    teacher = teacher_with_course()
+    advising = advising_of(teacher)
+    pending = meeting_with(advising, MeetingStatus.PENDING, days=2)
+    accepted = meeting_with(advising, MeetingStatus.ACCEPTED, days=5)
+    held = meeting_with(advising, MeetingStatus.ACCEPTED, days=-1)
+    manually_cancelled = meeting_with(advising, MeetingStatus.CANCELLED, days=3)
+
+    assert end_advising(client, teacher.user, advising.id).status_code == 200
+
+    for meeting in (pending, accepted):
+        meeting.refresh_from_db()
+        assert meeting.status == MeetingStatus.CANCELLED
+        assert meeting.cancelled_by_system is True
+        assert meeting.cancellation_reason == SYSTEM_MESSAGE
+    for meeting in (held, manually_cancelled):
+        meeting.refresh_from_db()
+        assert meeting.cancelled_by_system is False
+        assert meeting.cancellation_reason == ""
