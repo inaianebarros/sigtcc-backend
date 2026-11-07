@@ -9,6 +9,7 @@ from config.schemas import ErrorOut, FieldErrorsOut, Page
 
 from .models import AdvisingRequestStatus
 from .schemas import (
+    AdviseeOut,
     AdvisingRequestAnswerIn,
     AdvisingRequestAnswerOut,
     AdvisingRequestIn,
@@ -21,6 +22,7 @@ from .schemas import (
 from .services import (
     answer_request,
     end_advising,
+    list_advisees,
     list_received_requests,
     request_advising,
     student_request_status,
@@ -99,3 +101,18 @@ class AdvisingRequestController:
     )
     def end(self, request: HttpRequest, advising_id: int, payload: EndAdvisingIn):
         return end_advising(request.user.teacher, advising_id, payload.reason)
+
+    @http_get(
+        "/orientandos",
+        response=Page[AdviseeOut],
+        permissions=[IsTeacher],
+        summary="Lista os Orientandos ativos do Professor",
+        description=(
+            "Só as orientações ativas do Professor, da que começou há menos tempo para a mais "
+            "antiga. Cada item traz o Aluno e o curso, o início, o tema do TCC (ou nulo) e a "
+            "contagem das atividades por status, sem as excluídas. Não traz e-mail nem matrícula."
+        ),
+    )
+    @paginate(BoundedLimitOffsetPagination)
+    def advisees(self, request: HttpRequest):
+        return list_advisees(request.user.teacher)
