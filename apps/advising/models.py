@@ -96,6 +96,7 @@ class Advising(models.Model):
     )
     started_at = models.DateTimeField(auto_now_add=True)
     ended_at = models.DateTimeField(null=True, blank=True)
+    end_reason = models.TextField(blank=True, default="")
 
     class Meta:
         constraints = [
@@ -108,6 +109,11 @@ class Advising(models.Model):
                 condition=Q(status=AdvisingStatus.ENDED, ended_at__isnull=False)
                 | Q(status=AdvisingStatus.ACTIVE, ended_at__isnull=True),
                 name="advising_end_date_matches_status",
+            ),
+            models.CheckConstraint(
+                condition=Q(status=AdvisingStatus.ENDED) & ~Q(end_reason="")
+                | Q(status=AdvisingStatus.ACTIVE, end_reason=""),
+                name="advising_end_reason_matches_status",
             ),
         ]
 

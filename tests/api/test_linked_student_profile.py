@@ -56,7 +56,7 @@ def test_a_teacher_reads_the_profile_of_a_student_with_an_active_or_an_ended_adv
     graduated = make_student(course=course)
     ended = make_advising(student=graduated, teacher=teacher)
     Advising.objects.filter(pk=ended.pk).update(
-        status=AdvisingStatus.ENDED, ended_at=timezone.now()
+        status=AdvisingStatus.ENDED, ended_at=timezone.now(), end_reason="Encerrada no teste."
     )
 
     for student in (advised, graduated):

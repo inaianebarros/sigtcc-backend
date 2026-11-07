@@ -141,7 +141,7 @@ def test_after_the_advising_ends_the_request_stays_accepted_and_the_student_can_
     AdvisingRequest.objects.filter(pk=accepted.pk).update(status=AdvisingRequestStatus.ACCEPTED)
     ended = make_advising(student=student, teacher=teacher)
     Advising.objects.filter(pk=ended.pk).update(
-        status=AdvisingStatus.ENDED, ended_at=timezone.now()
+        status=AdvisingStatus.ENDED, ended_at=timezone.now(), end_reason="Encerrada no teste."
     )
 
     body = read_status(client, student.user).json()
@@ -242,7 +242,7 @@ def test_after_an_ended_advising_a_new_pending_request_blocks_again(client):
     student, teacher = make_student_and_teacher()
     ended = make_advising(student=student, teacher=teacher)
     Advising.objects.filter(pk=ended.pk).update(
-        status=AdvisingStatus.ENDED, ended_at=timezone.now()
+        status=AdvisingStatus.ENDED, ended_at=timezone.now(), end_reason="Encerrada no teste."
     )
     newer = make_advising_request(student=student, teacher=make_teacher(courses=[student.course]))
 
