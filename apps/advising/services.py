@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from django.db import IntegrityError, transaction
+from django.db.models import Count, Q
 from django.utils import timezone
 from ninja.errors import HttpError
 
@@ -226,3 +227,24 @@ def end_advising(teacher: Teacher, advising_id: int, reason: str) -> Advising:
         raise HttpError(404, "Orientação não encontrada.")
     close_advising(advising, reason)
     return advising
+
+
+def _activities_in(status: ActivityStatus) -> Count:
+    return Count(
+        "activities",
+        filter=Q(activities__status=status, activities__deleted_at__isnull=True),
+    )
+
+
+def list_advisees(teacher: Teacher):
+    return (
+        Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE)
+        .select_related("student__user", "student__course", "student__thesis_topic")
+        .annotate(
+            pending_count=_activities_in(ActivityStatus.PENDING),
+            in_progress_count=_activities_in(ActivityStatus.IN_PROGRESS),
+            in_review_count=_activities_in(ActivityStatus.IN_REVIEW),
+            completed_count=_activities_in(ActivityStatus.COMPLETED),
+        )
+        .order_by("-started_at", "-id")
+    )

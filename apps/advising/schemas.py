@@ -1,10 +1,11 @@
 from datetime import datetime
 from typing import Annotated
 
+from django.core.exceptions import ObjectDoesNotExist
 from ninja import Field, Schema
 from pydantic import StringConstraints
 
-from apps.accounts.models import Teacher
+from apps.accounts.models import Student, Teacher
 from apps.accounts.schemas import AreaOfInterestOut
 
 from .deadlines import answer_deadline_of
@@ -157,3 +158,56 @@ class RequestStatusOut(Schema):
     advising: AdvisingWithTeacherOut | None
     can_request: bool
     blocked_reason: BlockedReason | None
+
+
+class AdviseeStudentOut(Schema):
+    id: int
+    full_name: str
+    course: CourseSummaryOut
+
+    @staticmethod
+    def resolve_id(obj: Student) -> int:
+        return obj.user_id
+
+    @staticmethod
+    def resolve_full_name(obj: Student) -> str:
+        return obj.user.full_name
+
+    @staticmethod
+    def resolve_course(obj: Student) -> CourseSummaryOut:
+        return CourseSummaryOut(id=obj.course_id, name=obj.course.name)
+
+
+class ActivityCountsOut(Schema):
+    pending: int
+    in_progress: int
+    in_review: int
+    completed: int
+
+
+class AdviseeOut(Schema):
+    advising_id: int
+    student: AdviseeStudentOut
+    started_at: datetime
+    thesis_topic: str | None
+    activities: ActivityCountsOut
+
+    @staticmethod
+    def resolve_advising_id(obj: Advising) -> int:
+        return obj.id
+
+    @staticmethod
+    def resolve_thesis_topic(obj: Advising) -> str | None:
+        try:
+            return obj.student.thesis_topic.description
+        except ObjectDoesNotExist:
+            return None
+
+    @staticmethod
+    def resolve_activities(obj: Advising) -> ActivityCountsOut:
+        return ActivityCountsOut(
+            pending=obj.pending_count,
+            in_progress=obj.in_progress_count,
+            in_review=obj.in_review_count,
+            completed=obj.completed_count,
+        )
