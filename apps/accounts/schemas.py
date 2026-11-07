@@ -190,6 +190,11 @@ class SessionUserOut(Schema):
     type: str
 
 
+class SessionUserDetailOut(SessionUserOut):
+    has_active_advising: bool | None = None
+    active_advisees_count: int | None = None
+
+
 class LoginOut(Schema):
     access_token: str
     user: SessionUserOut

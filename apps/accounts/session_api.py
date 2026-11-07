@@ -4,12 +4,13 @@ from ninja.responses import Status
 from ninja_extra import api_controller, http_get, http_post
 from ninja_jwt.authentication import JWTAuth
 
+from apps.advising.session_state import advising_state_of
 from config.rate_limit import enforce_ip_limit
 from config.schemas import ErrorOut
 
 from .failure_limit import clear_failures, ensure_not_blocked, normalize_email, record_failure
 from .models import User
-from .schemas import AccessTokenOut, LoginIn, LoginOut, SessionUserOut
+from .schemas import AccessTokenOut, LoginIn, LoginOut, SessionUserDetailOut, SessionUserOut
 from .sessions import (
     InvalidCredentialsError,
     authenticate_credentials,
@@ -47,9 +48,27 @@ class SessionController:
         access_token = start_session(user, response)
         return Status(200, LoginOut(access_token=access_token, user=_user_out(user)))
 
-    @http_get("/me", response=SessionUserOut, auth=JWTAuth(), summary="Usuário da sessão")
+    @http_get(
+        "/me",
+        response=SessionUserDetailOut,
+        auth=JWTAuth(),
+        exclude_none=True,
+        summary="Usuário da sessão",
+        description=(
+            "O Aluno recebe has_active_advising e o Professor recebe active_advisees_count "
+            "(RN29); o administrador não recebe nenhum dos dois. Esta é a única fonte desses campos: "
+            "o login e a renovação da sessão não os trazem."
+        ),
+    )
     def me(self, request: HttpRequest):
-        return _user_out(request.user)
+        user = request.user
+        return SessionUserDetailOut(
+            id=user.id,
+            full_name=user.full_name,
+            email=user.email,
+            type=user.type,
+            **advising_state_of(user),
+        )
 
     @http_post(
         "/refresh",
