@@ -1,0 +1,28 @@
+from django.contrib.postgres.lookups import Unaccent
+from django.db.models import Count, Prefetch, Q
+from django.db.models.functions import Lower
+
+from apps.accounts.models import AreaOfInterest, Student, Teacher
+
+
+def search_advisors(student: Student, name: str | None = None):
+    student_areas = list(student.areas_of_interest.values_list("id", flat=True))
+    common_areas = AreaOfInterest.objects.filter(id__in=student_areas).order_by("name")
+    teachers = Teacher.objects.filter(courses=student.course_id, user__is_active=True)
+    name = (name or "").strip()
+    if "\x00" in name:
+        teachers = teachers.none()
+    elif name:
+        teachers = teachers.filter(user__full_name__unaccent__icontains=name)
+    return (
+        teachers.select_related("user")
+        .prefetch_related(
+            Prefetch("areas_of_interest", queryset=common_areas, to_attr="common_areas")
+        )
+        .annotate(
+            compatibility=Count(
+                "areas_of_interest", filter=Q(areas_of_interest__in=student_areas), distinct=True
+            )
+        )
+        .order_by("-compatibility", Lower(Unaccent("user__full_name")), "user_id")
+    )

@@ -5,7 +5,7 @@ API do SIGTCC (Sistema de Gestão de Trabalhos de Conclusão de Curso da UFOPA),
 ## Requisitos
 
 - [uv](https://docs.astral.sh/uv/) (gerencia o Python 3.13 e as dependências)
-- Docker com Compose v2 (ambiente completo em contêineres) ou um PostgreSQL acessível via `DATABASE_URL`
+- Docker com Compose v2 (ambiente completo em contêineres) ou um PostgreSQL acessível via `DATABASE_URL` (o usuário precisa poder criar a extensão `unaccent`, usada na busca sem acentos)
 
 ## Ambiente completo com Docker (recomendado)
 
