@@ -7,6 +7,7 @@ from ninja.errors import HttpError
 
 from apps.accounts.models import Student, Teacher
 from apps.activities.models import Activity, ActivityStatus
+from apps.meetings.models import Meeting, MeetingStatus
 from apps.notifications.models import (
     ADVISING_REQUEST_REFERENCE,
     Notification,
@@ -26,6 +27,7 @@ from .models import (
 )
 
 ARCHIVED_ON_END = (ActivityStatus.PENDING, ActivityStatus.IN_PROGRESS, ActivityStatus.IN_REVIEW)
+CANCELLED_ON_END = (MeetingStatus.PENDING, MeetingStatus.ACCEPTED)
 ALREADY_ENDED_MESSAGE = "Esta orientação já foi encerrada."
 ACTIVE_ADVISING_MESSAGE = "Você já tem um orientador ativo."
 PENDING_REQUEST_MESSAGE = "Você já tem uma solicitação pendente."
@@ -196,18 +198,27 @@ def student_request_status(student: Student) -> StudentRequestStatus:
     return StudentRequestStatus(latest_request, active_advising, blocked_reason)
 
 
+def close_advising(advising: Advising, reason: str) -> None:
+    """Ends a locked advising and everything that depends on it (RN07, RN34)."""
+    if advising.status == AdvisingStatus.ENDED:
+        raise ConflictError(ALREADY_ENDED_MESSAGE)
+    now = timezone.now()
+    Activity.objects.filter(
+        advising=advising, deleted_at__isnull=True, status__in=ARCHIVED_ON_END
+    ).update(status=ActivityStatus.ARCHIVED)
+    Meeting.objects.filter(
+        advising=advising, status__in=CANCELLED_ON_END, scheduled_at__gt=now
+    ).update(status=MeetingStatus.CANCELLED)
+    advising.status = AdvisingStatus.ENDED
+    advising.ended_at = now
+    advising.end_reason = reason
+    advising.save(update_fields=["status", "ended_at", "end_reason"])
+
+
 @transaction.atomic
 def end_advising(teacher: Teacher, advising_id: int, reason: str) -> Advising:
     advising = Advising.objects.select_for_update().filter(pk=advising_id, teacher=teacher).first()
     if advising is None:
         raise HttpError(404, "Orientação não encontrada.")
-    if advising.status == AdvisingStatus.ENDED:
-        raise ConflictError(ALREADY_ENDED_MESSAGE)
-    Activity.objects.filter(
-        advising=advising, deleted_at__isnull=True, status__in=ARCHIVED_ON_END
-    ).update(status=ActivityStatus.ARCHIVED)
-    advising.status = AdvisingStatus.ENDED
-    advising.ended_at = timezone.now()
-    advising.end_reason = reason
-    advising.save(update_fields=["status", "ended_at", "end_reason"])
+    close_advising(advising, reason)
     return advising

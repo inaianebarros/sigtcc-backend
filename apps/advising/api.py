@@ -92,8 +92,9 @@ class AdvisingRequestController:
         description=(
             "Irreversível (RN30). Exige o motivo, de 10 a 500 caracteres sem contar os espaços "
             "nas pontas (RN33). Na mesma transação, arquiva as atividades pendentes, em andamento "
-            "e em revisão que não foram excluídas (RN07, ADR 0004) e libera o Aluno para solicitar "
-            "de novo. Quem não é o orientador recebe 404; orientação já encerrada recebe 409."
+            "e em revisão que não foram excluídas (RN07, ADR 0004), cancela as reuniões pendentes "
+            "ou aceitas ainda não realizadas (RN34) e libera o Aluno para solicitar de novo. "
+            "Quem não é o orientador recebe 404; orientação já encerrada recebe 409."
         ),
     )
     def end(self, request: HttpRequest, advising_id: int, payload: EndAdvisingIn):

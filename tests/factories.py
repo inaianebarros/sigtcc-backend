@@ -2,6 +2,7 @@ import datetime
 from itertools import count
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from apps.accounts.models import (
     AreaOfInterest,
@@ -13,6 +14,7 @@ from apps.accounts.models import (
 )
 from apps.activities.models import Activity
 from apps.advising.models import Advising, AdvisingRequest
+from apps.meetings.models import Meeting, MeetingStatus
 
 DEFAULT_PASSWORD = "senha-longa-123"
 _sequence = count(1)
@@ -85,4 +87,16 @@ def make_activity(advising=None):
         title="Revisão bibliográfica",
         description="Entregar o capítulo 2",
         deadline=datetime.date(2026, 11, 20),
+    )
+
+
+def make_meeting(advising=None, status=MeetingStatus.PENDING, scheduled_at=None, author=None):
+    advising = advising or make_advising()
+    return Meeting.objects.create(
+        advising=advising,
+        author=author or advising.teacher.user,
+        scheduled_at=scheduled_at or timezone.now() + datetime.timedelta(days=3),
+        description="Reunião de orientação",
+        status=status,
+        rejection_reason="Sem horário." if status == MeetingStatus.REJECTED else "",
     )

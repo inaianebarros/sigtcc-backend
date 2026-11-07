@@ -1,3 +1,4 @@
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
@@ -7,12 +8,16 @@ from django.utils import timezone
 from apps.accounts.models import UserType
 from apps.activities.models import Activity, ActivityStatus
 from apps.advising.models import Advising, AdvisingStatus
+from apps.advising.services import close_advising
 from apps.advising.services import end_advising as end_advising_service
+from apps.meetings.models import Meeting, MeetingStatus
+from config.errors import ConflictError
 from tests.api.helpers import bearer, post_json
 from tests.factories import (
     make_activity,
     make_advising,
     make_course,
+    make_meeting,
     make_student,
     make_teacher,
     make_user,
@@ -263,3 +268,98 @@ def test_the_openapi_documents_the_endpoint_the_body_and_the_errors(client):
     }
     reason = schema["components"]["schemas"]["EndAdvisingIn"]["properties"]["reason"]
     assert (reason["minLength"], reason["maxLength"]) == (10, 500)
+
+
+def meeting_with(advising, status, days):
+    return make_meeting(
+        advising=advising, status=status, scheduled_at=timezone.now() + timedelta(days=days)
+    )
+
+
+def meeting_status(meeting):
+    return Meeting.objects.get(pk=meeting.pk).status
+
+
+def test_the_pending_and_accepted_future_meetings_are_cancelled_and_the_rest_stays(client):
+    teacher = teacher_with_course()
+    advising = advising_of(teacher)
+    pending = meeting_with(advising, MeetingStatus.PENDING, days=2)
+    accepted = meeting_with(advising, MeetingStatus.ACCEPTED, days=5)
+    held_pending = meeting_with(advising, MeetingStatus.PENDING, days=-2)
+    held_accepted = meeting_with(advising, MeetingStatus.ACCEPTED, days=-1)
+    rejected = meeting_with(advising, MeetingStatus.REJECTED, days=4)
+    cancelled = meeting_with(advising, MeetingStatus.CANCELLED, days=4)
+    other_advising = advising_of(teacher)
+    others = meeting_with(other_advising, MeetingStatus.ACCEPTED, days=3)
+
+    response = end_advising(client, teacher.user, advising.id)
+
+    assert response.status_code == 200
+    assert meeting_status(pending) == MeetingStatus.CANCELLED
+    assert meeting_status(accepted) == MeetingStatus.CANCELLED
+    assert meeting_status(held_pending) == MeetingStatus.PENDING
+    assert meeting_status(held_accepted) == MeetingStatus.ACCEPTED
+    assert meeting_status(rejected) == MeetingStatus.REJECTED
+    assert meeting_status(cancelled) == MeetingStatus.CANCELLED
+    assert meeting_status(others) == MeetingStatus.ACCEPTED
+
+
+def test_a_failure_while_ending_also_keeps_the_meetings(client):
+    teacher = teacher_with_course()
+    advising = advising_of(teacher)
+    meeting = meeting_with(advising, MeetingStatus.ACCEPTED, days=3)
+
+    with (
+        patch.object(Advising, "save", side_effect=RuntimeError("falha ao gravar")),
+        pytest.raises(RuntimeError),
+    ):
+        end_advising_service(teacher, advising.id, REASON)
+
+    assert meeting_status(meeting) == MeetingStatus.ACCEPTED
+
+
+def test_an_advising_without_meetings_ends_normally(client):
+    teacher = teacher_with_course()
+    advising = advising_of(teacher)
+
+    assert end_advising(client, teacher.user, advising.id).status_code == 200
+
+
+def test_the_cut_off_of_the_meetings_is_the_moment_of_the_end(client):
+    teacher = teacher_with_course()
+    advising = advising_of(teacher)
+    moment = timezone.now().replace(microsecond=0)
+    just_after = make_meeting(
+        advising=advising, scheduled_at=moment + timedelta(seconds=1), status=MeetingStatus.ACCEPTED
+    )
+    exactly_then = make_meeting(
+        advising=advising, scheduled_at=moment, status=MeetingStatus.ACCEPTED
+    )
+    just_before = make_meeting(
+        advising=advising, scheduled_at=moment - timedelta(seconds=1), status=MeetingStatus.ACCEPTED
+    )
+
+    with patch("apps.advising.services.timezone.now", return_value=moment):
+        response = end_advising(client, teacher.user, advising.id)
+
+    assert response.status_code == 200
+    advising.refresh_from_db()
+    assert advising.ended_at == moment
+    assert meeting_status(just_after) == MeetingStatus.CANCELLED
+    assert meeting_status(exactly_then) == MeetingStatus.ACCEPTED
+    assert meeting_status(just_before) == MeetingStatus.ACCEPTED
+
+
+def test_closing_an_advising_that_already_ended_is_refused_and_keeps_its_data():
+    teacher = teacher_with_course()
+    advising = advising_of(teacher)
+    close_advising(advising, "Primeiro motivo registrado.")
+    advising.refresh_from_db()
+    first_end = advising.ended_at
+
+    with pytest.raises(ConflictError):
+        close_advising(advising, "Segundo motivo qualquer.")
+
+    advising.refresh_from_db()
+    assert advising.ended_at == first_end
+    assert advising.end_reason == "Primeiro motivo registrado."
