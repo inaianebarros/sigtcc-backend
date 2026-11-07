@@ -5,7 +5,7 @@ from ninja_jwt.authentication import JWTAuth
 
 from apps.accounts.permissions import IsStudent, IsTeacher
 from config.pagination import BoundedLimitOffsetPagination
-from config.schemas import ErrorOut, Page
+from config.schemas import ErrorOut, FieldErrorsOut, Page
 
 from .models import AdvisingRequestStatus
 from .schemas import (
@@ -14,10 +14,13 @@ from .schemas import (
     AdvisingRequestIn,
     AdvisingRequestItemOut,
     AdvisingRequestOut,
+    EndAdvisingIn,
+    EndedAdvisingOut,
     RequestStatusOut,
 )
 from .services import (
     answer_request,
+    end_advising,
     list_received_requests,
     request_advising,
     student_request_status,
@@ -73,3 +76,26 @@ class AdvisingRequestController:
     )
     def my_request(self, request: HttpRequest):
         return student_request_status(request.user.student)
+
+    @http_post(
+        "/{int:advising_id}/encerrar",
+        response={
+            200: EndedAdvisingOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsTeacher],
+        summary="O Professor orientador encerra a orientação",
+        description=(
+            "Irreversível (RN30). Exige o motivo, de 10 a 500 caracteres sem contar os espaços "
+            "nas pontas (RN33). Na mesma transação, arquiva as atividades pendentes, em andamento "
+            "e em revisão que não foram excluídas (RN07, ADR 0004), cancela as reuniões pendentes "
+            "ou aceitas ainda não realizadas (RN34) e libera o Aluno para solicitar de novo. "
+            "Quem não é o orientador recebe 404; orientação já encerrada recebe 409."
+        ),
+    )
+    def end(self, request: HttpRequest, advising_id: int, payload: EndAdvisingIn):
+        return end_advising(request.user.teacher, advising_id, payload.reason)

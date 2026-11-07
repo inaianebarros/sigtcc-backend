@@ -12,6 +12,11 @@ class MeetingStatus(models.TextChoices):
     CANCELLED = "cancelled", "Cancelada"
 
 
+SYSTEM_CANCELLATION_REASON = (
+    "Esta reunião foi cancelada automaticamente pelo sistema porque a orientação foi encerrada."
+)
+
+
 class Meeting(models.Model):
     advising = models.ForeignKey(Advising, on_delete=models.PROTECT, related_name="meetings")
     author = models.ForeignKey(
@@ -23,11 +28,23 @@ class Meeting(models.Model):
         max_length=10, choices=MeetingStatus.choices, default=MeetingStatus.PENDING
     )
     rejection_reason = models.TextField(blank=True, default="")
+    cancellation_reason = models.TextField(blank=True, default="")
+    cancelled_by_system = models.BooleanField(default=False)
 
     class Meta:
         constraints = [
             models.CheckConstraint(
                 condition=~Q(status=MeetingStatus.REJECTED) | ~Q(rejection_reason=""),
                 name="meeting_rejection_requires_reason",
+            ),
+            models.CheckConstraint(
+                condition=~Q(cancelled_by_system=True)
+                | (Q(status=MeetingStatus.CANCELLED) & ~Q(cancellation_reason="")),
+                name="meeting_system_cancellation_requires_reason",
+            ),
+            models.CheckConstraint(
+                condition=Q(status=MeetingStatus.CANCELLED)
+                | Q(cancellation_reason="", cancelled_by_system=False),
+                name="meeting_cancellation_reason_only_when_cancelled",
             ),
         ]

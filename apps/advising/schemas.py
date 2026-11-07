@@ -1,12 +1,28 @@
 from datetime import datetime
+from typing import Annotated
 
-from ninja import Schema
+from ninja import Field, Schema
+from pydantic import StringConstraints
 
 from apps.accounts.models import Teacher
 from apps.accounts.schemas import AreaOfInterestOut
 
 from .deadlines import answer_deadline_of
 from .models import ANSWERED_STATUSES, Advising, AdvisingRequest, AnswerAction, BlockedReason
+
+END_REASON_MIN_LENGTH = 10
+END_REASON_MAX_LENGTH = 500
+
+EndReason = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=END_REASON_MIN_LENGTH, max_length=END_REASON_MAX_LENGTH
+    ),
+]
+
+
+class EndAdvisingIn(Schema):
+    reason: EndReason
 
 
 class AdvisingRequestIn(Schema):
@@ -99,6 +115,14 @@ class AdvisingRequestAnswerIn(Schema):
 class AdvisingOut(Schema):
     id: int
     started_at: datetime
+
+
+class EndedAdvisingOut(Schema):
+    id: int
+    status: str
+    started_at: datetime
+    ended_at: datetime
+    reason: str = Field(alias="end_reason")
 
 
 class AdvisingRequestAnswerOut(AdvisingRequestItemOut):

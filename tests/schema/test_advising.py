@@ -55,6 +55,7 @@ def test_student_may_start_a_new_advising_after_the_previous_one_ended():
     first = Advising.objects.create(student=student, teacher=make_teacher())
     first.status = AdvisingStatus.ENDED
     first.ended_at = timezone.now()
+    first.end_reason = "Concluída."
     first.save()
 
     Advising.objects.create(student=student, teacher=make_teacher())
@@ -66,9 +67,25 @@ def test_ended_advising_must_have_an_end_date_and_active_must_not():
     student, teacher = make_student(), make_teacher()
 
     with pytest.raises(IntegrityError), transaction.atomic():
-        Advising.objects.create(student=student, teacher=teacher, status=AdvisingStatus.ENDED)
+        Advising.objects.create(
+            student=student, teacher=teacher, status=AdvisingStatus.ENDED, end_reason="Concluída."
+        )
     with pytest.raises(IntegrityError), transaction.atomic():
         Advising.objects.create(student=student, teacher=teacher, ended_at=timezone.now())
+
+
+def test_an_ended_advising_needs_a_reason_and_an_active_one_must_not_have_it():
+    student, teacher = make_student(), make_teacher()
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Advising.objects.create(
+            student=student,
+            teacher=teacher,
+            status=AdvisingStatus.ENDED,
+            ended_at=timezone.now(),
+        )
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Advising.objects.create(student=student, teacher=teacher, end_reason="Sem estar encerrada.")
 
 
 def test_a_request_originates_at_most_one_advising():
@@ -82,6 +99,7 @@ def test_a_request_originates_at_most_one_advising():
         request=request,
         status=AdvisingStatus.ENDED,
         ended_at=timezone.now(),
+        end_reason="Concluída.",
     )
 
     with pytest.raises(IntegrityError), transaction.atomic():

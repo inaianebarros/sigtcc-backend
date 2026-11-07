@@ -233,7 +233,7 @@ def test_a_student_whose_advising_ended_can_request_again(client):
     student, teacher = make_pair()
     ended = make_advising(student=student, teacher=make_teacher(courses=[student.course]))
     Advising.objects.filter(pk=ended.pk).update(
-        status=AdvisingStatus.ENDED, ended_at=timezone.now()
+        status=AdvisingStatus.ENDED, ended_at=timezone.now(), end_reason="Encerrada no teste."
     )
 
     response = post_request(client, student.user, teacher.user_id)
