@@ -6,6 +6,7 @@ from apps.accounts.password_change_api import PasswordChangeController
 from apps.accounts.password_reset_api import PasswordResetController
 from apps.accounts.profile_api import StudentProfileController, TeacherProfileController
 from apps.accounts.session_api import SessionController
+from apps.activities.api import ActivityController
 from apps.advising.advisor_api import AdvisorProfileController, AdvisorSearchController
 from apps.advising.api import AdvisingRequestController
 from apps.advising.linked_student_api import LinkedStudentProfileController
@@ -68,4 +69,5 @@ api.register_controllers(
     LinkedStudentProfileController,
     StudentThesisTopicController,
     AdvisorThesisTopicController,
+    ActivityController,
 )
