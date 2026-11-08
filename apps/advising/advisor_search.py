@@ -4,6 +4,8 @@ from django.db.models.functions import Lower
 
 from apps.accounts.models import AreaOfInterest, Student, Teacher
 
+from .name_search import filter_by_name
+
 
 def search_advisors(student: Student, name: str | None = None, *, only_available: bool):
     student_areas = list(student.areas_of_interest.values_list("id", flat=True))
@@ -11,11 +13,7 @@ def search_advisors(student: Student, name: str | None = None, *, only_available
     teachers = Teacher.objects.filter(courses=student.course_id, user__is_active=True)
     if only_available:
         teachers = teachers.filter(is_available=True)
-    name = (name or "").strip()
-    if "\x00" in name:
-        teachers = teachers.none()
-    elif name:
-        teachers = teachers.filter(user__full_name__unaccent__icontains=name)
+    teachers = filter_by_name(teachers, "user__full_name", name)
     return (
         teachers.select_related("user")
         .prefetch_related(

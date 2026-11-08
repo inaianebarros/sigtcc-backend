@@ -62,15 +62,14 @@ def create_meeting(
     The advising row is locked by the same query that checks it is active, so an advising that
     ends meanwhile gets the same answer as having none (409 for the Student, 404 for the Teacher,
     who must not learn about a Student that is not theirs) and nothing is created (ADR 0004).
-    The author is whoever created it: the answer, the edit and the cancellation (RN09, RN10)
-    know who is who.
     """
-    if author.type == UserType.STUDENT and student_id is not None:
+    is_student = author.type == UserType.STUDENT
+    if is_student and student_id is not None:
         raise FieldValidationError({"student_id": STUDENT_ID_NOT_ALLOWED_MESSAGE})
-    if author.type == UserType.TEACHER and student_id is None:
+    if not is_student and student_id is None:
         raise FieldValidationError({"student_id": STUDENT_ID_REQUIRED_MESSAGE})
     scheduled_at = to_scheduled_at(day, at)
-    if student_id is None:
+    if is_student:
         advising = _lock_active_advising_of_student(author.student)
     else:
         advising = _lock_active_advising_with_student(author.teacher, student_id)
