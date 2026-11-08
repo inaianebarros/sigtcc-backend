@@ -55,11 +55,10 @@ class ActivityOut(Schema):
     created_at: datetime
 
 
-class ListedStatus(StrEnum):
-    PENDING = ActivityStatus.PENDING
-    IN_PROGRESS = ActivityStatus.IN_PROGRESS
-    IN_REVIEW = ActivityStatus.IN_REVIEW
-    COMPLETED = ActivityStatus.COMPLETED
+ListedStatus = StrEnum(
+    "ListedStatus",
+    {status.name: status.value for status in ActivityStatus if status != ActivityStatus.ARCHIVED},
+)
 
 
 class ActivityStudentOut(Schema):
@@ -166,16 +165,14 @@ class ActivityController:
         ),
     )
     @paginate(BoundedLimitOffsetPagination)
-    def list(
+    def list_my_activities(
         self,
         request: HttpRequest,
         status: ListedStatus | None = None,
         overdue: bool | None = None,
         student_id: int | None = None,
     ):
-        return list_activities(
-            request.user, ActivityStatus(status) if status else None, overdue, student_id
-        )
+        return list_activities(request.user, status, overdue, student_id)
 
     @http_get(
         "/{int:activity_id}",
@@ -189,5 +186,5 @@ class ActivityController:
             "orientação encerrada ou inexistente responde o mesmo 404."
         ),
     )
-    def detail(self, request: HttpRequest, activity_id: int):
+    def read_activity(self, request: HttpRequest, activity_id: int):
         return activity_detail(request.user, activity_id)

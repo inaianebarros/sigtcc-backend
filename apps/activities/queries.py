@@ -26,7 +26,7 @@ def visible_activities(user: User) -> QuerySet[Activity]:
 
 def list_activities(
     user: User,
-    status: ActivityStatus | None,
+    status: str | None,
     overdue: bool | None,
     student_id: int | None,
     today: date | None = None,
