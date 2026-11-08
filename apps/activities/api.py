@@ -6,9 +6,9 @@ from django.http import HttpRequest
 from django.utils import timezone
 from ninja import Schema
 from ninja.responses import Status
-from ninja_extra import api_controller, http_get, http_post, paginate
+from ninja_extra import api_controller, http_delete, http_get, http_patch, http_post, paginate
 from ninja_jwt.authentication import JWTAuth
-from pydantic import StringConstraints, field_validator
+from pydantic import StringConstraints, field_validator, model_validator
 
 from apps.accounts.permissions import IsStudent, IsTeacher
 from config.pagination import BoundedLimitOffsetPagination
@@ -16,11 +16,10 @@ from config.schemas import ErrorOut, FieldErrorsOut, Page
 
 from .models import Activity, ActivityStatus, Review, Submission, SubmissionFile
 from .queries import activity_detail, list_activities
-from .services import create_activity
+from .services import PAST_DEADLINE_MESSAGE, create_activity, delete_activity, edit_activity
 
 TITLE_MAX_LENGTH = 200
 DESCRIPTION_MAX_LENGTH = 2000
-PAST_DEADLINE_MESSAGE = "O prazo não pode ser anterior a hoje."
 
 ActivityTitle = Annotated[
     str,
@@ -44,6 +43,21 @@ class ActivityIn(Schema):
         if value < timezone.localdate():
             raise ValueError(PAST_DEADLINE_MESSAGE)
         return value
+
+
+class ActivityPatchIn(Schema):
+    title: ActivityTitle | None = None
+    description: ActivityDescription | None = None
+    deadline: date | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_field_and_no_nulls(self):
+        if not self.model_fields_set & {"title", "description", "deadline"}:
+            raise ValueError("Informe ao menos um campo: title, description ou deadline.")
+        for field in self.model_fields_set:
+            if getattr(self, field) is None:
+                raise ValueError(f"O campo {field} não pode ser nulo.")
+        return self
 
 
 class ActivityOut(Schema):
@@ -188,3 +202,49 @@ class ActivityController:
     )
     def read_activity(self, request: HttpRequest, activity_id: int):
         return activity_detail(request.user, activity_id)
+
+    @http_patch(
+        "/{int:activity_id}",
+        response={
+            200: ActivityOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsTeacher],
+        summary="O Professor orientador edita uma atividade",
+        description=(
+            "Edição parcial de title, description e deadline, com ao menos um campo e os mesmos "
+            "limites da criação. Só um prazo que mudou precisa ser de hoje em diante, então o "
+            "título de uma atividade atrasada pode ser corrigido. Concluída responde 409 (RN15). "
+            "Outro Professor, atividade excluída, inexistente ou de orientação encerrada "
+            "respondem o mesmo 404 (RN14)."
+        ),
+    )
+    def edit(self, request: HttpRequest, activity_id: int, payload: ActivityPatchIn):
+        result = edit_activity(
+            request.user.teacher,
+            activity_id,
+            title=payload.title,
+            description=payload.description,
+            deadline=payload.deadline,
+        )
+        return result.activity
+
+    @http_delete(
+        "/{int:activity_id}",
+        response={204: None, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 409: ErrorOut},
+        permissions=[IsTeacher],
+        summary="O Professor orientador exclui uma atividade",
+        description=(
+            "Exclusão lógica: a atividade some da lista e do detalhe, e as entregas, revisões e "
+            "comentários são preservados. Não há como desfazer. Concluída responde 409 (RN15). "
+            "Outro Professor, atividade já excluída, inexistente ou de orientação encerrada "
+            "respondem o mesmo 404 (RN14)."
+        ),
+    )
+    def remove(self, request: HttpRequest, activity_id: int):
+        delete_activity(request.user.teacher, activity_id)
+        return Status(204, None)
