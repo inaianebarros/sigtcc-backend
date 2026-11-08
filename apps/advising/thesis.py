@@ -4,10 +4,10 @@ from ninja.errors import HttpError
 from apps.accounts.models import Student, Teacher
 from config.errors import ConflictError
 
+from .linked_student_profile import STUDENT_NOT_FOUND_MESSAGE
 from .models import Advising, AdvisingStatus, ThesisTopic
 
 NO_ACTIVE_ADVISING_MESSAGE = "O tema do TCC só pode ser registrado com uma orientação ativa."
-STUDENT_NOT_FOUND_MESSAGE = "Aluno não encontrado."
 
 
 def active_advising_of_student(student: Student) -> Advising | None:

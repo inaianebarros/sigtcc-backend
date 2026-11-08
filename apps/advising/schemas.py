@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Annotated
 
-from django.core.exceptions import ObjectDoesNotExist
 from ninja import Field, Schema
 from pydantic import StringConstraints
 
@@ -10,6 +9,7 @@ from apps.accounts.schemas import AreaOfInterestOut
 
 from .deadlines import answer_deadline_of
 from .models import ANSWERED_STATUSES, Advising, AdvisingRequest, AnswerAction, BlockedReason
+from .thesis import topic_of
 
 END_REASON_MIN_LENGTH = 10
 END_REASON_MAX_LENGTH = 500
@@ -198,10 +198,8 @@ class AdviseeOut(Schema):
 
     @staticmethod
     def resolve_thesis_topic(obj: Advising) -> str | None:
-        try:
-            return obj.thesis_topic.description
-        except ObjectDoesNotExist:
-            return None
+        topic = topic_of(obj)
+        return topic.description if topic else None
 
     @staticmethod
     def resolve_activities(obj: Advising) -> ActivityCountsOut:

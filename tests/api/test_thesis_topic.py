@@ -264,3 +264,9 @@ def test_the_openapi_documents_both_routes_and_their_errors(client):
     assert {"200", "201", "409", "422"} <= set(student["put"]["responses"])
     assert {"200", "201", "404", "422"} <= set(advisor["put"]["responses"])
     assert "404" in advisor["get"]["responses"]
+
+
+def test_an_invalid_description_is_validated_before_the_advising_is_checked(client):
+    student = make_student()
+
+    assert put_topic(client, student.user, STUDENT_URL, "curto").status_code == 422

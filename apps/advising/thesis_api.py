@@ -58,7 +58,7 @@ class StudentThesisTopicController:
         summary="Tema do TCC da orientação ativa do Aluno",
         description=("Sem tema, ou sem orientação ativa, devolve description e updated_at nulos."),
     )
-    def read(self, request: HttpRequest):
+    def read_topic(self, request: HttpRequest):
         advising = active_advising_of_student(request.user.student)
         return ThesisTopicOut.from_topic(topic_of(advising))
 
@@ -79,7 +79,7 @@ class StudentThesisTopicController:
             "Sem orientação ativa, 409 (RN12)."
         ),
     )
-    def write(self, request: HttpRequest, payload: ThesisTopicIn):
+    def save_topic(self, request: HttpRequest, payload: ThesisTopicIn):
         advising = active_advising_of_student(request.user.student)
         return _written(*write_topic(advising, payload.description))
 
@@ -97,7 +97,7 @@ class AdvisorThesisTopicController:
             "Sem tema, devolve description e updated_at nulos."
         ),
     )
-    def read(self, request: HttpRequest, student_id: int):
+    def read_topic(self, request: HttpRequest, student_id: int):
         advising = active_advising_between(request.user.teacher, student_id)
         return ThesisTopicOut.from_topic(topic_of(advising))
 
@@ -118,6 +118,6 @@ class AdvisorThesisTopicController:
             "Sem orientação ativa com o Professor, o mesmo 404 da leitura."
         ),
     )
-    def write(self, request: HttpRequest, student_id: int, payload: ThesisTopicIn):
+    def save_topic(self, request: HttpRequest, student_id: int, payload: ThesisTopicIn):
         advising = active_advising_between(request.user.teacher, student_id)
         return _written(*write_topic(advising, payload.description))

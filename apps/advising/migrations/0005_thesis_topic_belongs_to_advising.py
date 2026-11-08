@@ -38,7 +38,7 @@ class Migration(migrations.Migration):
                 to="advising.advising",
             ),
         ),
-        migrations.RunPython(attach_topics_to_advisings, migrations.RunPython.noop),
+        migrations.RunPython(attach_topics_to_advisings),
         migrations.RemoveField(model_name="thesistopic", name="student"),
         migrations.AlterField(
             model_name="thesistopic",
