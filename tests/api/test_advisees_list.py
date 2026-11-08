@@ -227,3 +227,144 @@ def test_the_openapi_documents_the_list(client):
     assert {"advising_id", "student", "started_at", "thesis_topic", "activities"} <= set(
         schema["components"]["schemas"]["AdviseeOut"]["properties"]
     )
+
+
+def advisee_named(teacher, course, name, started_days_ago=0):
+    student = make_student(course=course, full_name=name)
+    advising = make_advising(student=student, teacher=teacher)
+    Advising.objects.filter(pk=advising.pk).update(
+        started_at=timezone.now() - timedelta(days=started_days_ago)
+    )
+    return advising
+
+
+def names_of(response):
+    return [item["student"]["full_name"] for item in response.json()["items"]]
+
+
+def teacher_with_named_advisees(*names):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    for days, name in enumerate(names):
+        advisee_named(teacher, course, name, started_days_ago=days)
+    return teacher
+
+
+def test_the_search_filters_by_part_of_the_name_ignoring_case_and_accents(client):
+    teacher = teacher_with_named_advisees("José Álvares", "Maria Conceição", "Ana Souza")
+
+    assert names_of(list_advisees(client, teacher.user, search="jose")) == ["José Álvares"]
+    assert names_of(list_advisees(client, teacher.user, search="ALVARES")) == ["José Álvares"]
+    assert names_of(list_advisees(client, teacher.user, search="conceicao")) == ["Maria Conceição"]
+    assert names_of(list_advisees(client, teacher.user, search="é á")) == ["José Álvares"]
+    assert names_of(list_advisees(client, teacher.user, search="xyz")) == []
+    assert names_of(list_advisees(client, teacher.user, search="a")) == [
+        "José Álvares",
+        "Maria Conceição",
+        "Ana Souza",
+    ]
+
+
+def test_the_search_trims_the_ends_and_an_empty_search_means_no_filter(client):
+    teacher = teacher_with_named_advisees("José Álvares", "Ana Souza")
+
+    assert names_of(list_advisees(client, teacher.user, search="  jose  ")) == ["José Álvares"]
+    everyone = names_of(list_advisees(client, teacher.user))
+    assert names_of(list_advisees(client, teacher.user, search="")) == everyone
+    assert names_of(list_advisees(client, teacher.user, search="   ")) == everyone
+
+
+def test_the_search_only_matches_the_name_of_the_student(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advising = advisee_named(teacher, course, "Ana Souza")
+    ThesisTopic.objects.create(advising=advising, description="Gestão de Orquídeas")
+
+    assert names_of(list_advisees(client, teacher.user, search="orquideas")) == []
+    assert (
+        names_of(list_advisees(client, teacher.user, search=advising.student.registration_number))
+        == []
+    )
+    assert names_of(list_advisees(client, teacher.user, search=advising.student.user.email)) == []
+
+
+def test_the_search_ignores_percent_and_underscore_as_wildcards(client):
+    teacher = teacher_with_named_advisees("Ana Souza", "Joao_Silva")
+
+    assert names_of(list_advisees(client, teacher.user, search="%")) == []
+    assert names_of(list_advisees(client, teacher.user, search="o_s")) == ["Joao_Silva"]
+
+
+def test_the_search_keeps_the_order_the_pagination_and_the_total_that_reflects_the_filter(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    for number in range(25):
+        advisee_named(teacher, course, f"Maria {number:02d}", started_days_ago=number)
+    advisee_named(teacher, course, "Pedro Lima", started_days_ago=100)
+
+    first = list_advisees(client, teacher.user, search="maria", limit=10, offset=0)
+    last = list_advisees(client, teacher.user, search="maria", limit=10, offset=20)
+    other = list_advisees(client, teacher.user, search="pedro")
+
+    assert first.json()["count"] == 25
+    assert names_of(first) == [f"Maria {number:02d}" for number in range(10)]
+    assert names_of(last) == [f"Maria {number:02d}" for number in range(20, 25)]
+    assert other.json()["count"] == 1
+    assert list_advisees(client, teacher.user).json()["count"] == 26
+
+
+def test_the_search_stays_inside_the_scope_of_the_teacher(client):
+    course = make_course()
+    mine = make_teacher(courses=[course])
+    other = make_teacher(courses=[course])
+    advisee_named(other, course, "Maria dos Outros")
+    ended = advisee_named(mine, course, "Maria Antiga")
+    Advising.objects.filter(pk=ended.pk).update(
+        status=AdvisingStatus.ENDED, ended_at=timezone.now(), end_reason="Encerrada no teste."
+    )
+    advisee_named(mine, course, "Maria Atual")
+
+    assert names_of(list_advisees(client, mine.user, search="maria")) == ["Maria Atual"]
+
+
+def test_the_search_has_at_most_100_characters_and_a_null_byte_matches_nothing(client):
+    teacher = teacher_with_named_advisees("Ana Souza")
+
+    assert list_advisees(client, teacher.user, search="a" * 100).status_code == 200
+    assert list_advisees(client, teacher.user, search="a" * 101).status_code == 422
+    nul = list_advisees(client, teacher.user, search="Ana\x00")
+    assert nul.status_code == 200
+    assert nul.json() == {"items": [], "count": 0}
+
+
+def test_the_search_does_not_change_the_shape_of_the_items(client):
+    teacher = teacher_with_named_advisees("Ana Souza")
+
+    filtered = list_advisees(client, teacher.user, search="ana").json()["items"][0]
+    plain = list_advisees(client, teacher.user).json()["items"][0]
+
+    assert set(filtered) == set(plain)
+
+
+def test_the_number_of_queries_of_the_search_does_not_grow(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advisee_named(teacher, course, "Ana Souza")
+    headers = bearer(teacher.user)
+
+    def queries():
+        with CaptureQueriesContext(connection) as captured:
+            assert client.get(ADVISEES_URL, {"search": "ana"}, headers=headers).status_code == 200
+        return len(captured)
+
+    few = queries()
+    for number in range(8):
+        advisee_named(teacher, course, f"Ana {number}")
+
+    assert queries() == few
+
+
+def test_the_openapi_documents_the_search_parameter(client):
+    operation = client.get("/api/openapi.json").json()["paths"][ADVISEES_URL]["get"]
+
+    assert "search" in {parameter["name"] for parameter in operation["parameters"]}

@@ -236,10 +236,15 @@ def _activities_in(status: ActivityStatus) -> Count:
     )
 
 
-def list_advisees(teacher: Teacher):
+def list_advisees(teacher: Teacher, search: str | None = None):
+    advisings = Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE)
+    search = (search or "").strip()
+    if "\x00" in search:
+        advisings = advisings.none()
+    elif search:
+        advisings = advisings.filter(student__user__full_name__unaccent__icontains=search)
     return (
-        Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE)
-        .select_related("student__user", "student__course", "thesis_topic")
+        advisings.select_related("student__user", "student__course", "thesis_topic")
         .annotate(
             pending_count=_activities_in(ActivityStatus.PENDING),
             in_progress_count=_activities_in(ActivityStatus.IN_PROGRESS),
