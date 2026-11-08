@@ -1,0 +1,81 @@
+from datetime import date
+
+from django.db.models import Case, Count, F, Prefetch, Q, QuerySet, When
+from ninja.errors import HttpError
+
+from apps.accounts.models import User, UserType
+from apps.advising.models import AdvisingStatus
+
+from .lateness import overdue_condition, with_overdue
+from .models import Activity, ActivityStatus, Review, Submission, SubmissionFile
+
+ACTIVITY_NOT_FOUND_MESSAGE = "Atividade não encontrada."
+
+
+def visible_activities(user: User) -> QuerySet[Activity]:
+    """Activities the user may see: not deleted, not archived, in an active advising (RN07)."""
+    scope = (
+        {"advising__student": user.student}
+        if user.type == UserType.STUDENT
+        else {"advising__teacher": user.teacher}
+    )
+    return Activity.objects.filter(
+        advising__status=AdvisingStatus.ACTIVE, deleted_at__isnull=True, **scope
+    ).exclude(status=ActivityStatus.ARCHIVED)
+
+
+def list_activities(
+    user: User,
+    status: ActivityStatus | None,
+    overdue: bool | None,
+    student_id: int | None,
+    today: date | None = None,
+) -> QuerySet[Activity]:
+    activities = visible_activities(user)
+    if status is not None:
+        activities = activities.filter(status=status)
+    if overdue is not None:
+        condition = overdue_condition(today)
+        activities = activities.filter(condition) if overdue else activities.exclude(condition)
+    if student_id is not None:
+        activities = activities.filter(advising__student__user_id=student_id)
+    is_completed = Q(status=ActivityStatus.COMPLETED)
+    return (
+        with_overdue(activities, today)
+        .select_related("advising__student__user")
+        .annotate(
+            open_deadline=Case(When(~is_completed, then=F("deadline"))),
+            done_deadline=Case(When(is_completed, then=F("deadline"))),
+        )
+        .order_by(
+            F("open_deadline").asc(nulls_last=True),
+            F("done_deadline").desc(nulls_last=True),
+            "id",
+        )
+    )
+
+
+def activity_detail(user: User, activity_id: int, today: date | None = None) -> Activity:
+    activity = (
+        with_overdue(visible_activities(user).filter(pk=activity_id), today)
+        .select_related("advising__student__user")
+        .annotate(comments_count=Count("comments", distinct=True))
+        .prefetch_related(
+            Prefetch(
+                "submissions",
+                queryset=Submission.objects.order_by("submitted_at", "id").prefetch_related(
+                    Prefetch("files", queryset=SubmissionFile.objects.order_by("id"))
+                ),
+                to_attr="ordered_submissions",
+            ),
+            Prefetch(
+                "reviews",
+                queryset=Review.objects.order_by("decided_at", "id"),
+                to_attr="ordered_reviews",
+            ),
+        )
+        .first()
+    )
+    if activity is None:
+        raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
+    return activity
