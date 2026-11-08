@@ -58,7 +58,7 @@ def list_activities(
 def activity_detail(user: User, activity_id: int, today: date | None = None) -> Activity:
     activity = (
         with_overdue(visible_activities(user).filter(pk=activity_id), today)
-        .select_related("advising__student__user")
+        .select_related("advising__student__user", "advising__teacher__user")
         .annotate(comments_count=Count("comments", distinct=True))
         .prefetch_related(
             Prefetch(

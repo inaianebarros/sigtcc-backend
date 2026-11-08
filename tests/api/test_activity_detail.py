@@ -83,6 +83,7 @@ def test_the_student_and_the_teacher_open_the_detail_of_an_activity(client):
             "status",
             "overdue",
             "student",
+            "teacher",
             "description",
             "created_at",
             "submissions",
@@ -95,6 +96,7 @@ def test_the_student_and_the_teacher_open_the_detail_of_an_activity(client):
         assert body["status"] == "in_review"
         assert body["overdue"] is False
         assert body["student"] == {"id": student.user_id, "full_name": student.user.full_name}
+        assert body["teacher"] == {"id": teacher.user_id, "full_name": teacher.user.full_name}
         assert body["comments_count"] == 2
         assert [s["id"] for s in body["submissions"]] == [submission.id]
         assert set(body["submissions"][0]) == {"id", "submitted_at", "files"}
@@ -141,6 +143,8 @@ def test_the_detail_exposes_no_personal_data_or_storage_address(client):
         for secret in (
             student.user.email,
             student.registration_number,
+            teacher.user.email,
+            teacher.registration_number,
             "storage_key",
             "activities/",
         ):
@@ -254,3 +258,21 @@ def test_the_openapi_documents_the_detail_and_its_errors(client):
     ]
 
     assert {"200", "401", "403", "404"} <= set(operation["responses"])
+
+
+def test_the_list_does_not_carry_the_teacher(client):
+    student, teacher, advising = advised_pair()
+    add_activity(advising)
+
+    for user in (student.user, teacher.user):
+        item = client.get("/api/atividades", headers=bearer(user)).json()["items"][0]
+
+        assert "teacher" not in item
+
+
+def test_the_openapi_documents_the_teacher_only_on_the_detail(client):
+    schemas = client.get("/api/openapi.json").json()["components"]["schemas"]
+
+    assert {"id", "full_name"} <= set(schemas["TeacherSummaryOut"]["properties"])
+    assert "teacher" in schemas["ActivityDetailOut"]["properties"]
+    assert "teacher" not in schemas["ActivityItemOut"]["properties"]
