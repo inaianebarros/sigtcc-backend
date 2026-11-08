@@ -11,6 +11,7 @@ from ninja_jwt.authentication import JWTAuth
 from pydantic import StringConstraints, field_validator, model_validator
 
 from apps.accounts.permissions import IsStudent, IsTeacher
+from apps.advising.schemas import TeacherSummaryOut
 from config.pagination import BoundedLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page
 
@@ -124,11 +125,16 @@ class ReviewOut(Schema):
 
 
 class ActivityDetailOut(ActivityItemOut):
+    teacher: TeacherSummaryOut
     description: str
     created_at: datetime
     submissions: list[SubmissionOut]
     reviews: list[ReviewOut]
     comments_count: int
+
+    @staticmethod
+    def resolve_teacher(obj: Activity) -> TeacherSummaryOut:
+        return TeacherSummaryOut.from_teacher(obj.advising.teacher)
 
     @staticmethod
     def resolve_submissions(obj: Activity) -> list[Submission]:
