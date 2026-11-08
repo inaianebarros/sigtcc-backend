@@ -16,7 +16,13 @@ from config.schemas import ErrorOut, FieldErrorsOut, Page
 
 from .models import Activity, ActivityStatus, Review, Submission, SubmissionFile
 from .queries import activity_detail, list_activities
-from .services import PAST_DEADLINE_MESSAGE, create_activity, delete_activity, edit_activity
+from .services import (
+    EDITABLE_FIELDS,
+    PAST_DEADLINE_MESSAGE,
+    create_activity,
+    delete_activity,
+    edit_activity,
+)
 
 TITLE_MAX_LENGTH = 200
 DESCRIPTION_MAX_LENGTH = 2000
@@ -52,7 +58,7 @@ class ActivityPatchIn(Schema):
 
     @model_validator(mode="after")
     def at_least_one_field_and_no_nulls(self):
-        if not self.model_fields_set & {"title", "description", "deadline"}:
+        if not self.model_fields_set & set(EDITABLE_FIELDS):
             raise ValueError("Informe ao menos um campo: title, description ou deadline.")
         for field in self.model_fields_set:
             if getattr(self, field) is None:

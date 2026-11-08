@@ -51,7 +51,7 @@ def create_activity(
     )
 
 
-def _lock_activity_of(teacher: Teacher, activity_id: int) -> Activity:
+def _lock_changeable_activity(teacher: Teacher, activity_id: int) -> Activity:
     """The activity of an advising the teacher advises now, with the advising row locked (RN14).
 
     The same query locks the advising and checks that it is active (ADR 0004). Another
@@ -89,7 +89,7 @@ def edit_activity(
     Only a deadline that changed must be today or later, so the title of a late activity can
     still be fixed. An edit that changes nothing writes nothing and reports no change.
     """
-    activity = _lock_activity_of(teacher, activity_id)
+    activity = _lock_changeable_activity(teacher, activity_id)
     given = {"title": title, "description": description, "deadline": deadline}
     changes = {
         field: FieldChange(old=getattr(activity, field), new=value)
@@ -108,7 +108,7 @@ def edit_activity(
 @transaction.atomic
 def delete_activity(teacher: Teacher, activity_id: int) -> Activity:
     """Soft delete (RF27): submissions, reviews and comments stay; there is no undo."""
-    activity = _lock_activity_of(teacher, activity_id)
+    activity = _lock_changeable_activity(teacher, activity_id)
     activity.deleted_at = timezone.now()
     activity.save(update_fields=["deleted_at"])
     return activity

@@ -105,3 +105,19 @@ def test_there_is_no_undo_and_deleting_twice_is_a_404(client):
 
     assert again.status_code == 404
     assert Activity.objects.get(pk=activity.pk).deleted_at == first_deleted_at
+
+
+def test_a_deleted_activity_leaves_the_counts_of_the_advisee_list(client):
+    _, teacher, advising = advised_pair()
+    gone = add_activity(advising)
+    add_activity(advising)
+    add_activity(advising, status=ActivityStatus.IN_PROGRESS)
+
+    def counts():
+        items = client.get("/api/orientacao/orientandos", headers=bearer(teacher.user)).json()
+        return items["items"][0]["activities"]
+
+    assert counts()["pending"] == 2
+    delete(client, teacher.user, gone.id)
+
+    assert counts() == {"pending": 1, "in_progress": 1, "in_review": 0, "completed": 0}

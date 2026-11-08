@@ -7,6 +7,9 @@ from django.contrib.auth import get_user_model
 from django.db import connection, transaction
 from ninja_jwt.tokens import RefreshToken
 
+from apps.advising.models import Advising
+from apps.advising.services import close_advising
+
 PASSWORD = "Senha-Segura-2026"
 
 LOGIN_URL = "/api/auth/login"
@@ -70,9 +73,6 @@ def send_while_the_advising_ends(advising, send_request):
     ends the advising and commits, so the request runs after the end (ADR 0004). Needs a test
     marked `django_db(transaction=True)`.
     """
-    from apps.advising.models import Advising
-    from apps.advising.services import close_advising
-
     holding_the_lock = threading.Event()
     failures = []
 

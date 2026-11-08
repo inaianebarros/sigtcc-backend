@@ -227,3 +227,11 @@ def test_an_advising_that_ends_while_the_activity_is_being_created_gets_the_404_
     assert response.status_code == 404
     assert Activity.objects.count() == 0
     assert Advising.objects.get(pk=advising.pk).status == AdvisingStatus.ENDED
+
+
+def test_an_invalid_body_is_validated_before_the_link_is_checked(client):
+    student, _, _ = advised_student()
+    other = make_teacher(courses=[student.course])
+    past = (timezone.localdate() - datetime.timedelta(days=1)).isoformat()
+
+    assert create_activity(client, other.user, payload(student, deadline=past)).status_code == 422
