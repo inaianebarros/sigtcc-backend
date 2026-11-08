@@ -11,6 +11,7 @@ from apps.advising.advisor_api import AdvisorProfileController, AdvisorSearchCon
 from apps.advising.api import AdvisingRequestController
 from apps.advising.linked_student_api import LinkedStudentProfileController
 from apps.advising.thesis_api import AdvisorThesisTopicController, StudentThesisTopicController
+from apps.meetings.api import MeetingController
 from config.errors import ConflictError, FieldValidationError, TooManyRequestsError
 
 api = NinjaExtraAPI(
@@ -70,4 +71,5 @@ api.register_controllers(
     StudentThesisTopicController,
     AdvisorThesisTopicController,
     ActivityController,
+    MeetingController,
 )
