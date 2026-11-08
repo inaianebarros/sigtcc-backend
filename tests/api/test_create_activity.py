@@ -1,16 +1,13 @@
 import datetime
-import threading
-import time
 
 import pytest
-from django.db import connection, transaction
+from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.activities.models import Activity
 from apps.advising.models import Advising, AdvisingStatus
-from apps.advising.services import close_advising
-from tests.api.helpers import bearer, post_json
+from tests.api.helpers import bearer, post_json, send_while_the_advising_ends
 from tests.factories import make_advising, make_course, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
@@ -217,49 +214,16 @@ def test_the_openapi_documents_the_route_and_its_errors(client):
     assert {"201", "401", "403", "404", "422"} <= set(operation["responses"])
 
 
-def wait_for_a_request_blocked_on_a_lock(timeout=10):
-    deadline = time.monotonic() + timeout
-    with connection.cursor() as cursor:
-        while time.monotonic() < deadline:
-            cursor.execute(
-                "SELECT 1 FROM pg_stat_activity "
-                "WHERE datname = current_database() AND wait_event_type = 'Lock'"
-            )
-            if cursor.fetchone():
-                return
-            time.sleep(0.02)
-    raise AssertionError("no request ever blocked on the advising lock")
-
-
 @pytest.mark.django_db(transaction=True)
 def test_an_advising_that_ends_while_the_activity_is_being_created_gets_the_404_and_no_activity(
     client,
 ):
     student, teacher, advising = advised_student()
-    holding_the_lock = threading.Event()
-    failures = []
 
-    def end_the_advising_while_holding_the_lock():
-        try:
-            with transaction.atomic():
-                locked = Advising.objects.select_for_update().get(pk=advising.pk)
-                holding_the_lock.set()
-                wait_for_a_request_blocked_on_a_lock()
-                close_advising(locked, "Encerrada durante a criação da atividade.")
-        except Exception as error:  # noqa: BLE001 - reported to the main thread
-            failures.append(error)
-            holding_the_lock.set()
-        finally:
-            connection.close()
+    response = send_while_the_advising_ends(
+        advising, lambda: create_activity(client, teacher.user, payload(student))
+    )
 
-    ending = threading.Thread(target=end_the_advising_while_holding_the_lock)
-    ending.start()
-    assert holding_the_lock.wait(timeout=10)
-
-    response = create_activity(client, teacher.user, payload(student))
-
-    ending.join(timeout=10)
-    assert failures == []
     assert response.status_code == 404
     assert Activity.objects.count() == 0
     assert Advising.objects.get(pk=advising.pk).status == AdvisingStatus.ENDED

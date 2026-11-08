@@ -1,9 +1,14 @@
+import threading
 import time
 from contextlib import contextmanager
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection, transaction
 from ninja_jwt.tokens import RefreshToken
+
+from apps.advising.models import Advising
+from apps.advising.services import close_advising
 
 PASSWORD = "Senha-Segura-2026"
 
@@ -45,3 +50,49 @@ def travel(seconds):
     real_time = time.time
     with patch("time.time", side_effect=lambda: real_time() + seconds):
         yield
+
+
+def wait_for_a_request_blocked_on_a_lock(timeout=10):
+    deadline = time.monotonic() + timeout
+    with connection.cursor() as cursor:
+        while time.monotonic() < deadline:
+            cursor.execute(
+                "SELECT 1 FROM pg_stat_activity "
+                "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+            )
+            if cursor.fetchone():
+                return
+            time.sleep(0.02)
+    raise AssertionError("no request ever blocked on the advising lock")
+
+
+def send_while_the_advising_ends(advising, send_request):
+    """Sends a request that must wait for the advising lock, then ends the advising.
+
+    A second transaction holds the lock; once a request is blocked on it, that transaction
+    ends the advising and commits, so the request runs after the end (ADR 0004). Needs a test
+    marked `django_db(transaction=True)`.
+    """
+    holding_the_lock = threading.Event()
+    failures = []
+
+    def end_the_advising_while_holding_the_lock():
+        try:
+            with transaction.atomic():
+                locked = Advising.objects.select_for_update().get(pk=advising.pk)
+                holding_the_lock.set()
+                wait_for_a_request_blocked_on_a_lock()
+                close_advising(locked, "Encerrada durante a ação.")
+        except Exception as error:  # noqa: BLE001 - reported to the main thread
+            failures.append(error)
+            holding_the_lock.set()
+        finally:
+            connection.close()
+
+    ending = threading.Thread(target=end_the_advising_while_holding_the_lock)
+    ending.start()
+    assert holding_the_lock.wait(timeout=10)
+    response = send_request()
+    ending.join(timeout=10)
+    assert failures == []
+    return response
