@@ -119,6 +119,6 @@ class Advising(models.Model):
 
 
 class ThesisTopic(models.Model):
-    student = models.OneToOneField(Student, on_delete=models.PROTECT, related_name="thesis_topic")
+    advising = models.OneToOneField(Advising, on_delete=models.PROTECT, related_name="thesis_topic")
     description = models.TextField()
     updated_at = models.DateTimeField(auto_now=True)

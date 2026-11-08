@@ -199,7 +199,7 @@ class AdviseeOut(Schema):
     @staticmethod
     def resolve_thesis_topic(obj: Advising) -> str | None:
         try:
-            return obj.student.thesis_topic.description
+            return obj.thesis_topic.description
         except ObjectDoesNotExist:
             return None
 

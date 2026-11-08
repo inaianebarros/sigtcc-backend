@@ -106,9 +106,9 @@ def test_a_request_originates_at_most_one_advising():
         Advising.objects.create(student=student, teacher=teacher, request=request)
 
 
-def test_student_has_at_most_one_thesis_topic():
-    student = make_student()
-    ThesisTopic.objects.create(student=student, description="Gestão de TCC")
+def test_advising_has_at_most_one_thesis_topic():
+    advising = Advising.objects.create(student=make_student(), teacher=make_teacher())
+    ThesisTopic.objects.create(advising=advising, description="Gestão de TCC")
 
     with pytest.raises(IntegrityError), transaction.atomic():
-        ThesisTopic.objects.create(student=student, description="Outro tema")
+        ThesisTopic.objects.create(advising=advising, description="Outro tema")

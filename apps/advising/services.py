@@ -239,7 +239,7 @@ def _activities_in(status: ActivityStatus) -> Count:
 def list_advisees(teacher: Teacher):
     return (
         Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE)
-        .select_related("student__user", "student__course", "student__thesis_topic")
+        .select_related("student__user", "student__course", "thesis_topic")
         .annotate(
             pending_count=_activities_in(ActivityStatus.PENDING),
             in_progress_count=_activities_in(ActivityStatus.IN_PROGRESS),

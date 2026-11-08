@@ -95,7 +95,7 @@ def test_the_thesis_topic_is_the_text_or_null_when_there_is_none(client):
     teacher = make_teacher(courses=[course])
     with_topic = advise(teacher, course, started_days_ago=1)
     without_topic = advise(teacher, course, started_days_ago=2)
-    ThesisTopic.objects.create(student=with_topic.student, description="Gestão de TCC com Django")
+    ThesisTopic.objects.create(advising=with_topic, description="Gestão de TCC com Django")
 
     items = {
         item["advising_id"]: item for item in list_advisees(client, teacher.user).json()["items"]
@@ -212,7 +212,7 @@ def test_the_number_of_queries_does_not_grow_with_the_number_of_advisees(client)
     for number in range(2, 12):
         advising = advise(teacher, course, started_days_ago=number)
         add_activities(advising, ActivityStatus.COMPLETED, 3)
-        ThesisTopic.objects.create(student=advising.student, description=f"Tema {number}")
+        ThesisTopic.objects.create(advising=advising, description=f"Tema {number}")
     many = count_queries(client, teacher.user)
 
     assert many == few
