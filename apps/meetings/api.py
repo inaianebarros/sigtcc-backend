@@ -8,14 +8,12 @@ from ninja_extra import api_controller, http_post
 from ninja_jwt.authentication import JWTAuth
 from pydantic import StringConstraints
 
-from apps.accounts.permissions import IsStudent
-from config.errors import FieldValidationError
+from apps.accounts.permissions import IsStudent, IsTeacher
 from config.schemas import ErrorOut, FieldErrorsOut
 
-from .services import request_meeting_as_student
+from .services import create_meeting
 
 DESCRIPTION_MAX_LENGTH = 500
-STUDENT_ID_NOT_ALLOWED_MESSAGE = "O aluno não informa o aluno da reunião."
 
 MeetingDescription = Annotated[
     str,
@@ -52,21 +50,23 @@ class MeetingController:
             201: MeetingOut,
             401: ErrorOut,
             403: ErrorOut,
+            404: ErrorOut,
             409: ErrorOut,
             422: FieldErrorsOut,
         },
-        permissions=[IsStudent],
-        summary="O Aluno solicita uma reunião ao seu orientador",
+        permissions=[IsStudent | IsTeacher],
+        summary="O Aluno ou o Professor solicita uma reunião",
         description=(
             "Data e hora no horário de Santarém, depois do momento atual, e uma descrição de 1 "
-            "a 500 caracteres. A reunião nasce pendente, com o Aluno como autor. Sem orientação "
-            "ativa, 409 (RN08, RN29). O Aluno não informa student_id."
+            "a 500 caracteres. A reunião nasce pendente, com quem a criou como autor. O Aluno "
+            "solicita ao seu orientador ativo e não informa student_id; sem orientação ativa, "
+            "409 (RN08, RN29). O Professor informa o student_id (o id do usuário do Aluno) de "
+            "um orientando ativo; qualquer outro Aluno, e a orientação encerrada durante a "
+            "ação, respondem o mesmo 404, sem revelar o Aluno."
         ),
     )
     def create(self, request: HttpRequest, payload: MeetingIn):
-        if payload.student_id is not None:
-            raise FieldValidationError({"student_id": STUDENT_ID_NOT_ALLOWED_MESSAGE})
-        meeting = request_meeting_as_student(
-            request.user.student, payload.date, payload.time, payload.description
+        meeting = create_meeting(
+            request.user, payload.date, payload.time, payload.description, payload.student_id
         )
         return Status(201, meeting)

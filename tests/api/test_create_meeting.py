@@ -244,12 +244,7 @@ def test_two_meetings_at_the_same_time_are_allowed(client):
     assert Meeting.objects.filter(advising=advising).count() == 2
 
 
-def test_a_teacher_cannot_use_the_route_yet_an_administrator_too_and_anonymous_is_unauthorized(
-    client,
-):
-    _, teacher, _ = advised_student()
-
-    assert create_meeting(client, teacher.user, payload()).status_code == 403
+def test_an_administrator_is_refused_and_anonymous_is_unauthorized(client):
     assert create_meeting(client, make_user(UserType.ADMIN), payload()).status_code == 403
     assert post_json(client, URL, payload()).status_code == 401
     assert Meeting.objects.count() == 0
@@ -291,3 +286,110 @@ def test_the_openapi_documents_the_route_and_its_errors(client):
     operation = client.get("/api/openapi.json").json()["paths"]["/api/reunioes"]["post"]
 
     assert {"201", "401", "403", "409", "422"} <= set(operation["responses"])
+
+
+def teacher_body(student, **overrides):
+    return payload(student_id=student.user_id, **overrides)
+
+
+def test_the_teacher_requests_a_meeting_with_an_active_advisee(client):
+    student, teacher, advising = advised_student()
+
+    response = create_meeting(
+        client, teacher.user, teacher_body(student, date="2099-12-31", time="14:30")
+    )
+
+    assert response.status_code == 201
+    result = response.json()
+    assert set(result) == {"id", "scheduled_at", "description", "status", "author"}
+    assert result["scheduled_at"] == "2099-12-31T14:30:00-03:00"
+    assert result["status"] == "pending"
+    assert result["author"] == {
+        "id": teacher.user_id,
+        "full_name": teacher.user.full_name,
+        "type": "teacher",
+    }
+    meeting = Meeting.objects.get(pk=result["id"])
+    assert meeting.advising == advising
+    assert meeting.author == teacher.user
+    assert meeting.status == MeetingStatus.PENDING
+
+
+def test_the_teacher_must_inform_the_student(client):
+    _, teacher, _ = advised_student()
+
+    response = create_meeting(client, teacher.user, payload())
+
+    assert response.status_code == 422
+    assert "student_id" in [error["loc"][-1] for error in response.json()["detail"]]
+    assert Meeting.objects.count() == 0
+
+
+def test_the_teacher_path_has_the_same_validation_of_the_date_the_time_and_the_description(client):
+    student, teacher, _ = advised_student()
+
+    for overrides in (
+        {"date": "2000-01-01"},
+        {"description": ""},
+        {"description": "x" * 501},
+        {"time": "25:00"},
+    ):
+        response = create_meeting(client, teacher.user, teacher_body(student, **overrides))
+        assert response.status_code == 422
+    assert Meeting.objects.count() == 0
+
+
+def test_the_same_404_for_a_student_who_is_not_an_active_advisee_of_the_teacher(client):
+    student, teacher, _ = advised_student()
+    stranger = make_teacher(courses=[student.course])
+    unlinked = make_student(course=student.course)
+    ended_student = make_student(course=student.course)
+    ended = make_advising(student=ended_student, teacher=teacher)
+    Advising.objects.filter(pk=ended.pk).update(
+        status=AdvisingStatus.ENDED, ended_at=timezone.now(), end_reason="Encerrada no teste."
+    )
+
+    responses = [
+        create_meeting(client, stranger.user, teacher_body(student)),
+        create_meeting(client, teacher.user, teacher_body(unlinked)),
+        create_meeting(client, teacher.user, teacher_body(ended_student)),
+        create_meeting(client, teacher.user, payload(student_id=999999)),
+        create_meeting(client, teacher.user, payload(student_id=teacher.user_id)),
+    ]
+
+    assert {response.status_code for response in responses} == {404}
+    assert len({response.content for response in responses}) == 1
+    assert Meeting.objects.count() == 0
+
+
+def test_an_invalid_body_is_validated_before_the_student_is_looked_up(client):
+    _, teacher, _ = advised_student()
+    stranger = make_student()
+
+    assert (
+        create_meeting(client, teacher.user, teacher_body(stranger, description="")).status_code
+        == 422
+    )
+    assert (
+        create_meeting(client, teacher.user, teacher_body(stranger, date="2000-01-01")).status_code
+        == 422
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_advising_that_ends_while_the_teacher_requests_gets_the_404_and_no_meeting(client):
+    student, teacher, advising = advised_student()
+
+    response = send_while_the_advising_ends(
+        advising, lambda: create_meeting(client, teacher.user, teacher_body(student))
+    )
+
+    assert response.status_code == 404
+    assert Meeting.objects.count() == 0
+    assert Advising.objects.get(pk=advising.pk).status == AdvisingStatus.ENDED
+
+
+def test_the_openapi_documents_the_404_of_the_teacher_path(client):
+    operation = client.get("/api/openapi.json").json()["paths"]["/api/reunioes"]["post"]
+
+    assert {"201", "401", "403", "404", "409", "422"} <= set(operation["responses"])

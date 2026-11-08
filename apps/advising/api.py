@@ -1,4 +1,7 @@
+from typing import Annotated
+
 from django.http import HttpRequest
+from ninja import Query
 from ninja.responses import Status
 from ninja_extra import api_controller, http_get, http_post, paginate
 from ninja_jwt.authentication import JWTAuth
@@ -110,9 +113,17 @@ class AdvisingRequestController:
         description=(
             "Só as orientações ativas do Professor, da que começou há menos tempo para a mais "
             "antiga. Cada item traz o Aluno e o curso, o início, o tema do TCC (ou nulo) e a "
-            "contagem das atividades por status, sem as excluídas. Não traz e-mail nem matrícula."
+            "contagem das atividades por status, sem as excluídas. Não traz e-mail nem matrícula. O "
+            "parâmetro search filtra só pelo nome do Aluno, sem diferenciar maiúsculas e acentos, "
+            "por texto contido; os espaços das pontas são removidos, vazio equivale a sem filtro "
+            "e o máximo é de 100 caracteres. A ordem e a paginação não mudam, e o total reflete "
+            "o filtro."
         ),
     )
     @paginate(BoundedLimitOffsetPagination)
-    def advisees(self, request: HttpRequest):
-        return list_advisees(request.user.teacher)
+    def advisees(
+        self,
+        request: HttpRequest,
+        search: Annotated[str | None, Query(max_length=100)] = None,
+    ):
+        return list_advisees(request.user.teacher, search)

@@ -41,9 +41,9 @@ def make_area():
     return AreaOfInterest.objects.create(name=f"Area {next(_sequence)}")
 
 
-def make_student(registration_number=None, course=None, areas=()):
+def make_student(registration_number=None, course=None, areas=(), full_name=None):
     student = Student.objects.create(
-        user=make_user(UserType.STUDENT),
+        user=make_user(UserType.STUDENT, full_name=full_name),
         course=course or make_course(),
         registration_number=registration_number or f"A{next(_sequence):06d}",
     )

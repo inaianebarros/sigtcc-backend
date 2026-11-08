@@ -26,6 +26,7 @@ from .models import (
     AnswerAction,
     BlockedReason,
 )
+from .name_search import filter_by_name
 
 ARCHIVED_ON_END = (ActivityStatus.PENDING, ActivityStatus.IN_PROGRESS, ActivityStatus.IN_REVIEW)
 CANCELLED_ON_END = (MeetingStatus.PENDING, MeetingStatus.ACCEPTED)
@@ -236,10 +237,14 @@ def _activities_in(status: ActivityStatus) -> Count:
     )
 
 
-def list_advisees(teacher: Teacher):
+def list_advisees(teacher: Teacher, search: str | None = None):
+    advisings = filter_by_name(
+        Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE),
+        "student__user__full_name",
+        search,
+    )
     return (
-        Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE)
-        .select_related("student__user", "student__course", "thesis_topic")
+        advisings.select_related("student__user", "student__course", "thesis_topic")
         .annotate(
             pending_count=_activities_in(ActivityStatus.PENDING),
             in_progress_count=_activities_in(ActivityStatus.IN_PROGRESS),
