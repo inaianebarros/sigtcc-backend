@@ -16,7 +16,10 @@ from tests.factories import make_advising, make_course, make_student, make_teach
 pytestmark = pytest.mark.django_db
 
 URL = "/api/atividades"
-TODAY_PLUS_A_WEEK = (timezone.localdate() + datetime.timedelta(days=7)).isoformat()
+
+
+def a_week_from_today():
+    return (timezone.localdate() + datetime.timedelta(days=7)).isoformat()
 
 
 def payload(student, **overrides):
@@ -24,7 +27,7 @@ def payload(student, **overrides):
         "student_id": student.user_id,
         "title": "Revisão bibliográfica",
         "description": "Entregar o capítulo 2 do TCC",
-        "deadline": TODAY_PLUS_A_WEEK,
+        "deadline": a_week_from_today(),
     }
     return {**body, **overrides}
 
@@ -50,7 +53,7 @@ def test_the_active_advisor_creates_a_pending_activity_for_the_advisee(client):
     assert set(body) == {"id", "title", "description", "deadline", "status", "created_at"}
     assert body["title"] == "Revisão bibliográfica"
     assert body["description"] == "Entregar o capítulo 2 do TCC"
-    assert body["deadline"] == TODAY_PLUS_A_WEEK
+    assert body["deadline"] == a_week_from_today()
     assert body["status"] == "pending"
     activity = Activity.objects.get(pk=body["id"])
     assert activity.advising == advising
@@ -214,6 +217,20 @@ def test_the_openapi_documents_the_route_and_its_errors(client):
     assert {"201", "401", "403", "404", "422"} <= set(operation["responses"])
 
 
+def wait_for_a_request_blocked_on_a_lock(timeout=10):
+    deadline = time.monotonic() + timeout
+    with connection.cursor() as cursor:
+        while time.monotonic() < deadline:
+            cursor.execute(
+                "SELECT 1 FROM pg_stat_activity "
+                "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+            )
+            if cursor.fetchone():
+                return
+            time.sleep(0.02)
+    raise AssertionError("no request ever blocked on the advising lock")
+
+
 @pytest.mark.django_db(transaction=True)
 def test_an_advising_that_ends_while_the_activity_is_being_created_gets_the_404_and_no_activity(
     client,
@@ -227,7 +244,7 @@ def test_an_advising_that_ends_while_the_activity_is_being_created_gets_the_404_
             with transaction.atomic():
                 locked = Advising.objects.select_for_update().get(pk=advising.pk)
                 holding_the_lock.set()
-                time.sleep(0.5)
+                wait_for_a_request_blocked_on_a_lock()
                 close_advising(locked, "Encerrada durante a criação da atividade.")
         except Exception as error:  # noqa: BLE001 - reported to the main thread
             failures.append(error)
@@ -246,3 +263,11 @@ def test_an_advising_that_ends_while_the_activity_is_being_created_gets_the_404_
     assert response.status_code == 404
     assert Activity.objects.count() == 0
     assert Advising.objects.get(pk=advising.pk).status == AdvisingStatus.ENDED
+
+
+def test_an_invalid_body_is_validated_before_the_link_is_checked(client):
+    student, _, _ = advised_student()
+    other = make_teacher(courses=[student.course])
+    past = (timezone.localdate() - datetime.timedelta(days=1)).isoformat()
+
+    assert create_activity(client, other.user, payload(student, deadline=past)).status_code == 422

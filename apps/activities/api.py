@@ -19,11 +19,11 @@ TITLE_MAX_LENGTH = 200
 DESCRIPTION_MAX_LENGTH = 2000
 PAST_DEADLINE_MESSAGE = "O prazo não pode ser anterior a hoje."
 
-Title = Annotated[
+ActivityTitle = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=TITLE_MAX_LENGTH),
 ]
-Description = Annotated[
+ActivityDescription = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=DESCRIPTION_MAX_LENGTH),
 ]
@@ -31,8 +31,8 @@ Description = Annotated[
 
 class ActivityIn(Schema):
     student_id: int
-    title: Title
-    description: Description
+    title: ActivityTitle
+    description: ActivityDescription
     deadline: date
 
     @field_validator("deadline")
