@@ -9,11 +9,13 @@ from ninja_jwt.authentication import JWTAuth
 from pydantic import StringConstraints
 
 from apps.accounts.permissions import IsStudent
+from config.errors import FieldValidationError
 from config.schemas import ErrorOut, FieldErrorsOut
 
 from .services import request_meeting_as_student
 
 DESCRIPTION_MAX_LENGTH = 500
+STUDENT_ID_NOT_ALLOWED_MESSAGE = "O aluno não informa o aluno da reunião."
 
 MeetingDescription = Annotated[
     str,
@@ -62,11 +64,9 @@ class MeetingController:
         ),
     )
     def create(self, request: HttpRequest, payload: MeetingIn):
+        if payload.student_id is not None:
+            raise FieldValidationError({"student_id": STUDENT_ID_NOT_ALLOWED_MESSAGE})
         meeting = request_meeting_as_student(
-            request.user.student,
-            payload.date,
-            payload.time,
-            payload.description,
-            payload.student_id,
+            request.user.student, payload.date, payload.time, payload.description
         )
         return Status(201, meeting)
