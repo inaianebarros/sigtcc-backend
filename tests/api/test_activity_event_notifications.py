@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 import pytest
-from django.core.files.storage import InMemoryStorage
+from django.core.files.storage import InMemoryStorage, storages
 from django.test import Client
 
 from apps.activities.models import (
@@ -61,6 +61,19 @@ def change_status(client, user, activity_id, status):
         content_type="application/json",
         headers=bearer(user),
     )
+
+
+def stored_keys():
+    storage = storages["submissions"]
+    try:
+        directories, _ = storage.listdir("entregas")
+    except FileNotFoundError:
+        return []
+    keys = []
+    for directory in directories:
+        _, names = storage.listdir(f"entregas/{directory}")
+        keys += [f"entregas/{directory}/{name}" for name in names]
+    return keys
 
 
 def with_a_submission(activity):
@@ -136,6 +149,16 @@ class TestDelivery:
         assert response.status_code == 500
         assert not Submission.objects.exists()
         assert not Notification.objects.exists()
+
+    def test_a_failing_notification_also_removes_the_files_already_stored(self, client):
+        student, _, advising = advised_pair()
+        activity = add_activity(advising)
+        quiet_client = Client(raise_request_exception=False)
+
+        with patch(CREATE_NOTIFICATION, side_effect=RuntimeError("boom")):
+            deliver(quiet_client, student.user, activity.id)
+
+        assert stored_keys() == []
 
 
 class TestComment:
