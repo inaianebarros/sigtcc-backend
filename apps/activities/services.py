@@ -15,7 +15,14 @@ from apps.notifications.services import notify
 from config.changes import FieldChange
 from config.errors import ConflictError, FieldValidationError
 
-from .models import Activity, ActivityStatus, Submission, SubmissionFile
+from .models import (
+    Activity,
+    ActivityStatus,
+    Review,
+    ReviewDecision,
+    Submission,
+    SubmissionFile,
+)
 from .queries import (
     ACTIVITY_NOT_FOUND_MESSAGE,
     FILE_NOT_FOUND_MESSAGE,
@@ -37,6 +44,10 @@ DELIVERY_REFUSED_MESSAGES = {
     ActivityStatus.IN_REVIEW: "Esta atividade está em revisão e não aceita novas entregas.",
     ActivityStatus.COMPLETED: "Esta atividade já foi concluída e não aceita novas entregas.",
 }
+NOT_IN_REVIEW_MESSAGE = "Só uma atividade em revisão pode ser revisada."
+JUSTIFICATION_REQUIRED_MESSAGE = "Informe a justificativa da recusa (de 1 a 500 caracteres)."
+NO_JUSTIFICATION_ON_ACCEPT_MESSAGE = "O aceite não tem justificativa."
+MAX_JUSTIFICATION_LENGTH = 500
 EDITABLE_FIELDS = ("title", "description", "deadline")
 
 logger = logging.getLogger(__name__)
@@ -288,4 +299,78 @@ def change_activity_status(student: Student, activity_id: int, status: ActivityS
         raise ConflictError(NO_SUBMISSION_MESSAGE)
     activity.status = status
     activity.save(update_fields=["status"])
+    return activity
+
+
+def _check_justification(decision: ReviewDecision, justification: str) -> None:
+    """A refusal needs a justification of 1 to 500 characters (RN40); an acceptance has none."""
+    if decision == ReviewDecision.ACCEPTED and justification:
+        raise FieldValidationError({"justification": NO_JUSTIFICATION_ON_ACCEPT_MESSAGE})
+    if (
+        decision == ReviewDecision.REJECTED
+        and not 1 <= len(justification) <= MAX_JUSTIFICATION_LENGTH
+    ):
+        raise FieldValidationError({"justification": JUSTIFICATION_REQUIRED_MESSAGE})
+
+
+def _lock_reviewable_activity(teacher: Teacher, activity_id: int) -> Activity:
+    """The activity of an advising the teacher advises now, in review, with both rows locked.
+
+    The same query locks the advising and checks that it is active (ADR 0004). Another teacher,
+    a deleted, archived or missing activity and an ended advising all answer the same 404. The
+    activity row is locked too, so of two simultaneous reviews the second sees the new status.
+    """
+    advising = (
+        Advising.objects.select_for_update(of=("self",))
+        .filter(
+            teacher=teacher,
+            status=AdvisingStatus.ACTIVE,
+            activities__pk=activity_id,
+            activities__deleted_at__isnull=True,
+        )
+        .first()
+    )
+    if advising is None:
+        raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
+    activity = (
+        Activity.objects.select_for_update(of=("self",))
+        .select_related("advising__student__user")
+        .get(pk=activity_id)
+    )
+    if activity.status == ActivityStatus.ARCHIVED:
+        raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
+    if activity.status != ActivityStatus.IN_REVIEW:
+        raise ConflictError(NOT_IN_REVIEW_MESSAGE)
+    return activity
+
+
+@transaction.atomic
+def review_activity(
+    teacher: Teacher, activity_id: int, decision: ReviewDecision, justification: str = ""
+) -> Activity:
+    """The active advisor accepts an activity in review (completed, final) or refuses it (back to
+    pending, deliveries kept) and the student is notified (RF46, RF48, RN15, RN21, RN40).
+
+    The decision, the status change and the notification share one transaction.
+    """
+    _check_justification(decision, justification)
+    activity = _lock_reviewable_activity(teacher, activity_id)
+    accepted = decision == ReviewDecision.ACCEPTED
+    Review.objects.create(activity=activity, decision=decision, justification=justification)
+    activity.status = ActivityStatus.COMPLETED if accepted else ActivityStatus.PENDING
+    activity.save(update_fields=["status"])
+    payload = {
+        "activity_title": activity.title,
+        "decision": decision.value,
+        "teacher_name": teacher.user.full_name,
+    }
+    if not accepted:
+        payload["justification"] = justification
+    notify(
+        activity.advising.student.user,
+        NotificationType.ACTIVITY_REVIEW_RESULT,
+        reference_type=ACTIVITY_REFERENCE,
+        reference_id=activity.id,
+        payload=payload,
+    )
     return activity

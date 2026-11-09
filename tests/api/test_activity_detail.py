@@ -67,7 +67,9 @@ def test_the_student_and_the_teacher_open_the_detail_of_an_activity(client):
     submission = add_submission(
         activity, [("a.pdf", 10, "application/pdf"), ("b.zip", 20, "application/zip")]
     )
-    review = Review.objects.create(activity=activity, decision=ReviewDecision.REJECTED)
+    review = Review.objects.create(
+        activity=activity, decision=ReviewDecision.REJECTED, justification="Refazer a introdução."
+    )
     Comment.objects.create(activity=activity, author=teacher.user, text="Revise a introdução.")
     Comment.objects.create(activity=activity, author=student.user, text="Feito.")
 
@@ -115,6 +117,7 @@ def test_the_student_and_the_teacher_open_the_detail_of_an_activity(client):
             {
                 "id": review.id,
                 "decision": "rejected",
+                "justification": "Refazer a introdução.",
                 "decided_at": body["reviews"][0]["decided_at"],
             }
         ]

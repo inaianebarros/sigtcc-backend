@@ -27,6 +27,8 @@ LIST_DESCRIPTION = (
     "activity_changed: activity_title, teacher_name e changes, uma lista de field (title, "
     "description ou deadline), old e new, nessa ordem. "
     "activity_deleted: activity_title e teacher_name. "
+    "activity_review_result: activity_title, decision (accepted ou rejected), teacher_name e, "
+    "na recusa, justification. "
     "advising_ended: teacher_name, archived_activities e cancelled_meetings. "
     "meeting_requested: author_name, author_type (student ou teacher), scheduled_at (com o "
     "fuso de Santarém) e description. "

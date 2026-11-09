@@ -188,7 +188,7 @@ def test_after_a_refusal_the_student_sends_it_again_without_a_new_delivery(clien
     activity = add_activity(advising)
     deliver(client, student, activity)
     assert change(client, student.user, activity.id, ActivityStatus.IN_REVIEW).status_code == 200
-    # The review by the advisor (#61) is not built yet: the refusal sends it back to pending.
+    # A refusal by the advisor (#61): it records the review and sends the activity back to pending.
     Review.objects.create(activity=activity, decision=ReviewDecision.REJECTED)
     Activity.objects.filter(pk=activity.pk).update(status=ActivityStatus.PENDING)
 

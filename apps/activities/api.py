@@ -16,10 +16,11 @@ from apps.advising.schemas import TeacherSummaryOut
 from config.pagination import BoundedLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page, check_partial_update
 
-from .models import Activity, ActivityStatus, Review, Submission, SubmissionFile
+from .models import Activity, ActivityStatus, Review, ReviewDecision, Submission, SubmissionFile
 from .queries import activity_detail, activity_item, list_activities
 from .services import (
     EDITABLE_FIELDS,
+    MAX_JUSTIFICATION_LENGTH,
     PAST_DEADLINE_MESSAGE,
     change_activity_status,
     create_activity,
@@ -27,6 +28,7 @@ from .services import (
     deliver_submission,
     edit_activity,
     open_submission_file,
+    review_activity,
 )
 
 TITLE_MAX_LENGTH = 200
@@ -79,6 +81,13 @@ StudentStatus = StrEnum(
 
 class ActivityStatusIn(Schema):
     status: StudentStatus
+
+
+class ReviewIn(Schema):
+    decision: ReviewDecision
+    justification: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=MAX_JUSTIFICATION_LENGTH)
+    ] = ""
 
 
 class ActivityOut(Schema):
@@ -135,6 +144,7 @@ class SubmissionOut(Schema):
 class ReviewOut(Schema):
     id: int
     decision: str
+    justification: str
     decided_at: datetime
 
 
@@ -369,4 +379,36 @@ class ActivityController:
     def change_status(self, request: HttpRequest, activity_id: int, payload: ActivityStatusIn):
         status = ActivityStatus(payload.status.value)
         activity = change_activity_status(request.user.student, activity_id, status)
+        return activity_item(activity.id)
+
+    @http_post(
+        "/{int:activity_id}/revisar",
+        response={
+            200: ActivityItemOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsTeacher],
+        summary="O Professor orientador revisa uma atividade em revisão",
+        description=(
+            "decision é accepted ou rejected (RF46, RN21). Aceitar conclui a atividade, de forma "
+            "definitiva (RN15), e ela deixa de aparecer como atrasada. Recusar a devolve para "
+            "pending, com as entregas anteriores mantidas, e exige justification de 1 a 500 "
+            "caracteres, sem espaços nas pontas (RN40); no aceite, justification é erro de "
+            "validação. A decisão fica no histórico de revisões da atividade, visível ao Aluno e "
+            "ao Professor, e o Aluno recebe uma notificação do tipo activity_review_result, na "
+            "mesma transação (RF48). Atividade que não está em revisão responde 409; duas "
+            "revisões simultâneas geram só uma, e a segunda recebe 409. Outro Professor, "
+            "atividade de outro Aluno, excluída, arquivada, inexistente ou de orientação "
+            "encerrada (inclusive durante a ação) respondem o mesmo 404. A resposta é a "
+            "atividade no formato da lista."
+        ),
+    )
+    def review(self, request: HttpRequest, activity_id: int, payload: ReviewIn):
+        activity = review_activity(
+            request.user.teacher, activity_id, payload.decision, payload.justification
+        )
         return activity_item(activity.id)

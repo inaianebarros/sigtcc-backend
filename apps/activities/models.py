@@ -56,6 +56,7 @@ class SubmissionFile(models.Model):
 class Review(models.Model):
     activity = models.ForeignKey(Activity, on_delete=models.PROTECT, related_name="reviews")
     decision = models.CharField(max_length=10, choices=ReviewDecision.choices)
+    justification = models.TextField(blank=True, default="")
     decided_at = models.DateTimeField(auto_now_add=True)
 
 
