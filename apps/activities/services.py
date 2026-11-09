@@ -370,8 +370,7 @@ def add_comment(user: User, activity_id: int, text: str) -> Comment:
 
     The comment is immutable. A completed activity takes no new comment (RN15). The advising and
     the activity are locked first (ADR 0004), so an advising that ends or an activity completed
-    meanwhile is answered with the same 404 or 409 and nothing is created. The notifications of
-    a comment are added through this service (#118).
+    meanwhile is answered with the same 404 or 409 and nothing is created.
     """
     scope = (
         {"student": user.student} if user.type == UserType.STUDENT else {"teacher": user.teacher}

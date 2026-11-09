@@ -311,35 +311,42 @@ def test_if_the_advising_ends_during_the_action_it_gets_404_and_nothing_is_creat
     assert not Comment.objects.exists()
 
 
+@pytest.mark.parametrize(
+    ("final_status", "expected_status", "expected_body"),
+    [
+        (ActivityStatus.COMPLETED, 409, COMPLETED),
+        (ActivityStatus.ARCHIVED, 404, NOT_FOUND),
+    ],
+)
 @pytest.mark.django_db(transaction=True)
-def test_if_the_activity_is_completed_during_the_action_it_gets_409_and_nothing_is_created(
-    client,
+def test_if_the_activity_changes_during_the_action_it_gets_409_or_404_and_nothing_is_created(
+    client, final_status, expected_status, expected_body
 ):
     student, _, advising = advised_pair()
     activity = add_activity(advising)
     holding_the_lock = threading.Event()
     failures = []
 
-    def complete_the_activity_while_holding_the_lock():
+    def change_the_activity_while_holding_the_lock():
         try:
             with transaction.atomic():
                 Advising.objects.select_for_update().get(pk=advising.pk)
                 holding_the_lock.set()
                 wait_for_a_request_blocked_on_a_lock()
-                Activity.objects.filter(pk=activity.pk).update(status=ActivityStatus.COMPLETED)
+                Activity.objects.filter(pk=activity.pk).update(status=final_status)
         except Exception as error:  # noqa: BLE001 - reported to the main thread
             failures.append(error)
             holding_the_lock.set()
         finally:
             connection.close()
 
-    completing = threading.Thread(target=complete_the_activity_while_holding_the_lock)
-    completing.start()
+    changing = threading.Thread(target=change_the_activity_while_holding_the_lock)
+    changing.start()
     assert holding_the_lock.wait(timeout=10)
     response = comment(client, student.user, activity.id, "oi")
-    completing.join(timeout=10)
+    changing.join(timeout=10)
 
     assert failures == []
-    assert response.status_code == 409
-    assert response.json() == COMPLETED
+    assert response.status_code == expected_status
+    assert response.json() == expected_body
     assert not Comment.objects.exists()
