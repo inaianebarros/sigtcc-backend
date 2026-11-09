@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 from ninja.errors import HttpError
 
-from apps.accounts.models import Student, Teacher
+from apps.accounts.models import Student, Teacher, User, UserType
 from apps.advising.linked_student_profile import STUDENT_NOT_FOUND_MESSAGE
 from apps.advising.models import Advising, AdvisingStatus
 from apps.notifications.models import ACTIVITY_REFERENCE, NotificationType
@@ -18,6 +18,7 @@ from config.errors import ConflictError, FieldValidationError
 from .models import (
     Activity,
     ActivityStatus,
+    Comment,
     Review,
     ReviewDecision,
     Submission,
@@ -44,6 +45,7 @@ DELIVERY_REFUSED_MESSAGES = {
     ActivityStatus.IN_REVIEW: "Esta atividade está em revisão e não aceita novas entregas.",
     ActivityStatus.COMPLETED: "Esta atividade já foi concluída e não aceita novas entregas.",
 }
+COMMENTS_CLOSED_MESSAGE = "Esta atividade já foi concluída e não aceita novos comentários."
 NOT_IN_REVIEW_MESSAGE = "Só uma atividade em revisão pode ser revisada."
 JUSTIFICATION_REQUIRED_MESSAGE = "Informe a justificativa da recusa (de 1 a 500 caracteres)."
 NO_JUSTIFICATION_ON_ACCEPT_MESSAGE = "O aceite não tem justificativa."
@@ -181,29 +183,38 @@ def delete_activity(teacher: Teacher, activity_id: int) -> Activity:
     return activity
 
 
-def _lock_student_activity(student: Student, activity_id: int) -> Activity:
-    """The activity of the student's active advising, with the advising and the activity locked.
+def _lock_advised_activity(activity_id: int, **advising_scope) -> Activity:
+    """The activity of an active advising in the given scope, with the advising and the activity
+    locked, the advising first (ADR 0004).
 
-    The same query locks the advising and checks that it is active (ADR 0004). Another student,
-    a deleted, archived or missing activity and an ended advising all answer the same 404. What
-    the status allows is up to each caller.
+    The same query locks the advising and checks that it is active. Out of scope, deleted,
+    archived and missing activities and an ended advising all answer the same 404. What the
+    status allows is up to each caller.
     """
     advising = (
         Advising.objects.select_for_update(of=("self",))
         .filter(
-            student=student,
             status=AdvisingStatus.ACTIVE,
             activities__pk=activity_id,
             activities__deleted_at__isnull=True,
+            **advising_scope,
         )
         .first()
     )
     if advising is None:
         raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
-    activity = Activity.objects.select_for_update().get(pk=activity_id)
+    activity = (
+        Activity.objects.select_for_update(of=("self",))
+        .select_related("advising__student__user")
+        .get(pk=activity_id)
+    )
     if activity.status == ActivityStatus.ARCHIVED:
         raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
     return activity
+
+
+def _lock_student_activity(student: Student, activity_id: int) -> Activity:
+    return _lock_advised_activity(activity_id, student=student)
 
 
 def _lock_deliverable_activity(student, activity_id: int) -> Activity:
@@ -314,31 +325,8 @@ def _check_justification(decision: ReviewDecision, justification: str) -> None:
 
 
 def _lock_reviewable_activity(teacher: Teacher, activity_id: int) -> Activity:
-    """The activity of an advising the teacher advises now, in review, with both rows locked.
-
-    The same query locks the advising and checks that it is active (ADR 0004). Another teacher,
-    a deleted, archived or missing activity and an ended advising all answer the same 404. The
-    activity row is locked too, so of two simultaneous reviews the second sees the new status.
-    """
-    advising = (
-        Advising.objects.select_for_update(of=("self",))
-        .filter(
-            teacher=teacher,
-            status=AdvisingStatus.ACTIVE,
-            activities__pk=activity_id,
-            activities__deleted_at__isnull=True,
-        )
-        .first()
-    )
-    if advising is None:
-        raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
-    activity = (
-        Activity.objects.select_for_update(of=("self",))
-        .select_related("advising__student__user")
-        .get(pk=activity_id)
-    )
-    if activity.status == ActivityStatus.ARCHIVED:
-        raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
+    """The activity of an advising the teacher advises now, locked, if it is in review."""
+    activity = _lock_advised_activity(activity_id, teacher=teacher)
     if activity.status != ActivityStatus.IN_REVIEW:
         raise ConflictError(NOT_IN_REVIEW_MESSAGE)
     return activity
@@ -374,3 +362,21 @@ def review_activity(
         payload=payload,
     )
     return activity
+
+
+@transaction.atomic
+def add_comment(user: User, activity_id: int, text: str) -> Comment:
+    """The student of the activity or their active advisor comments on it (RF32).
+
+    The comment is immutable. A completed activity takes no new comment (RN15). The advising and
+    the activity are locked first (ADR 0004), so an advising that ends or an activity completed
+    meanwhile is answered with the same 404 or 409 and nothing is created. The notifications of
+    a comment are added through this service (#118).
+    """
+    scope = (
+        {"student": user.student} if user.type == UserType.STUDENT else {"teacher": user.teacher}
+    )
+    activity = _lock_advised_activity(activity_id, **scope)
+    if activity.status == ActivityStatus.COMPLETED:
+        raise ConflictError(COMMENTS_CLOSED_MESSAGE)
+    return Comment.objects.create(activity=activity, author=user, text=text)
