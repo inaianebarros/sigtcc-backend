@@ -85,43 +85,63 @@ def create_meeting(
     )
 
 
-@transaction.atomic
-def answer_meeting(
-    user: User, meeting_id: int, action: AnswerAction, reason: str | None
-) -> Meeting:
-    """The other party of the advising accepts or rejects a pending meeting (RF20, RN11).
-
-    The author never answers their own request. The advising row is locked by the query that
-    checks the user is its other party and that it is still active, so an advising that ends
-    meanwhile is answered with the same 404 and nothing changes (ADR 0004). The answer is final.
-    """
-    if action == AnswerAction.ACCEPT and reason is not None:
-        raise FieldValidationError({"reason": REASON_NOT_ALLOWED_MESSAGE})
-    if action == AnswerAction.REJECT and reason is None:
+def _reason_for(action: AnswerAction, reason: str | None) -> str:
+    """The text stored with the answer: the rejection needs one (RN11) and the acceptance has none."""
+    if action == AnswerAction.ACCEPT:
+        if reason is not None:
+            raise FieldValidationError({"reason": REASON_NOT_ALLOWED_MESSAGE})
+        return ""
+    if reason is None:
         raise FieldValidationError({"reason": REASON_REQUIRED_MESSAGE})
-    counterpart_meeting = Meeting.objects.filter(pk=meeting_id, advising=OuterRef("pk")).exclude(
-        author=user
-    )
-    advising = (
+    return reason
+
+
+def _lock_advising_of_counterpart(user: User, meeting_id: int) -> None:
+    """Locks the active advising whose other party is the user, for a meeting the user did not author.
+
+    One query both checks and locks, so an advising that ends meanwhile gets the same 404 as a
+    meeting the user cannot answer (ADR 0004).
+    """
+    meeting_of_the_other_party = Meeting.objects.filter(
+        pk=meeting_id, advising=OuterRef("pk")
+    ).exclude(author=user)
+    locked = (
         Advising.objects.select_for_update()
         .filter(status=AdvisingStatus.ACTIVE)
         .filter(Q(student__user=user) | Q(teacher__user=user))
-        .filter(Exists(counterpart_meeting))
+        .filter(Exists(meeting_of_the_other_party))
+        .values_list("pk", flat=True)
         .first()
     )
-    if advising is None:
+    if locked is None:
         raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
-    meeting = Meeting.objects.select_related("author").get(pk=meeting_id)
+
+
+def _ensure_can_be_answered(meeting: Meeting) -> None:
     if meeting.status == MeetingStatus.CANCELLED:
         raise ConflictError(CANCELLED_MESSAGE)
     if meeting.status != MeetingStatus.PENDING:
         raise ConflictError(ALREADY_ANSWERED_MESSAGE)
     if meeting.scheduled_at <= timezone.now():
         raise ConflictError(TIME_PASSED_MESSAGE)
+
+
+@transaction.atomic
+def answer_meeting(
+    user: User, meeting_id: int, action: AnswerAction, reason: str | None
+) -> Meeting:
+    """The other party of the advising accepts or rejects a pending meeting (RF20, RN11).
+
+    The author never answers their own request, and the answer is final.
+    """
+    rejection_reason = _reason_for(action, reason)
+    _lock_advising_of_counterpart(user, meeting_id)
+    meeting = Meeting.objects.select_related("author").get(pk=meeting_id)
+    _ensure_can_be_answered(meeting)
     if action == AnswerAction.ACCEPT:
         meeting.status = MeetingStatus.ACCEPTED
     else:
         meeting.status = MeetingStatus.REJECTED
-        meeting.rejection_reason = reason or ""
+        meeting.rejection_reason = rejection_reason
     meeting.save(update_fields=["status", "rejection_reason"])
     return meeting
