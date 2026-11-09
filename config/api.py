@@ -11,6 +11,7 @@ from apps.advising.advisor_api import AdvisorProfileController, AdvisorSearchCon
 from apps.advising.api import AdvisingRequestController
 from apps.advising.linked_student_api import LinkedStudentProfileController
 from apps.advising.thesis_api import AdvisorThesisTopicController, StudentThesisTopicController
+from apps.dashboard.api import StudentDashboardController
 from apps.meetings.api import MeetingController
 from apps.notifications.api import NotificationController
 from config.errors import ConflictError, FieldValidationError, TooManyRequestsError
@@ -74,4 +75,5 @@ api.register_controllers(
     ActivityController,
     MeetingController,
     NotificationController,
+    StudentDashboardController,
 )

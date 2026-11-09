@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.activities",
     "apps.meetings",
     "apps.notifications",
+    "apps.dashboard",
 ]
 
 MIDDLEWARE = [
