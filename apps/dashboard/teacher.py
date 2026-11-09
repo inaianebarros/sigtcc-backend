@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from django.db.models import Count, Q
 from django.db.models.functions import Lower
 from django.utils import timezone
@@ -53,12 +55,12 @@ def _attention_advisees(teacher: Teacher, today) -> dict:
     return {"items": items, "has_more": len(rows) > ATTENTION_LIMIT}
 
 
-def _next_meetings(teacher: Teacher) -> dict:
+def _next_meetings(teacher: Teacher, now: datetime) -> dict:
     """The accepted future meetings of the active advisings, with the advisee as the other party."""
     meetings = Meeting.objects.filter(
         advising__teacher=teacher, advising__status=AdvisingStatus.ACTIVE
     ).select_related("advising__student__user")
-    rows = upcoming_meetings(meetings, timezone.now())
+    rows = upcoming_meetings(meetings, now)
     return meetings_block(
         rows,
         lambda meeting: {
@@ -76,7 +78,8 @@ def teacher_dashboard(teacher: Teacher) -> dict:
     Without an active advising the response is empty: no indicator that suggests advisees or
     activities that do not exist.
     """
-    today = timezone.localdate()
+    now = timezone.now()
+    today = timezone.localdate(now)
     advisees_count = Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE).count()
     if advisees_count == 0:
         return {
@@ -97,5 +100,5 @@ def teacher_dashboard(teacher: Teacher) -> dict:
         "next_deadlines": upcoming_activities(
             activities.select_related("advising__student__user"), today
         ),
-        "next_meetings": _next_meetings(teacher),
+        "next_meetings": _next_meetings(teacher, now),
     }

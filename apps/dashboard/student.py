@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from django.utils import timezone
 
 from apps.accounts.models import Student
@@ -42,10 +44,10 @@ def _last_request(student: Student) -> dict | None:
     }
 
 
-def _next_meetings(advising: Advising) -> dict:
+def _next_meetings(advising: Advising, now: datetime) -> dict:
     """The accepted future meetings of the advising, with the advisor as the other party."""
     teacher = TeacherSummaryOut.from_teacher(advising.teacher)
-    rows = upcoming_meetings(Meeting.objects.filter(advising=advising), timezone.now())
+    rows = upcoming_meetings(Meeting.objects.filter(advising=advising), now)
     return meetings_block(rows, lambda _meeting: {"teacher": teacher})
 
 
@@ -55,7 +57,8 @@ def student_dashboard(student: Student) -> dict:
     Only the active advising counts (RN35). Without one, the dashboard says so and shows the last
     request and whether there is a history of ended advisings (RF49).
     """
-    today = timezone.localdate()
+    now = timezone.now()
+    today = timezone.localdate(now)
     advising = (
         Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE)
         .select_related("teacher__user", "thesis_topic")
@@ -86,7 +89,7 @@ def student_dashboard(student: Student) -> dict:
         "next_activities": upcoming_activities(
             counted_activities().filter(advising=advising), today
         ),
-        "next_meetings": _next_meetings(advising),
+        "next_meetings": _next_meetings(advising, now),
         "last_request": None,
         "has_ended_advisings": has_ended_advisings,
     }
