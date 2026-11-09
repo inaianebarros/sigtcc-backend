@@ -5,16 +5,19 @@ from django.http import HttpRequest
 from django.utils import timezone
 from ninja import Schema
 from ninja.responses import Status
-from ninja_extra import api_controller, http_patch, http_post
+from ninja_extra import api_controller, http_get, http_patch, http_post, paginate
 from ninja_jwt.authentication import JWTAuth
 from pydantic import StringConstraints, model_validator
 
 from apps.accounts.permissions import IsStudent, IsTeacher
-from apps.advising.models import AnswerAction
-from config.schemas import ErrorOut, FieldErrorsOut, check_partial_update
+from apps.advising.models import AdvisingStatus, AnswerAction
+from config.pagination import BoundedLimitOffsetPagination
+from config.schemas import ErrorOut, FieldErrorsOut, Page, check_partial_update
 
 from .models import Meeting
+from .queries import list_meetings
 from .services import answer_meeting, cancel_meeting, create_meeting, edit_meeting
+from .situations import MeetingSituation, can_answer, can_cancel, can_edit
 
 DESCRIPTION_MAX_LENGTH = 500
 
@@ -73,6 +76,46 @@ class MeetingCancelIn(Schema):
 class MeetingCancelOut(MeetingOut):
     cancellation_reason: str
     cancelled_by_system: bool
+
+
+class MeetingCounterpartOut(Schema):
+    id: int
+    full_name: str
+
+
+class MeetingItemOut(MeetingOut):
+    situation: MeetingSituation
+    counterpart: MeetingCounterpartOut
+    rejection_reason: str
+    cancellation_reason: str
+    cancelled_by_system: bool
+    can_answer: bool
+    can_edit: bool
+    can_cancel: bool
+
+    @staticmethod
+    def resolve_counterpart(obj: Meeting, context) -> MeetingCounterpartOut:
+        advising = obj.advising
+        user = context["request"].user
+        other = advising.teacher if advising.student.user_id == user.id else advising.student
+        return MeetingCounterpartOut(id=other.user_id, full_name=other.user.full_name)
+
+    @staticmethod
+    def resolve_can_answer(obj: Meeting, context) -> bool:
+        return can_answer(*_action_inputs(obj, context))
+
+    @staticmethod
+    def resolve_can_edit(obj: Meeting, context) -> bool:
+        return can_edit(*_action_inputs(obj, context))
+
+    @staticmethod
+    def resolve_can_cancel(obj: Meeting, context) -> bool:
+        return can_cancel(*_action_inputs(obj, context))
+
+
+def _action_inputs(obj: Meeting, context) -> tuple[str, bool, bool]:
+    user = context["request"].user
+    return obj.situation, obj.author_id == user.id, obj.advising.status == AdvisingStatus.ACTIVE
 
 
 class MeetingAnswerIn(Schema):
@@ -182,3 +225,34 @@ class MeetingController:
     )
     def cancel(self, request: HttpRequest, meeting_id: int, payload: MeetingCancelIn):
         return cancel_meeting(request.user, meeting_id, payload.reason)
+
+    @http_get(
+        "",
+        response={
+            200: Page[MeetingItemOut],
+            401: ErrorOut,
+            403: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsStudent | IsTeacher],
+        summary="Lista as reuniões do Aluno ou do Professor",
+        description=(
+            "As reuniões de todas as orientações do usuário, ativas ou encerradas (RF19). A "
+            "situação é derivada do status e do horário: pending, accepted, rejected, cancelled, "
+            "held (aceita com horário passado) e expired (pendente com horário passado). Filtros "
+            "por E: situation, date_from e date_to (datas inclusivas em Santarém) e, para o "
+            "Professor, student_id. As futuras vêm primeiro, da mais próxima para a mais "
+            "distante, e depois as passadas, da mais recente para a mais antiga. can_answer, "
+            "can_edit e can_cancel dizem o que o usuário pode fazer agora (RN09, RN10, RN39)."
+        ),
+    )
+    @paginate(BoundedLimitOffsetPagination)
+    def list_my_meetings(
+        self,
+        request: HttpRequest,
+        situation: MeetingSituation | None = None,
+        date_from: datetime.date | None = None,
+        date_to: datetime.date | None = None,
+        student_id: int | None = None,
+    ):
+        return list_meetings(request.user, situation, date_from, date_to, student_id)
