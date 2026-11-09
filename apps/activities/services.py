@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import date
+from typing import IO
 
 from django.db import transaction
 from django.utils import timezone
@@ -13,13 +14,18 @@ from config.changes import FieldChange
 from config.errors import ConflictError, FieldValidationError
 
 from .models import Activity, ActivityStatus, Submission, SubmissionFile
-from .queries import ACTIVITY_NOT_FOUND_MESSAGE
+from .queries import (
+    ACTIVITY_NOT_FOUND_MESSAGE,
+    FILE_NOT_FOUND_MESSAGE,
+    submission_file_for_download,
+)
 from .storage import new_storage_key, submission_storage
 from .uploads import check_files
 
 PAST_DEADLINE_MESSAGE = "O prazo não pode ser anterior a hoje."
 COMPLETED_MESSAGE = "Esta atividade já foi concluída e não pode ser alterada."
 STORAGE_UNAVAILABLE_MESSAGE = "Não foi possível guardar os arquivos. Tente novamente."
+DOWNLOAD_UNAVAILABLE_MESSAGE = "Não foi possível obter o arquivo. Tente novamente."
 DELIVERY_REFUSED_MESSAGES = {
     ActivityStatus.IN_REVIEW: "Esta atividade está em revisão e não aceita novas entregas.",
     ActivityStatus.COMPLETED: "Esta atividade já foi concluída e não aceita novas entregas.",
@@ -146,7 +152,7 @@ def _lock_deliverable_activity(student, activity_id: int) -> Activity:
     return activity
 
 
-def _store(storage, activity_id: int, file) -> str:
+def _save_to_storage(storage, activity_id: int, file) -> str:
     try:
         return storage.save(new_storage_key(activity_id), file)
     except Exception as error:
@@ -173,25 +179,42 @@ def deliver_submission(student, activity_id: int, files) -> Submission:
     """
     checked_files = check_files(files)
     storage = submission_storage()
-    stored: list[str] = []
+    stored_keys: list[str] = []
     try:
         with transaction.atomic():
             activity = _lock_deliverable_activity(student, activity_id)
             submission = Submission.objects.create(activity=activity)
             records = []
             for file, checked in zip(files, checked_files, strict=True):
-                stored.append(_store(storage, activity.id, file))
+                stored_keys.append(_save_to_storage(storage, activity.id, file))
                 records.append(
                     SubmissionFile(
                         submission=submission,
                         file_name=checked.file_name,
                         size_bytes=file.size,
                         content_type=checked.content_type,
-                        storage_key=stored[-1],
+                        storage_key=stored_keys[-1],
                     )
                 )
             SubmissionFile.objects.bulk_create(records)
     except BaseException:
-        _remove_stored(storage, stored)
+        # BaseException on purpose: whatever stops the delivery, the stored files must go.
+        _remove_stored(storage, stored_keys)
         raise
     return submission
+
+
+def open_submission_file(user, activity_id: int, file_id: int) -> tuple[SubmissionFile, IO[bytes]]:
+    """The file of an activity the user may see, opened for reading (RF31).
+
+    A file missing from the storage answers the same 404 as one the user may not see, and a
+    storage that cannot be reached answers a 503, like the delivery does.
+    """
+    submission_file = submission_file_for_download(user, activity_id, file_id)
+    try:
+        return submission_file, submission_storage().open(submission_file.storage_key, "rb")
+    except FileNotFoundError as error:
+        raise HttpError(404, FILE_NOT_FOUND_MESSAGE) from error
+    except Exception as error:
+        logger.exception("The storage could not open the file %s", submission_file.storage_key)
+        raise HttpError(503, DOWNLOAD_UNAVAILABLE_MESSAGE) from error

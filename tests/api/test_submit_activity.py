@@ -577,7 +577,7 @@ def test_the_openapi_documents_the_multipart_files_the_limits_and_the_errors(cli
     for limit in (
         "1 a 5 arquivos",
         "10 MB",
-        "PDF, DOC, DOCX, ZIP, PNG e JPG",
+        "PDF, DOC, DOCX, ZIP, PNG e JPG (ou JPEG)",
         "Um arquivo inválido rejeita a entrega inteira",
     ):
         assert limit in operation["description"]

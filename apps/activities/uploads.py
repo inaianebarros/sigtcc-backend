@@ -1,6 +1,7 @@
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import IO
 
 from config.errors import FieldValidationError
 
@@ -21,7 +22,6 @@ JPG_SIGNATURE = b"\xff\xd8\xff"
 OLE_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06")
 DOCX_PARTS = {"[Content_Types].xml", "word/document.xml"}
-HEAD_SIZE = 8
 
 
 def _is_zip(file, head: bytes) -> bool:
@@ -35,18 +35,42 @@ def _is_docx(file, head: bytes) -> bool:
         return DOCX_PARTS <= set(archive.namelist())
 
 
-# Each allowed extension: the type stored with the file and the check of its content signature.
-# The type comes from the extension, never from the sent Content-Type.
-Check = Callable[[object, bytes], bool]
-ALLOWED: dict[str, tuple[str, Check]] = {
-    ".pdf": ("application/pdf", lambda _, head: head.startswith(PDF_SIGNATURE)),
-    ".doc": ("application/msword", lambda _, head: head.startswith(OLE_SIGNATURE)),
-    ".docx": (DOCX_TYPE, _is_docx),
-    ".zip": ("application/zip", _is_zip),
-    ".png": ("image/png", lambda _, head: head.startswith(PNG_SIGNATURE)),
-    ".jpg": ("image/jpeg", lambda _, head: head.startswith(JPG_SIGNATURE)),
-    ".jpeg": ("image/jpeg", lambda _, head: head.startswith(JPG_SIGNATURE)),
+def _starts_with(*signatures: bytes) -> Callable[[IO[bytes], bytes], bool]:
+    return lambda _file, head: head.startswith(signatures)
+
+
+@dataclass(frozen=True)
+class FileKind:
+    """An allowed type: what is stored with the file and how its content is recognised.
+
+    The stored type comes from the extension, never from the sent Content-Type.
+    """
+
+    content_type: str
+    matches: Callable[[IO[bytes], bytes], bool]
+
+
+JPEG = FileKind("image/jpeg", _starts_with(JPG_SIGNATURE))
+ALLOWED = {
+    ".pdf": FileKind("application/pdf", _starts_with(PDF_SIGNATURE)),
+    ".doc": FileKind("application/msword", _starts_with(OLE_SIGNATURE)),
+    ".docx": FileKind(DOCX_TYPE, _is_docx),
+    ".zip": FileKind("application/zip", _is_zip),
+    ".png": FileKind("image/png", _starts_with(PNG_SIGNATURE)),
+    ".jpg": JPEG,
+    ".jpeg": JPEG,
 }
+# Enough of the start of a file to tell every allowed signature apart.
+HEAD_SIZE = max(
+    len(signature)
+    for signature in (
+        PDF_SIGNATURE,
+        PNG_SIGNATURE,
+        JPG_SIGNATURE,
+        OLE_SIGNATURE,
+        *ZIP_SIGNATURES,
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -85,7 +109,7 @@ def _problem_with(file, file_name: str) -> str | None:
     file.seek(0)
     head = file.read(HEAD_SIZE)
     file.seek(0)
-    matches = allowed[1](file, head)
+    matches = allowed.matches(file, head)
     file.seek(0)
     return None if matches else MISMATCH_MESSAGE
 
@@ -102,7 +126,7 @@ def check_files(files: Sequence) -> list[CheckedFile]:
         if problem is not None:
             errors[f"files.{index}"] = problem
         else:
-            checked.append(CheckedFile(file_name, ALLOWED[extension_of(file_name)][0]))
+            checked.append(CheckedFile(file_name, ALLOWED[extension_of(file_name)].content_type))
     if errors:
         raise FieldValidationError(errors)
     return checked

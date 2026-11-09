@@ -1,5 +1,7 @@
+from unittest.mock import patch
+
 import pytest
-from django.core.files.storage import storages
+from django.core.files.storage import InMemoryStorage, storages
 from django.test import Client
 from django.utils import timezone
 
@@ -193,6 +195,16 @@ def test_a_file_that_is_gone_from_the_storage_gets_the_same_404(client):
     assert response.json() == NOT_FOUND
 
 
+def test_a_storage_failure_gets_a_503(client):
+    student, _, activity, file_id = delivered_pdf(client)
+
+    with patch.object(InMemoryStorage, "open", side_effect=OSError("o armazenamento caiu")):
+        response = get(client, student.user, activity.id, file_id)
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Não foi possível obter o arquivo. Tente novamente."}
+
+
 def test_an_admin_gets_a_403(client):
     _, _, activity, file_id = delivered_pdf(client)
 
@@ -216,5 +228,5 @@ def test_the_openapi_documents_the_download_as_a_binary_attachment_and_its_error
 
     binary = operation["responses"]["200"]["content"]["application/octet-stream"]["schema"]
     assert binary == {"type": "string", "format": "binary"}
-    assert {"401", "403", "404"} <= set(operation["responses"])
+    assert {"401", "403", "404", "503"} <= set(operation["responses"])
     assert "streaming" in operation["description"]

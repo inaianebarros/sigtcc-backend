@@ -5,7 +5,6 @@ from typing import Annotated
 from django.http import FileResponse, HttpRequest
 from django.utils import timezone
 from ninja import File, Schema
-from ninja.errors import HttpError
 from ninja.files import UploadedFile
 from ninja.responses import Status
 from ninja_extra import api_controller, http_delete, http_get, http_patch, http_post, paginate
@@ -18,12 +17,7 @@ from config.pagination import BoundedLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page, check_partial_update
 
 from .models import Activity, ActivityStatus, Review, Submission, SubmissionFile
-from .queries import (
-    FILE_NOT_FOUND_MESSAGE,
-    activity_detail,
-    list_activities,
-    submission_file_for_download,
-)
+from .queries import activity_detail, list_activities
 from .services import (
     EDITABLE_FIELDS,
     PAST_DEADLINE_MESSAGE,
@@ -31,8 +25,8 @@ from .services import (
     delete_activity,
     deliver_submission,
     edit_activity,
+    open_submission_file,
 )
-from .storage import submission_storage
 
 TITLE_MAX_LENGTH = 200
 DESCRIPTION_MAX_LENGTH = 2000
@@ -281,7 +275,7 @@ class ActivityController:
         summary="O Aluno entrega arquivos de uma atividade",
         description=(
             "Entrega em multipart, no campo files, de 1 a 5 arquivos de 1 byte a 10 MB, nos "
-            "tipos PDF, DOC, DOCX, ZIP, PNG e JPG (RF31). O tipo é conferido pela extensão e "
+            "tipos PDF, DOC, DOCX, ZIP, PNG e JPG (ou JPEG) (RF31). O tipo é conferido pela extensão e "
             "pelo conteúdo, não pelo Content-Type enviado, e o nome original é guardado só como "
             "metadado. Um arquivo inválido rejeita a entrega inteira, com um erro de validação "
             "por arquivo (files.0, files.1...) e nada gravado. Entregar não muda o status da "
@@ -298,7 +292,7 @@ class ActivityController:
 
     @http_get(
         "/{int:activity_id}/arquivos/{int:file_id}",
-        response={401: ErrorOut, 403: ErrorOut, 404: ErrorOut},
+        response={401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 503: ErrorOut},
         permissions=[IsStudent | IsTeacher],
         summary="Baixa um arquivo de uma entrega",
         description=(
@@ -306,7 +300,8 @@ class ActivityController:
             "nome original codificado), com X-Content-Type-Options: nosniff e o tipo guardado. "
             "Baixam o Aluno da atividade e o seu Professor orientador ativo, em qualquer status "
             "da atividade. Qualquer outra pessoa, atividade excluída, arquivada ou de orientação "
-            "encerrada, arquivo inexistente ou de outra atividade respondem o mesmo 404."
+            "encerrada, arquivo inexistente (ou ausente do armazenamento) ou de outra atividade "
+            "respondem o mesmo 404. Se o armazenamento não responder, 503."
         ),
         openapi_extra={
             "responses": {
@@ -322,11 +317,7 @@ class ActivityController:
         },
     )
     def download(self, request: HttpRequest, activity_id: int, file_id: int):
-        submission_file = submission_file_for_download(request.user, activity_id, file_id)
-        try:
-            content = submission_storage().open(submission_file.storage_key, "rb")
-        except FileNotFoundError as error:
-            raise HttpError(404, FILE_NOT_FOUND_MESSAGE) from error
+        submission_file, content = open_submission_file(request.user, activity_id, file_id)
         response = FileResponse(
             content,
             as_attachment=True,
