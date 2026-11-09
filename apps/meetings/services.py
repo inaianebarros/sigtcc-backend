@@ -1,4 +1,5 @@
 import datetime
+from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -10,6 +11,7 @@ from ninja.errors import HttpError
 from apps.accounts.models import Student, Teacher, User, UserType
 from apps.advising.linked_student_profile import STUDENT_NOT_FOUND_MESSAGE
 from apps.advising.models import Advising, AdvisingStatus, AnswerAction
+from config.changes import FieldChange
 from config.errors import ConflictError, FieldValidationError
 
 from .models import Meeting, MeetingStatus
@@ -24,6 +26,9 @@ CANCELLED_MESSAGE = "Esta reunião foi cancelada."
 TIME_PASSED_MESSAGE = "O horário desta reunião já passou."
 REASON_REQUIRED_MESSAGE = "Informe o motivo da recusa."
 REASON_NOT_ALLOWED_MESSAGE = "O aceite não tem motivo."
+NOT_EDITABLE_MESSAGE = "Esta reunião não pode mais ser editada."
+REJECTED_NOT_CANCELLABLE_MESSAGE = "Esta reunião foi recusada e não pode ser cancelada."
+ALREADY_CANCELLED_MESSAGE = "Esta reunião já foi cancelada."
 
 
 def to_scheduled_at(day: datetime.date, at: datetime.time) -> datetime.datetime:
@@ -96,25 +101,25 @@ def _reason_for(action: AnswerAction, reason: str | None) -> str:
     return reason
 
 
-def _lock_advising_of_counterpart(user: User, meeting_id: int) -> None:
-    """Locks the active advising whose other party is the user, for a meeting the user did not author.
+def _locked_meeting_of_party(user: User, meeting_id: int) -> Meeting:
+    """The meeting, with the advising row locked, for a user who is a party of its active advising.
 
-    One query both checks and locks, so an advising that ends meanwhile gets the same 404 as a
-    meeting the user cannot answer (ADR 0004).
+    One query both checks the user is the student or the teacher of an advising that is still
+    active and locks it, so an advising that ends meanwhile gets the same 404 as a meeting the
+    user cannot reach (ADR 0004). Who may do what with it is up to the caller, with the same 404.
     """
-    meeting_of_the_other_party = Meeting.objects.filter(
-        pk=meeting_id, advising=OuterRef("pk")
-    ).exclude(author=user)
+    meeting_of_the_advising = Meeting.objects.filter(pk=meeting_id, advising=OuterRef("pk"))
     locked = (
         Advising.objects.select_for_update()
         .filter(status=AdvisingStatus.ACTIVE)
         .filter(Q(student__user=user) | Q(teacher__user=user))
-        .filter(Exists(meeting_of_the_other_party))
+        .filter(Exists(meeting_of_the_advising))
         .values_list("pk", flat=True)
         .first()
     )
     if locked is None:
         raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
+    return Meeting.objects.select_related("author").get(pk=meeting_id)
 
 
 def _ensure_can_be_answered(meeting: Meeting) -> None:
@@ -135,8 +140,9 @@ def answer_meeting(
     The author never answers their own request, and the answer is final.
     """
     rejection_reason = _reason_for(action, reason)
-    _lock_advising_of_counterpart(user, meeting_id)
-    meeting = Meeting.objects.select_related("author").get(pk=meeting_id)
+    meeting = _locked_meeting_of_party(user, meeting_id)
+    if meeting.author_id == user.id:
+        raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
     _ensure_can_be_answered(meeting)
     if action == AnswerAction.ACCEPT:
         meeting.status = MeetingStatus.ACCEPTED
@@ -144,4 +150,76 @@ def answer_meeting(
         meeting.status = MeetingStatus.REJECTED
         meeting.rejection_reason = rejection_reason
     meeting.save(update_fields=["status", "rejection_reason"])
+    return meeting
+
+
+@dataclass(frozen=True)
+class MeetingEdit:
+    meeting: Meeting
+    changes: dict[str, FieldChange]
+
+
+@transaction.atomic
+def edit_meeting(
+    user: User,
+    meeting_id: int,
+    day: datetime.date | None = None,
+    at: datetime.time | None = None,
+    description: str | None = None,
+) -> MeetingEdit:
+    """The author changes the date, the time or the description of a meeting (RF21, RN09, RN39).
+
+    Only the author edits, and only a meeting that has not happened and was not rejected or
+    cancelled. A new date or time must be in the future, and only when it changed. Changing the
+    date or the time of an accepted meeting sends it back to pending (RN39). An edit that
+    changes nothing writes nothing and reports no change.
+    """
+    meeting = _locked_meeting_of_party(user, meeting_id)
+    if meeting.author_id != user.id:
+        raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
+    if meeting.status in (MeetingStatus.REJECTED, MeetingStatus.CANCELLED):
+        raise ConflictError(NOT_EDITABLE_MESSAGE)
+    if meeting.scheduled_at <= timezone.now():
+        raise ConflictError(TIME_PASSED_MESSAGE)
+    changes: dict[str, FieldChange] = {}
+    if day is not None or at is not None:
+        current = meeting.scheduled_at.astimezone(ZoneInfo(settings.TIME_ZONE))
+        moved = datetime.datetime.combine(
+            day or current.date(), at or current.time(), tzinfo=current.tzinfo
+        )
+        if moved != meeting.scheduled_at:
+            if moved <= timezone.now():
+                raise FieldValidationError({"date": PAST_SCHEDULE_MESSAGE})
+            changes["scheduled_at"] = FieldChange(old=meeting.scheduled_at, new=moved)
+    if description is not None and description != meeting.description:
+        changes["description"] = FieldChange(old=meeting.description, new=description)
+    if changes:
+        for field, change in changes.items():
+            setattr(meeting, field, change.new)
+        if "scheduled_at" in changes and meeting.status == MeetingStatus.ACCEPTED:
+            changes["status"] = FieldChange(old=meeting.status, new=MeetingStatus.PENDING)
+            meeting.status = MeetingStatus.PENDING
+        meeting.save(update_fields=list(changes))
+    return MeetingEdit(meeting=meeting, changes=changes)
+
+
+@transaction.atomic
+def cancel_meeting(user: User, meeting_id: int, reason: str) -> Meeting:
+    """The author cancels a pending meeting and either party cancels an accepted one (RF22, RN10).
+
+    The reason is required and the cancellation is final. The status and the reason are stored
+    together, as the constraints of the table require.
+    """
+    meeting = _locked_meeting_of_party(user, meeting_id)
+    if meeting.status == MeetingStatus.PENDING and meeting.author_id != user.id:
+        raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
+    if meeting.status == MeetingStatus.REJECTED:
+        raise ConflictError(REJECTED_NOT_CANCELLABLE_MESSAGE)
+    if meeting.status == MeetingStatus.CANCELLED:
+        raise ConflictError(ALREADY_CANCELLED_MESSAGE)
+    if meeting.scheduled_at <= timezone.now():
+        raise ConflictError(TIME_PASSED_MESSAGE)
+    meeting.status = MeetingStatus.CANCELLED
+    meeting.cancellation_reason = reason
+    meeting.save(update_fields=["status", "cancellation_reason"])
     return meeting
