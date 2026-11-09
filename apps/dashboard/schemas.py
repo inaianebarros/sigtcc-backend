@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from ninja import Schema
 
+from apps.activities.models import Activity
 from apps.advising.schemas import TeacherSummaryOut
 
 
@@ -47,3 +48,40 @@ class StudentDashboardOut(Schema):
     next_activities: NextActivitiesOut | None
     last_request: LastRequestOut | None
     has_ended_advisings: bool
+
+
+class UserRefOut(Schema):
+    id: int
+    full_name: str
+
+
+class AttentionAdviseeOut(UserRefOut):
+    thesis_topic: str | None
+    overdue_count: int
+    in_review_count: int
+
+
+class AttentionAdviseesOut(Schema):
+    items: list[AttentionAdviseeOut]
+    has_more: bool
+
+
+class DeadlineOut(DashboardActivityOut):
+    student: UserRefOut
+
+    @staticmethod
+    def resolve_student(obj: Activity) -> UserRefOut:
+        student = obj.advising.student
+        return UserRefOut(id=student.user_id, full_name=student.user.full_name)
+
+
+class DeadlinesOut(Schema):
+    items: list[DeadlineOut]
+    has_more: bool
+
+
+class TeacherDashboardOut(Schema):
+    advisees_count: int
+    activities: ActivityIndicatorsOut | None
+    attention_advisees: AttentionAdviseesOut | None
+    next_deadlines: DeadlinesOut | None

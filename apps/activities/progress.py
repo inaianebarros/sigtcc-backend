@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 
 from django.db.models import Count, Q, QuerySet
@@ -28,6 +28,10 @@ class ActivityCounts:
     @property
     def progress_percent(self) -> int | None:
         return progress_percent(self.completed, self.total)
+
+    def as_indicators(self) -> dict:
+        """The counts and the progress as the dashboards show them."""
+        return {**asdict(self), "progress_percent": self.progress_percent}
 
 
 def progress_percent(completed: int, total: int) -> int | None:
