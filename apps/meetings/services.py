@@ -3,20 +3,27 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 from ninja.errors import HttpError
 
 from apps.accounts.models import Student, Teacher, User, UserType
 from apps.advising.linked_student_profile import STUDENT_NOT_FOUND_MESSAGE
-from apps.advising.models import Advising, AdvisingStatus
+from apps.advising.models import Advising, AdvisingStatus, AnswerAction
 from config.errors import ConflictError, FieldValidationError
 
-from .models import Meeting
+from .models import Meeting, MeetingStatus
 
 PAST_SCHEDULE_MESSAGE = "A data e a hora devem ser posteriores ao momento atual."
 NO_ACTIVE_ADVISING_MESSAGE = "Você precisa ter um orientador ativo para solicitar uma reunião."
 STUDENT_ID_NOT_ALLOWED_MESSAGE = "O aluno não informa o aluno da reunião."
 STUDENT_ID_REQUIRED_MESSAGE = "Informe o aluno."
+MEETING_NOT_FOUND_MESSAGE = "Reunião não encontrada."
+ALREADY_ANSWERED_MESSAGE = "Esta reunião já foi respondida."
+CANCELLED_MESSAGE = "Esta reunião foi cancelada."
+TIME_PASSED_MESSAGE = "O horário desta reunião já passou."
+REASON_REQUIRED_MESSAGE = "Informe o motivo da recusa."
+REASON_NOT_ALLOWED_MESSAGE = "O aceite não tem motivo."
 
 
 def to_scheduled_at(day: datetime.date, at: datetime.time) -> datetime.datetime:
@@ -76,3 +83,45 @@ def create_meeting(
     return Meeting.objects.create(
         advising=advising, author=author, scheduled_at=scheduled_at, description=description
     )
+
+
+@transaction.atomic
+def answer_meeting(
+    user: User, meeting_id: int, action: AnswerAction, reason: str | None
+) -> Meeting:
+    """The other party of the advising accepts or rejects a pending meeting (RF20, RN11).
+
+    The author never answers their own request. The advising row is locked by the query that
+    checks the user is its other party and that it is still active, so an advising that ends
+    meanwhile is answered with the same 404 and nothing changes (ADR 0004). The answer is final.
+    """
+    if action == AnswerAction.ACCEPT and reason is not None:
+        raise FieldValidationError({"reason": REASON_NOT_ALLOWED_MESSAGE})
+    if action == AnswerAction.REJECT and reason is None:
+        raise FieldValidationError({"reason": REASON_REQUIRED_MESSAGE})
+    counterpart_meeting = Meeting.objects.filter(pk=meeting_id, advising=OuterRef("pk")).exclude(
+        author=user
+    )
+    advising = (
+        Advising.objects.select_for_update()
+        .filter(status=AdvisingStatus.ACTIVE)
+        .filter(Q(student__user=user) | Q(teacher__user=user))
+        .filter(Exists(counterpart_meeting))
+        .first()
+    )
+    if advising is None:
+        raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
+    meeting = Meeting.objects.select_related("author").get(pk=meeting_id)
+    if meeting.status == MeetingStatus.CANCELLED:
+        raise ConflictError(CANCELLED_MESSAGE)
+    if meeting.status != MeetingStatus.PENDING:
+        raise ConflictError(ALREADY_ANSWERED_MESSAGE)
+    if meeting.scheduled_at <= timezone.now():
+        raise ConflictError(TIME_PASSED_MESSAGE)
+    if action == AnswerAction.ACCEPT:
+        meeting.status = MeetingStatus.ACCEPTED
+    else:
+        meeting.status = MeetingStatus.REJECTED
+        meeting.rejection_reason = reason or ""
+    meeting.save(update_fields=["status", "rejection_reason"])
+    return meeting
