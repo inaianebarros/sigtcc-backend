@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 from ninja.errors import HttpError
 
-from apps.accounts.models import Teacher
+from apps.accounts.models import Student, Teacher
 from apps.advising.linked_student_profile import STUDENT_NOT_FOUND_MESSAGE
 from apps.advising.models import Advising, AdvisingStatus
 from config.changes import FieldChange
@@ -26,6 +26,11 @@ PAST_DEADLINE_MESSAGE = "O prazo não pode ser anterior a hoje."
 COMPLETED_MESSAGE = "Esta atividade já foi concluída e não pode ser alterada."
 STORAGE_UNAVAILABLE_MESSAGE = "Não foi possível guardar os arquivos. Tente novamente."
 DOWNLOAD_UNAVAILABLE_MESSAGE = "Não foi possível obter o arquivo. Tente novamente."
+NO_SUBMISSION_MESSAGE = "Envie ao menos uma entrega antes de enviar a atividade para revisão."
+STUDENT_LOCKED_MESSAGES = {
+    ActivityStatus.IN_REVIEW: "Esta atividade está em revisão e só o orientador pode alterar o status.",
+    ActivityStatus.COMPLETED: COMPLETED_MESSAGE,
+}
 DELIVERY_REFUSED_MESSAGES = {
     ActivityStatus.IN_REVIEW: "Esta atividade está em revisão e não aceita novas entregas.",
     ActivityStatus.COMPLETED: "Esta atividade já foi concluída e não aceita novas entregas.",
@@ -125,12 +130,12 @@ def delete_activity(teacher: Teacher, activity_id: int) -> Activity:
     return activity
 
 
-def _lock_deliverable_activity(student, activity_id: int) -> Activity:
+def _lock_student_activity(student: Student, activity_id: int) -> Activity:
     """The activity of the student's active advising, with the advising and the activity locked.
 
     The same query locks the advising and checks that it is active (ADR 0004). Another student,
-    a deleted, archived or missing activity and an ended advising all answer the same 404. Only a
-    pending or in-progress activity takes a delivery (RN16).
+    a deleted, archived or missing activity and an ended advising all answer the same 404. What
+    the status allows is up to each caller.
     """
     advising = (
         Advising.objects.select_for_update(of=("self",))
@@ -147,6 +152,12 @@ def _lock_deliverable_activity(student, activity_id: int) -> Activity:
     activity = Activity.objects.select_for_update().get(pk=activity_id)
     if activity.status == ActivityStatus.ARCHIVED:
         raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
+    return activity
+
+
+def _lock_deliverable_activity(student, activity_id: int) -> Activity:
+    """The student's activity locked, if it takes a delivery: pending or in progress (RN16)."""
+    activity = _lock_student_activity(student, activity_id)
     if activity.status in DELIVERY_REFUSED_MESSAGES:
         raise ConflictError(DELIVERY_REFUSED_MESSAGES[activity.status])
     return activity
@@ -218,3 +229,23 @@ def open_submission_file(user, activity_id: int, file_id: int) -> tuple[Submissi
     except Exception as error:
         logger.exception("The storage could not open the file %s", submission_file.storage_key)
         raise HttpError(503, DOWNLOAD_UNAVAILABLE_MESSAGE) from error
+
+
+@transaction.atomic
+def change_activity_status(student: Student, activity_id: int, status: ActivityStatus) -> Activity:
+    """The student moves an activity between pending and in progress, or sends it for review.
+
+    In review the student loses the control, and completed is final (RN15). Sending for review
+    needs at least one submission (RF28), and nothing else: after a refused review the student
+    may send it again as it is. Asking for the current status changes and writes nothing.
+    """
+    activity = _lock_student_activity(student, activity_id)
+    if activity.status in STUDENT_LOCKED_MESSAGES:
+        raise ConflictError(STUDENT_LOCKED_MESSAGES[activity.status])
+    if activity.status == status:
+        return activity
+    if status == ActivityStatus.IN_REVIEW and not activity.submissions.exists():
+        raise ConflictError(NO_SUBMISSION_MESSAGE)
+    activity.status = status
+    activity.save(update_fields=["status"])
+    return activity
