@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 from ninja.errors import HttpError
 
-from apps.accounts.models import Teacher
+from apps.accounts.models import Student, Teacher
 from apps.advising.linked_student_profile import STUDENT_NOT_FOUND_MESSAGE
 from apps.advising.models import Advising, AdvisingStatus
 from config.changes import FieldChange
@@ -130,7 +130,7 @@ def delete_activity(teacher: Teacher, activity_id: int) -> Activity:
     return activity
 
 
-def _lock_student_activity(student, activity_id: int) -> Activity:
+def _lock_student_activity(student: Student, activity_id: int) -> Activity:
     """The activity of the student's active advising, with the advising and the activity locked.
 
     The same query locks the advising and checks that it is active (ADR 0004). Another student,
@@ -232,7 +232,7 @@ def open_submission_file(user, activity_id: int, file_id: int) -> tuple[Submissi
 
 
 @transaction.atomic
-def change_activity_status(student, activity_id: int, status: str) -> Activity:
+def change_activity_status(student: Student, activity_id: int, status: ActivityStatus) -> Activity:
     """The student moves an activity between pending and in progress, or sends it for review.
 
     In review the student loses the control, and completed is final (RN15). Sending for review

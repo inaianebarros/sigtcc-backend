@@ -367,5 +367,6 @@ class ActivityController:
         ),
     )
     def change_status(self, request: HttpRequest, activity_id: int, payload: ActivityStatusIn):
-        activity = change_activity_status(request.user.student, activity_id, payload.status.value)
+        status = ActivityStatus(payload.status.value)
+        activity = change_activity_status(request.user.student, activity_id, status)
         return activity_item(activity.id)

@@ -101,10 +101,10 @@ def submission_file_for_download(user: User, activity_id: int, file_id: int) -> 
     return submission_file
 
 
-def activity_item(activity_id: int, today: date | None = None) -> Activity:
+def activity_item(activity_id: int) -> Activity:
     """One activity in the shape of a list item: with `overdue` and the student loaded."""
     return (
-        with_overdue(Activity.objects.filter(pk=activity_id), today)
+        with_overdue(Activity.objects.filter(pk=activity_id))
         .select_related("advising__student__user")
         .get()
     )
