@@ -99,3 +99,12 @@ def submission_file_for_download(user: User, activity_id: int, file_id: int) -> 
     if submission_file is None:
         raise HttpError(404, FILE_NOT_FOUND_MESSAGE)
     return submission_file
+
+
+def activity_item(activity_id: int, today: date | None = None) -> Activity:
+    """One activity in the shape of a list item: with `overdue` and the student loaded."""
+    return (
+        with_overdue(Activity.objects.filter(pk=activity_id), today)
+        .select_related("advising__student__user")
+        .get()
+    )

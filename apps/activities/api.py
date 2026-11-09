@@ -17,10 +17,11 @@ from config.pagination import BoundedLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page, check_partial_update
 
 from .models import Activity, ActivityStatus, Review, Submission, SubmissionFile
-from .queries import activity_detail, list_activities
+from .queries import activity_detail, activity_item, list_activities
 from .services import (
     EDITABLE_FIELDS,
     PAST_DEADLINE_MESSAGE,
+    change_activity_status,
     create_activity,
     delete_activity,
     deliver_submission,
@@ -64,6 +65,20 @@ class ActivityPatchIn(Schema):
     def at_least_one_field_and_no_nulls(self):
         check_partial_update(self, EDITABLE_FIELDS)
         return self
+
+
+StudentStatus = StrEnum(
+    "StudentStatus",
+    {
+        "PENDING": ActivityStatus.PENDING.value,
+        "IN_PROGRESS": ActivityStatus.IN_PROGRESS.value,
+        "IN_REVIEW": ActivityStatus.IN_REVIEW.value,
+    },
+)
+
+
+class ActivityStatusIn(Schema):
+    status: StudentStatus
 
 
 class ActivityOut(Schema):
@@ -326,3 +341,31 @@ class ActivityController:
         )
         response["X-Content-Type-Options"] = "nosniff"
         return response
+
+    @http_patch(
+        "/{int:activity_id}/status",
+        response={
+            200: ActivityItemOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsStudent],
+        summary="O Aluno altera o status de uma atividade",
+        description=(
+            "O Aluno alterna entre pending e in_progress, quantas vezes quiser e mesmo com a "
+            "atividade atrasada, e a envia para revisão com in_review (RF28, RN15). Qualquer "
+            "outro valor, inclusive completed e archived, é erro de validação. Pedir o status "
+            "que a atividade já tem responde 200 sem mudar nada. in_review só sai de pending ou "
+            "in_progress e exige ao menos uma entrega, mas depois de uma recusa na revisão o "
+            "Aluno reenvia sem entrega nova. Em revisão o Aluno perde o controle, e concluída é "
+            "definitiva: as duas respondem 409, assim como enviar para revisão sem nenhuma "
+            "entrega. Outro Aluno, atividade excluída, arquivada, inexistente ou de orientação "
+            "encerrada respondem o mesmo 404. A resposta é a atividade no formato da lista."
+        ),
+    )
+    def change_status(self, request: HttpRequest, activity_id: int, payload: ActivityStatusIn):
+        activity = change_activity_status(request.user.student, activity_id, payload.status.value)
+        return activity_item(activity.id)
