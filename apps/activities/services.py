@@ -8,6 +8,7 @@ from ninja.errors import HttpError
 from apps.accounts.models import Teacher
 from apps.advising.linked_student_profile import STUDENT_NOT_FOUND_MESSAGE
 from apps.advising.models import Advising, AdvisingStatus
+from config.changes import FieldChange
 from config.errors import ConflictError, FieldValidationError
 
 from .models import Activity, ActivityStatus
@@ -16,12 +17,6 @@ from .queries import ACTIVITY_NOT_FOUND_MESSAGE
 PAST_DEADLINE_MESSAGE = "O prazo não pode ser anterior a hoje."
 COMPLETED_MESSAGE = "Esta atividade já foi concluída e não pode ser alterada."
 EDITABLE_FIELDS = ("title", "description", "deadline")
-
-
-@dataclass(frozen=True)
-class FieldChange:
-    old: str | date
-    new: str | date
 
 
 @dataclass(frozen=True)

@@ -5,16 +5,16 @@ from django.http import HttpRequest
 from django.utils import timezone
 from ninja import Schema
 from ninja.responses import Status
-from ninja_extra import api_controller, http_post
+from ninja_extra import api_controller, http_patch, http_post
 from ninja_jwt.authentication import JWTAuth
-from pydantic import StringConstraints
+from pydantic import StringConstraints, model_validator
 
 from apps.accounts.permissions import IsStudent, IsTeacher
 from apps.advising.models import AnswerAction
-from config.schemas import ErrorOut, FieldErrorsOut
+from config.schemas import ErrorOut, FieldErrorsOut, check_partial_update
 
 from .models import Meeting
-from .services import answer_meeting, create_meeting
+from .services import answer_meeting, cancel_meeting, create_meeting, edit_meeting
 
 DESCRIPTION_MAX_LENGTH = 500
 
@@ -53,6 +53,26 @@ class MeetingOut(Schema):
     @staticmethod
     def resolve_scheduled_at(obj: Meeting) -> datetime.datetime:
         return timezone.localtime(obj.scheduled_at)
+
+
+class MeetingPatchIn(Schema):
+    date: datetime.date | None = None
+    time: datetime.time | None = None
+    description: MeetingDescription | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_field_and_no_nulls(self):
+        check_partial_update(self, ("date", "time", "description"))
+        return self
+
+
+class MeetingCancelIn(Schema):
+    reason: MeetingReason
+
+
+class MeetingCancelOut(MeetingOut):
+    cancellation_reason: str
+    cancelled_by_system: bool
 
 
 class MeetingAnswerIn(Schema):
@@ -115,3 +135,50 @@ class MeetingController:
     )
     def answer(self, request: HttpRequest, meeting_id: int, payload: MeetingAnswerIn):
         return answer_meeting(request.user, meeting_id, payload.action, payload.reason)
+
+    @http_patch(
+        "/{int:meeting_id}",
+        response={
+            200: MeetingOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsStudent | IsTeacher],
+        summary="O autor edita uma reunião",
+        description=(
+            "Edição parcial de date, time e description, com ao menos um campo e os mesmos "
+            "limites da criação. Só o autor edita (RN09); a outra parte, outra orientação, "
+            "orientação encerrada e reunião inexistente respondem o mesmo 404. Recusada, "
+            "cancelada ou com horário já passado responde 409. Um date ou time novo precisa ser "
+            "futuro, e mudá-lo numa reunião aceita a devolve para pendente (RN39)."
+        ),
+    )
+    def edit(self, request: HttpRequest, meeting_id: int, payload: MeetingPatchIn):
+        return edit_meeting(
+            request.user, meeting_id, payload.date, payload.time, payload.description
+        ).meeting
+
+    @http_post(
+        "/{int:meeting_id}/cancelar",
+        response={
+            200: MeetingCancelOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsStudent | IsTeacher],
+        summary="Cancela uma reunião, com motivo",
+        description=(
+            "O motivo é obrigatório, de 1 a 500 caracteres (RN10). A reunião pendente só o "
+            "autor cancela, e a aceita qualquer das partes da orientação, enquanto o horário não "
+            "passou. Recusada, já cancelada ou com horário passado responde 409. O cancelamento "
+            "é definitivo."
+        ),
+    )
+    def cancel(self, request: HttpRequest, meeting_id: int, payload: MeetingCancelIn):
+        return cancel_meeting(request.user, meeting_id, payload.reason)
