@@ -16,12 +16,20 @@ from apps.advising.schemas import TeacherSummaryOut
 from config.pagination import BoundedLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page, check_partial_update
 
-from .models import Activity, ActivityStatus, Review, ReviewDecision, Submission, SubmissionFile
-from .queries import activity_detail, activity_item, list_activities
+from .models import (
+    Activity,
+    ActivityStatus,
+    Review,
+    ReviewDecision,
+    Submission,
+    SubmissionFile,
+)
+from .queries import activity_detail, activity_item, list_activities, list_comments
 from .services import (
     EDITABLE_FIELDS,
     MAX_JUSTIFICATION_LENGTH,
     PAST_DEADLINE_MESSAGE,
+    add_comment,
     change_activity_status,
     create_activity,
     delete_activity,
@@ -33,6 +41,7 @@ from .services import (
 
 TITLE_MAX_LENGTH = 200
 DESCRIPTION_MAX_LENGTH = 2000
+COMMENT_MAX_LENGTH = 1000
 
 ActivityTitle = Annotated[
     str,
@@ -88,6 +97,25 @@ class ReviewIn(Schema):
     justification: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=MAX_JUSTIFICATION_LENGTH)
     ] = ""
+
+
+class CommentIn(Schema):
+    text: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=COMMENT_MAX_LENGTH)
+    ]
+
+
+class CommentAuthorOut(Schema):
+    id: int
+    full_name: str
+    type: str
+
+
+class CommentOut(Schema):
+    id: int
+    text: str
+    created_at: datetime
+    author: CommentAuthorOut
 
 
 class ActivityOut(Schema):
@@ -412,3 +440,46 @@ class ActivityController:
             request.user.teacher, activity_id, payload.decision, payload.justification
         )
         return activity_item(activity.id)
+
+    @http_post(
+        "/{int:activity_id}/comentarios",
+        response={
+            201: CommentOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsStudent | IsTeacher],
+        summary="O Aluno da atividade ou o seu Professor orientador comenta",
+        description=(
+            "text é texto simples de 1 a 1000 caracteres, sem espaços nas pontas; as quebras de "
+            "linha são mantidas e HTML ou menções não têm efeito (RF32). Comentários não podem "
+            "ser editados nem excluídos. Pendente, em andamento e em revisão aceitam comentário "
+            "dos dois lados; concluída responde 409 (RN15). Outro Aluno ou Professor, atividade "
+            "excluída, arquivada, inexistente ou de orientação encerrada (inclusive durante a "
+            "ação) respondem o mesmo 404. A criação não envia notificação."
+        ),
+    )
+    def comment(self, request: HttpRequest, activity_id: int, payload: CommentIn):
+        created = add_comment(request.user, activity_id, payload.text)
+        return Status(201, created)
+
+    @http_get(
+        "/{int:activity_id}/comentarios",
+        response={200: Page[CommentOut], 401: ErrorOut, 403: ErrorOut, 404: ErrorOut},
+        permissions=[IsStudent | IsTeacher],
+        summary="Lista os comentários de uma atividade",
+        description=(
+            "Do mais antigo para o mais recente (desempate pelo id), paginada com limit (padrão "
+            "20, máximo 100) e offset; count traz o total, para a tela abrir a última página. "
+            "Cada item traz o autor (id, nome e type: student ou teacher). A leitura funciona em "
+            "qualquer status visível, inclusive concluída. Atividade fora do escopo de quem "
+            "consulta, excluída, arquivada, de orientação encerrada ou inexistente responde o "
+            "mesmo 404 do detalhe."
+        ),
+    )
+    @paginate(BoundedLimitOffsetPagination)
+    def list_activity_comments(self, request: HttpRequest, activity_id: int):
+        return list_comments(request.user, activity_id)

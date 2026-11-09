@@ -7,7 +7,7 @@ from apps.accounts.models import User, UserType
 from apps.advising.models import AdvisingStatus
 
 from .lateness import overdue_condition, with_overdue
-from .models import Activity, ActivityStatus, Review, Submission, SubmissionFile
+from .models import Activity, ActivityStatus, Comment, Review, Submission, SubmissionFile
 
 ACTIVITY_NOT_FOUND_MESSAGE = "Atividade não encontrada."
 FILE_NOT_FOUND_MESSAGE = "Arquivo não encontrado."
@@ -107,4 +107,18 @@ def activity_item(activity_id: int) -> Activity:
         with_overdue(Activity.objects.filter(pk=activity_id))
         .select_related("advising__student__user")
         .get()
+    )
+
+
+def list_comments(user: User, activity_id: int) -> QuerySet[Comment]:
+    """The comments of an activity the user may see, oldest first, with the authors loaded (RF32).
+
+    Reading works in any visible status, completed included. The scope is the one of the detail.
+    """
+    if not visible_activities(user).filter(pk=activity_id).exists():
+        raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
+    return (
+        Comment.objects.filter(activity_id=activity_id)
+        .select_related("author")
+        .order_by("created_at", "id")
     )
