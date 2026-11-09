@@ -41,6 +41,14 @@ def bearer(user):
     return {"Authorization": f"Bearer {RefreshToken.for_user(user).access_token}"}
 
 
+CREATE_NOTIFICATION = "apps.notifications.services.Notification.objects.create"
+
+
+def inbox(client, user):
+    """The notifications of a user, as the screen lists them (newest first)."""
+    return client.get("/api/notificacoes", headers=bearer(user)).json()["items"]
+
+
 TOO_MANY_REQUESTS = {"detail": "Muitas tentativas. Aguarde antes de tentar novamente."}
 
 

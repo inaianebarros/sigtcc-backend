@@ -11,6 +11,8 @@ from ninja.errors import HttpError
 from apps.accounts.models import Student, Teacher, User, UserType
 from apps.advising.linked_student_profile import STUDENT_NOT_FOUND_MESSAGE
 from apps.advising.models import Advising, AdvisingStatus, AnswerAction
+from apps.notifications.models import MEETING_REFERENCE, NotificationType
+from apps.notifications.services import notify
 from config.changes import FieldChange
 from config.errors import ConflictError, FieldValidationError
 
@@ -29,6 +31,25 @@ REASON_NOT_ALLOWED_MESSAGE = "O aceite não tem motivo."
 NOT_EDITABLE_MESSAGE = "Esta reunião não pode mais ser editada."
 REJECTED_NOT_CANCELLABLE_MESSAGE = "Esta reunião foi recusada e não pode ser cancelada."
 ALREADY_CANCELLED_MESSAGE = "Esta reunião já foi cancelada."
+
+
+def _local_iso(moment: datetime.datetime) -> str:
+    """A meeting instant as kept in a notification payload: ISO text in the institution's time zone."""
+    return timezone.localtime(moment).isoformat()
+
+
+def _answer_payload(
+    responder: User, meeting: Meeting, action: AnswerAction, rejection_reason: str
+) -> dict:
+    """The snapshot of an answer: who answered, what, when the meeting is, and why if rejected."""
+    payload = {
+        "responder_name": responder.full_name,
+        "decision": action.decision,
+        "scheduled_at": _local_iso(meeting.scheduled_at),
+    }
+    if action == AnswerAction.REJECT:
+        payload["reason"] = rejection_reason
+    return payload
 
 
 def to_scheduled_at(day: datetime.date, at: datetime.time) -> datetime.datetime:
@@ -85,9 +106,23 @@ def create_meeting(
         advising = _lock_active_advising_of_student(author.student)
     else:
         advising = _lock_active_advising_with_student(author.teacher, student_id)
-    return Meeting.objects.create(
+    meeting = Meeting.objects.create(
         advising=advising, author=author, scheduled_at=scheduled_at, description=description
     )
+    recipient = advising.teacher.user if is_student else advising.student.user
+    notify(
+        recipient,
+        NotificationType.MEETING_REQUESTED,
+        reference_type=MEETING_REFERENCE,
+        reference_id=meeting.id,
+        payload={
+            "author_name": author.full_name,
+            "author_type": author.type,
+            "scheduled_at": _local_iso(meeting.scheduled_at),
+            "description": description,
+        },
+    )
+    return meeting
 
 
 def _reason_for(action: AnswerAction, reason: str | None) -> str:
@@ -154,6 +189,14 @@ def answer_meeting(
         meeting.status = MeetingStatus.REJECTED
         meeting.rejection_reason = rejection_reason
     meeting.save(update_fields=["status", "rejection_reason"])
+    # The author asked for the meeting and is the one waiting for the answer (RF38, RF41).
+    notify(
+        meeting.author,
+        NotificationType.MEETING_ANSWERED,
+        reference_type=MEETING_REFERENCE,
+        reference_id=meeting.id,
+        payload=_answer_payload(user, meeting, action, rejection_reason),
+    )
     return meeting
 
 

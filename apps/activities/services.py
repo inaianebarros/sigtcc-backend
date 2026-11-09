@@ -10,6 +10,8 @@ from ninja.errors import HttpError
 from apps.accounts.models import Student, Teacher
 from apps.advising.linked_student_profile import STUDENT_NOT_FOUND_MESSAGE
 from apps.advising.models import Advising, AdvisingStatus
+from apps.notifications.models import ACTIVITY_REFERENCE, NotificationType
+from apps.notifications.services import notify
 from config.changes import FieldChange
 from config.errors import ConflictError, FieldValidationError
 
@@ -40,6 +42,11 @@ EDITABLE_FIELDS = ("title", "description", "deadline")
 logger = logging.getLogger(__name__)
 
 
+def _json_value(value: str | date) -> str:
+    """A changed value as it is kept in a notification payload: JSON, so a date is ISO text."""
+    return value.isoformat() if isinstance(value, date) else value
+
+
 @dataclass(frozen=True)
 class ActivityEdit:
     activity: Activity
@@ -62,9 +69,21 @@ def create_activity(
     )
     if advising is None:
         raise HttpError(404, STUDENT_NOT_FOUND_MESSAGE)
-    return Activity.objects.create(
+    activity = Activity.objects.create(
         advising=advising, title=title, description=description, deadline=deadline
     )
+    notify(
+        advising.student.user,
+        NotificationType.ACTIVITY_CREATED,
+        reference_type=ACTIVITY_REFERENCE,
+        reference_id=activity.id,
+        payload={
+            "activity_title": title,
+            "deadline": deadline.isoformat(),
+            "teacher_name": teacher.user.full_name,
+        },
+    )
+    return activity
 
 
 def _lock_changeable_activity(teacher: Teacher, activity_id: int) -> Activity:
@@ -118,6 +137,20 @@ def edit_activity(
         for field, change in changes.items():
             setattr(activity, field, change.new)
         activity.save(update_fields=list(changes))
+        notify(
+            activity.advising.student.user,
+            NotificationType.ACTIVITY_CHANGED,
+            reference_type=ACTIVITY_REFERENCE,
+            reference_id=activity.id,
+            payload={
+                "activity_title": activity.title,
+                "teacher_name": teacher.user.full_name,
+                "changes": [
+                    {"field": field, "old": _json_value(change.old), "new": _json_value(change.new)}
+                    for field, change in changes.items()
+                ],
+            },
+        )
     return ActivityEdit(activity=activity, changes=changes)
 
 
@@ -127,6 +160,13 @@ def delete_activity(teacher: Teacher, activity_id: int) -> Activity:
     activity = _lock_changeable_activity(teacher, activity_id)
     activity.deleted_at = timezone.now()
     activity.save(update_fields=["deleted_at"])
+    notify(
+        activity.advising.student.user,
+        NotificationType.ACTIVITY_DELETED,
+        reference_type=ACTIVITY_REFERENCE,
+        reference_id=activity.id,
+        payload={"activity_title": activity.title, "teacher_name": teacher.user.full_name},
+    )
     return activity
 
 

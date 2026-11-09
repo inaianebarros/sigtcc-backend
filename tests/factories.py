@@ -15,6 +15,7 @@ from apps.accounts.models import (
 from apps.activities.models import Activity
 from apps.advising.models import Advising, AdvisingRequest
 from apps.meetings.models import Meeting, MeetingStatus
+from apps.notifications.models import Notification, NotificationType
 
 DEFAULT_PASSWORD = "senha-longa-123"
 _sequence = count(1)
@@ -99,4 +100,22 @@ def make_meeting(advising=None, status=MeetingStatus.PENDING, scheduled_at=None,
         description="Reunião de orientação",
         status=status,
         rejection_reason="Sem horário." if status == MeetingStatus.REJECTED else "",
+    )
+
+
+def make_notification(
+    recipient,
+    type=NotificationType.ACTIVITY_CREATED,
+    is_read=False,
+    payload=None,
+    reference_type="activity",
+    reference_id=1,
+):
+    return Notification.objects.create(
+        recipient=recipient,
+        type=type,
+        is_read=is_read,
+        payload=payload or {},
+        reference_type=reference_type,
+        reference_id=reference_id,
     )
