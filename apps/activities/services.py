@@ -333,7 +333,7 @@ def _lock_reviewable_activity(teacher: Teacher, activity_id: int) -> Activity:
     if advising is None:
         raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
     activity = (
-        Activity.objects.select_for_update()
+        Activity.objects.select_for_update(of=("self",))
         .select_related("advising__student__user")
         .get(pk=activity_id)
     )
