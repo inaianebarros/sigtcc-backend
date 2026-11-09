@@ -205,7 +205,7 @@ def _lock_advised_activity(activity_id: int, **advising_scope) -> Activity:
         raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
     activity = (
         Activity.objects.select_for_update(of=("self",))
-        .select_related("advising__student__user")
+        .select_related("advising__student__user", "advising__teacher__user")
         .get(pk=activity_id)
     )
     if activity.status == ActivityStatus.ARCHIVED:
@@ -270,6 +270,13 @@ def deliver_submission(student, activity_id: int, files) -> Submission:
                     )
                 )
             SubmissionFile.objects.bulk_create(records)
+            notify(
+                activity.advising.teacher.user,
+                NotificationType.ACTIVITY_SUBMITTED,
+                reference_type=ACTIVITY_REFERENCE,
+                reference_id=activity.id,
+                payload={"activity_title": activity.title, "student_name": student.user.full_name},
+            )
     except BaseException:
         # BaseException on purpose: whatever stops the delivery, the stored files must go.
         _remove_stored(storage, stored_keys)
@@ -310,6 +317,14 @@ def change_activity_status(student: Student, activity_id: int, status: ActivityS
         raise ConflictError(NO_SUBMISSION_MESSAGE)
     activity.status = status
     activity.save(update_fields=["status"])
+    if status == ActivityStatus.IN_REVIEW:
+        notify(
+            activity.advising.teacher.user,
+            NotificationType.ACTIVITY_AWAITING_REVIEW,
+            reference_type=ACTIVITY_REFERENCE,
+            reference_id=activity.id,
+            payload={"activity_title": activity.title, "student_name": student.user.full_name},
+        )
     return activity
 
 
@@ -370,7 +385,8 @@ def add_comment(user: User, activity_id: int, text: str) -> Comment:
 
     The comment is immutable. A completed activity takes no new comment (RN15). The advising and
     the activity are locked first (ADR 0004), so an advising that ends or an activity completed
-    meanwhile is answered with the same 404 or 409 and nothing is created.
+    meanwhile is answered with the same 404 or 409 and nothing is created. The other party is
+    notified in the same transaction (RF36, RF43); the author never notifies themselves.
     """
     scope = (
         {"student": user.student} if user.type == UserType.STUDENT else {"teacher": user.teacher}
@@ -378,4 +394,17 @@ def add_comment(user: User, activity_id: int, text: str) -> Comment:
     activity = _lock_advised_activity(activity_id, **scope)
     if activity.status == ActivityStatus.COMPLETED:
         raise ConflictError(COMMENTS_CLOSED_MESSAGE)
-    return Comment.objects.create(activity=activity, author=user, text=text)
+    comment = Comment.objects.create(activity=activity, author=user, text=text)
+    other_party = (
+        activity.advising.teacher.user
+        if user.type == UserType.STUDENT
+        else activity.advising.student.user
+    )
+    notify(
+        other_party,
+        NotificationType.ACTIVITY_COMMENTED,
+        reference_type=ACTIVITY_REFERENCE,
+        reference_id=activity.id,
+        payload={"activity_title": activity.title, "author_name": user.full_name},
+    )
+    return comment
