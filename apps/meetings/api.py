@@ -84,7 +84,7 @@ class MeetingCounterpartOut(Schema):
 
 
 class MeetingItemOut(MeetingOut):
-    situation: str
+    situation: MeetingSituation
     counterpart: MeetingCounterpartOut
     rejection_reason: str
     cancellation_reason: str

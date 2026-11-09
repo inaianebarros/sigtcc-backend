@@ -11,7 +11,7 @@ from config.errors import FieldValidationError
 from .models import Meeting
 from .situations import is_past, with_situation
 
-STUDENT_ID_NOT_ALLOWED_MESSAGE = "O aluno não filtra por aluno."
+STUDENT_FILTER_NOT_ALLOWED_MESSAGE = "O aluno não filtra por aluno."
 PERIOD_MESSAGE = "A data inicial não pode ser depois da data final."
 
 
@@ -29,7 +29,7 @@ def list_meetings(
 ) -> QuerySet[Meeting]:
     """The meetings of every advising of the user, active or ended (RF19), filtered and ordered."""
     if student_id is not None and user.type == UserType.STUDENT:
-        raise FieldValidationError({"student_id": STUDENT_ID_NOT_ALLOWED_MESSAGE})
+        raise FieldValidationError({"student_id": STUDENT_FILTER_NOT_ALLOWED_MESSAGE})
     if date_from is not None and date_to is not None and date_from > date_to:
         raise FieldValidationError({"date_from": PERIOD_MESSAGE})
     now = now or timezone.now()

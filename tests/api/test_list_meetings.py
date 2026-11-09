@@ -513,3 +513,11 @@ def test_the_openapi_documents_the_list_with_its_filters_and_errors(client):
     names = {parameter["name"] for parameter in operation["parameters"]}
     assert {"situation", "date_from", "date_to", "student_id", "limit", "offset"} <= names
     assert {"200", "401", "403", "422"} <= set(operation["responses"])
+
+
+def test_the_openapi_documents_the_six_situations_of_the_item(client):
+    schemas = client.get("/api/openapi.json").json()["components"]["schemas"]
+
+    situation = schemas["MeetingItemOut"]["properties"]["situation"]
+    values = schemas["MeetingSituation"]["enum"] if "$ref" in situation else situation["enum"]
+    assert set(values) == {"pending", "accepted", "rejected", "cancelled", "held", "expired"}
