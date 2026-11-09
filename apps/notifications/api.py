@@ -29,13 +29,16 @@ LIST_DESCRIPTION = (
     "activity_deleted: activity_title e teacher_name. "
     "activity_review_result: activity_title, decision (accepted ou rejected), teacher_name e, "
     "na recusa, justification. "
+    "activity_submitted: activity_title e student_name. "
+    "activity_awaiting_review: activity_title e student_name. "
+    "activity_commented: activity_title e author_name. "
     "advising_ended: teacher_name, archived_activities e cancelled_meetings. "
     "meeting_requested: author_name, author_type (student ou teacher), scheduled_at (com o "
     "fuso de Santarém) e description. "
     "meeting_answered: responder_name, decision (accepted ou rejected), reason (só na recusa) "
     "e scheduled_at. "
-    "Os tipos sem aviso ainda (comentário, entrega e revisão de atividade, solicitação não "
-    "respondida) têm payload vazio e message com o nome do tipo."
+    "O tipo sem aviso ainda (solicitação não respondida) tem payload vazio e message com o "
+    "nome do tipo."
 )
 
 

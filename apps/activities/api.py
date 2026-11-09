@@ -336,7 +336,8 @@ class ActivityController:
             "concluída responde 409. Outro Aluno, atividade excluída, arquivada, inexistente ou "
             "de orientação encerrada respondem o mesmo 404. A gravação é tudo ou nada: se o "
             "armazenamento falhar, responde 503 e nada fica no banco; se o banco falhar, os arquivos "
-            "já enviados são removidos."
+            "já enviados são removidos. Cada entrega notifica o Professor orientador na mesma "
+            "transação (RF42); uma entrega recusada ou que falha não deixa aviso."
         ),
     )
     def deliver(self, request: HttpRequest, activity_id: int, files: File[list[UploadedFile]]):
@@ -401,7 +402,9 @@ class ActivityController:
             "Aluno reenvia sem entrega nova. Em revisão o Aluno perde o controle, e concluída é "
             "definitiva: as duas respondem 409, assim como enviar para revisão sem nenhuma "
             "entrega. Outro Aluno, atividade excluída, arquivada, inexistente ou de orientação "
-            "encerrada respondem o mesmo 404. A resposta é a atividade no formato da lista."
+            "encerrada respondem o mesmo 404. Enviar para revisão notifica o Professor orientador "
+            "na mesma transação, inclusive no reenvio depois de uma recusa (RF47); alternar entre "
+            "pending e in_progress não notifica. A resposta é a atividade no formato da lista."
         ),
     )
     def change_status(self, request: HttpRequest, activity_id: int, payload: ActivityStatusIn):
@@ -459,7 +462,8 @@ class ActivityController:
             "ser editados nem excluídos. Pendente, em andamento e em revisão aceitam comentário "
             "dos dois lados; concluída responde 409 (RN15). Outro Aluno ou Professor, atividade "
             "excluída, arquivada, inexistente ou de orientação encerrada (inclusive durante a "
-            "ação) respondem o mesmo 404. A criação não envia notificação."
+            "ação) respondem o mesmo 404. A outra parte é notificada na mesma transação: o Aluno quando "
+            "o Professor comenta (RF36) e o Professor quando o Aluno comenta (RF43)."
         ),
     )
     def comment(self, request: HttpRequest, activity_id: int, payload: CommentIn):

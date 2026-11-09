@@ -12,7 +12,6 @@ from apps.accounts.models import UserType
 from apps.activities.models import Activity, ActivityStatus, Comment
 from apps.advising.models import Advising
 from apps.advising.services import close_advising
-from apps.notifications.models import Notification
 from tests.api.helpers import (
     bearer,
     errors_by_field,
@@ -285,16 +284,6 @@ def test_another_student_or_teacher_gets_the_same_404_and_cannot_comment(client)
             assert response.status_code == 404
             assert response.json() == NOT_FOUND
     assert not Comment.objects.exists()
-
-
-def test_a_comment_sends_no_notification(client):
-    student, teacher, advising = advised_pair()
-    activity = add_activity(advising)
-
-    comment(client, student.user, activity.id, "oi")
-    comment(client, teacher.user, activity.id, "olá")
-
-    assert not Notification.objects.exists()
 
 
 @pytest.mark.django_db(transaction=True)

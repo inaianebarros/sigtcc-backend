@@ -40,6 +40,22 @@ def _activity_deleted(payload: Payload) -> str:
     return f'{payload["teacher_name"]} excluiu a atividade "{payload["activity_title"]}".'
 
 
+def _activity_submitted(payload: Payload) -> str:
+    return (
+        f'{payload["student_name"]} entregou arquivos da atividade "{payload["activity_title"]}".'
+    )
+
+
+def _activity_awaiting_review(payload: Payload) -> str:
+    return (
+        f'{payload["student_name"]} enviou a atividade "{payload["activity_title"]}" para revisão.'
+    )
+
+
+def _activity_commented(payload: Payload) -> str:
+    return f'{payload["author_name"]} comentou na atividade "{payload["activity_title"]}".'
+
+
 def _count_phrase(count: int, none: str, one: str, many: str) -> str:
     if count == 0:
         return none
@@ -111,6 +127,9 @@ _BUILDERS: dict[str, Callable[[Payload], str]] = {
     NotificationType.ACTIVITY_CHANGED: _activity_changed,
     NotificationType.ACTIVITY_DELETED: _activity_deleted,
     NotificationType.ACTIVITY_REVIEW_RESULT: _activity_review_result,
+    NotificationType.ACTIVITY_SUBMITTED: _activity_submitted,
+    NotificationType.ACTIVITY_AWAITING_REVIEW: _activity_awaiting_review,
+    NotificationType.ACTIVITY_COMMENTED: _activity_commented,
     NotificationType.ADVISING_ENDED: _advising_ended,
     NotificationType.MEETING_REQUESTED: _meeting_requested,
     NotificationType.MEETING_ANSWERED: _meeting_answered,
