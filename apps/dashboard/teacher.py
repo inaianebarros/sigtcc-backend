@@ -1,5 +1,3 @@
-from dataclasses import asdict
-
 from django.db.models import Count, Q
 from django.db.models.functions import Lower
 from django.utils import timezone
@@ -11,14 +9,9 @@ from apps.activities.progress import count_activities, counted_activities
 from apps.advising.models import Advising, AdvisingStatus
 from apps.advising.thesis import topic_of
 
-from .upcoming import UPCOMING_LIMIT, upcoming_activities
+from .upcoming import upcoming_activities
 
-EMPTY_DASHBOARD = {
-    "advisees_count": 0,
-    "activities": None,
-    "attention_advisees": None,
-    "next_deadlines": None,
-}
+ATTENTION_LIMIT = 5
 
 
 def _attention_advisees(teacher: Teacher, today) -> dict:
@@ -40,11 +33,11 @@ def _attention_advisees(teacher: Teacher, today) -> dict:
         .filter(Q(overdue_count__gt=0) | Q(in_review_count__gt=0))
         .select_related("student__user", "thesis_topic")
         .order_by("-overdue_count", "-in_review_count", Lower("student__user__full_name"), "id")[
-            : UPCOMING_LIMIT + 1
+            : ATTENTION_LIMIT + 1
         ]
     )
     items = []
-    for advising in rows[:UPCOMING_LIMIT]:
+    for advising in rows[:ATTENTION_LIMIT]:
         topic = topic_of(advising)
         items.append(
             {
@@ -55,7 +48,7 @@ def _attention_advisees(teacher: Teacher, today) -> dict:
                 "in_review_count": advising.in_review_count,
             }
         )
-    return {"items": items, "has_more": len(rows) > UPCOMING_LIMIT}
+    return {"items": items, "has_more": len(rows) > ATTENTION_LIMIT}
 
 
 def teacher_dashboard(teacher: Teacher) -> dict:
@@ -67,14 +60,19 @@ def teacher_dashboard(teacher: Teacher) -> dict:
     today = timezone.localdate()
     advisees_count = Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE).count()
     if advisees_count == 0:
-        return EMPTY_DASHBOARD
+        return {
+            "advisees_count": 0,
+            "activities": None,
+            "attention_advisees": None,
+            "next_deadlines": None,
+        }
     activities = counted_activities().filter(
         advising__teacher=teacher, advising__status=AdvisingStatus.ACTIVE
     )
     counts = count_activities(activities, today)
     return {
         "advisees_count": advisees_count,
-        "activities": {**asdict(counts), "progress_percent": counts.progress_percent},
+        "activities": counts.as_indicators(),
         "attention_advisees": _attention_advisees(teacher, today),
         "next_deadlines": upcoming_activities(
             activities.select_related("advising__student__user"), today

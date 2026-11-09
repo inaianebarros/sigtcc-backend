@@ -1,5 +1,3 @@
-from dataclasses import asdict
-
 from django.utils import timezone
 
 from apps.accounts.models import Student
@@ -74,7 +72,7 @@ def student_dashboard(student: Student) -> dict:
             "teacher": TeacherSummaryOut.from_teacher(advising.teacher),
             "thesis_topic": topic.description if topic else None,
         },
-        "activities": {**asdict(counts), "progress_percent": counts.progress_percent},
+        "activities": counts.as_indicators(),
         "next_activities": upcoming_activities(
             counted_activities().filter(advising=advising), today
         ),
