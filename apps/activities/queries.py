@@ -10,6 +10,7 @@ from .lateness import overdue_condition, with_overdue
 from .models import Activity, ActivityStatus, Review, Submission, SubmissionFile
 
 ACTIVITY_NOT_FOUND_MESSAGE = "Atividade não encontrada."
+FILE_NOT_FOUND_MESSAGE = "Arquivo não encontrado."
 
 
 def visible_activities(user: User) -> QuerySet[Activity]:
@@ -79,3 +80,22 @@ def activity_detail(user: User, activity_id: int, today: date | None = None) -> 
     if activity is None:
         raise HttpError(404, ACTIVITY_NOT_FOUND_MESSAGE)
     return activity
+
+
+def submission_file_for_download(user: User, activity_id: int, file_id: int) -> SubmissionFile:
+    """The file of an activity the user may see: its student and the active advisor (RF31).
+
+    Anyone else, a deleted, archived or ended-advising activity, a missing file and a file of
+    another activity all answer the same 404.
+    """
+    submission_file = (
+        SubmissionFile.objects.filter(
+            pk=file_id,
+            submission__activity__in=visible_activities(user).filter(pk=activity_id),
+        )
+        .select_related("submission")
+        .first()
+    )
+    if submission_file is None:
+        raise HttpError(404, FILE_NOT_FOUND_MESSAGE)
+    return submission_file

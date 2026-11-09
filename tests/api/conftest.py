@@ -18,3 +18,12 @@ def clean_rate_limit_counters():
 @pytest.fixture(autouse=True)
 def fast_password_hasher(settings):
     settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+
+@pytest.fixture(autouse=True)
+def in_memory_submission_storage(settings):
+    """The API tests never reach the real bucket; only the integration test does (ADR 0002)."""
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "submissions": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+    }

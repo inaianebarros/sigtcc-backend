@@ -21,6 +21,13 @@ env = environ.Env(
     JWT_REFRESH_COOKIE_SECURE=(bool, True),
     JWT_TRUSTED_ORIGINS=(list, ["http://localhost:3000", "http://127.0.0.1:3000"]),
     FRONTEND_URL=(str, "http://localhost:3000"),
+    # Armazenamento S3-compatível (RustFS no Docker, ADR 0002). Fora do Compose, o endereço e as
+    # credenciais vêm do .env; as chaves do RustFS servem de padrão para as da AWS.
+    AWS_S3_ENDPOINT_URL=(str, "http://127.0.0.1:9000"),
+    AWS_S3_REGION_NAME=(str, "us-east-1"),
+    S3_BUCKET=(str, "sigtcc-dev"),
+    RUSTFS_ACCESS_KEY=(str, ""),
+    RUSTFS_SECRET_KEY=(str, ""),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -85,6 +92,27 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
 EMAIL_USE_TLS = env("EMAIL_USE_TLS")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
+
+# Os arquivos das Entregas ficam no bucket S3 (ADR 0002); o resto segue o padrão do Django.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    "submissions": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": env("S3_BUCKET"),
+            "endpoint_url": env("AWS_S3_ENDPOINT_URL"),
+            "region_name": env("AWS_S3_REGION_NAME"),
+            "access_key": env("AWS_ACCESS_KEY_ID", default=env("RUSTFS_ACCESS_KEY")),
+            "secret_key": env("AWS_SECRET_ACCESS_KEY", default=env("RUSTFS_SECRET_KEY")),
+            "addressing_style": "path",
+            "signature_version": "s3v4",
+            "default_acl": None,
+            "querystring_auth": False,
+            "file_overwrite": True,  # the key is random, so a lookup before each save is wasted
+        },
+    },
+}
 
 AUTH_USER_MODEL = "accounts.User"
 
