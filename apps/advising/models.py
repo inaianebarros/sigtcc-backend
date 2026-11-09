@@ -23,6 +23,11 @@ class AnswerAction(StrEnum):
     ACCEPT = "accept"
     REJECT = "reject"
 
+    @property
+    def decision(self) -> str:
+        """The decision as kept in a notification payload."""
+        return "accepted" if self is AnswerAction.ACCEPT else "rejected"
+
 
 class BlockedReason(StrEnum):
     ACTIVE_ADVISING = "active_advising"

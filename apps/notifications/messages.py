@@ -8,14 +8,14 @@ from .models import NotificationType
 Payload = dict
 
 
-def _date(iso: str) -> str:
+def _format_date(iso: str) -> str:
     return datetime.date.fromisoformat(iso).strftime("%d/%m/%Y")
 
 
 def _activity_created(payload: Payload) -> str:
     return (
         f'{payload["teacher_name"]} criou a atividade "{payload["activity_title"]}" para você, '
-        f"com prazo em {_date(payload['deadline'])}."
+        f"com prazo em {_format_date(payload['deadline'])}."
     )
 
 
@@ -24,7 +24,7 @@ def _change_text(change: Payload) -> str:
     if field == "title":
         return f'título de "{old}" para "{new}"'
     if field == "deadline":
-        return f"prazo de {_date(old)} para {_date(new)}"
+        return f"prazo de {_format_date(old)} para {_format_date(new)}"
     # The description can be long: the payload keeps both texts, the message only says it changed.
     return "a descrição foi alterada"
 
@@ -40,29 +40,34 @@ def _activity_deleted(payload: Payload) -> str:
     return f'{payload["teacher_name"]} excluiu a atividade "{payload["activity_title"]}".'
 
 
+def _count_phrase(count: int, none: str, one: str, many: str) -> str:
+    if count == 0:
+        return none
+    return one if count == 1 else many.format(count=count)
+
+
 def _advising_ended(payload: Payload) -> str:
-    archived, cancelled = payload["archived_activities"], payload["cancelled_meetings"]
-    if archived == 0:
-        activities = "Nenhuma atividade em aberto foi arquivada."
-    elif archived == 1:
-        activities = "1 atividade em aberto foi arquivada."
-    else:
-        activities = f"{archived} atividades em aberto foram arquivadas."
-    if cancelled == 0:
-        meetings = "Nenhuma reunião pendente ou aceita foi cancelada."
-    elif cancelled == 1:
-        meetings = "1 reunião pendente ou aceita foi cancelada."
-    else:
-        meetings = f"{cancelled} reuniões pendentes ou aceitas foram canceladas."
+    activities = _count_phrase(
+        payload["archived_activities"],
+        "Nenhuma atividade em aberto foi arquivada.",
+        "1 atividade em aberto foi arquivada.",
+        "{count} atividades em aberto foram arquivadas.",
+    )
+    meetings = _count_phrase(
+        payload["cancelled_meetings"],
+        "Nenhuma reunião pendente ou aceita foi cancelada.",
+        "1 reunião pendente ou aceita foi cancelada.",
+        "{count} reuniões pendentes ou aceitas foram canceladas.",
+    )
     return f"{payload['teacher_name']} encerrou a sua orientação. {activities} {meetings}"
 
 
-def _when(iso: str) -> str:
+def _format_datetime(iso: str) -> str:
     return datetime.datetime.fromisoformat(iso).strftime("%d/%m/%Y às %H:%M")
 
 
 def _meeting_requested(payload: Payload) -> str:
-    when = _when(payload["scheduled_at"])
+    when = _format_datetime(payload["scheduled_at"])
     if payload["author_type"] == "teacher":
         return f"{payload['author_name']} marcou uma reunião com você para {when}."
     return f"{payload['author_name']} solicitou uma reunião para {when}."
@@ -72,7 +77,7 @@ def _meeting_answered(payload: Payload) -> str:
     accepted = payload["decision"] == "accepted"
     text = (
         f"{payload['responder_name']} {'aceitou' if accepted else 'recusou'} a reunião de "
-        f"{_when(payload['scheduled_at'])}."
+        f"{_format_datetime(payload['scheduled_at'])}."
     )
     if not accepted and payload.get("reason"):
         text += f" Justificativa: {payload['reason']}"
@@ -101,8 +106,8 @@ _BUILDERS: dict[str, Callable[[Payload], str]] = {
 
 
 def message_for(notification_type: str, payload: Payload) -> str:
-    """The text to show. A type without a message of its own, or a payload from before the type
-    carried the fields its message needs, falls back to the label of the type.
+    """The text to show. A type without a message of its own, or a payload that lacks or mangles the fields its
+    message needs (an old row, a manual edit), falls back to the label of the type.
     """
     label = NotificationType(notification_type).label
     builder = _BUILDERS.get(notification_type)
@@ -110,5 +115,6 @@ def message_for(notification_type: str, payload: Payload) -> str:
         return label
     try:
         return builder(payload)
-    except KeyError:
+    except (KeyError, ValueError, TypeError):
+        # An old or hand-edited payload must never break the whole list.
         return label

@@ -62,7 +62,7 @@ class NotificationOut(Schema):
         return NotificationReferenceOut(type=obj.reference_type, id=obj.reference_id)
 
 
-class UnreadCountOut(Schema):
+class CountOut(Schema):
     count: int
 
 
@@ -81,7 +81,7 @@ class NotificationController:
 
     @http_get(
         "/nao-lidas/contagem",
-        response={200: UnreadCountOut, 401: ErrorOut, 403: ErrorOut},
+        response={200: CountOut, 401: ErrorOut, 403: ErrorOut},
         permissions=[IsStudent | IsTeacher],
         summary="Conta as notificações não lidas",
         description=(
@@ -94,7 +94,7 @@ class NotificationController:
 
     @http_patch(
         "/todas-lidas",
-        response={200: UnreadCountOut, 401: ErrorOut, 403: ErrorOut},
+        response={200: CountOut, 401: ErrorOut, 403: ErrorOut},
         permissions=[IsStudent | IsTeacher],
         summary="Marca todas as notificações como lidas",
         description=(

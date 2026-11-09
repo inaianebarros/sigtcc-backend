@@ -42,7 +42,7 @@ EDITABLE_FIELDS = ("title", "description", "deadline")
 logger = logging.getLogger(__name__)
 
 
-def _plain(value: str | date) -> str:
+def _json_value(value: str | date) -> str:
     """A changed value as it is kept in a notification payload: JSON, so a date is ISO text."""
     return value.isoformat() if isinstance(value, date) else value
 
@@ -146,7 +146,7 @@ def edit_activity(
                 "activity_title": activity.title,
                 "teacher_name": teacher.user.full_name,
                 "changes": [
-                    {"field": field, "old": _plain(change.old), "new": _plain(change.new)}
+                    {"field": field, "old": _json_value(change.old), "new": _json_value(change.new)}
                     for field, change in changes.items()
                 ],
             },

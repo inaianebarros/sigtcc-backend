@@ -7,17 +7,10 @@ from django.test import Client
 
 from apps.activities.models import Activity, ActivityStatus
 from apps.notifications.models import Notification
-from tests.api.helpers import bearer, post_json
+from tests.api.helpers import CREATE_NOTIFICATION, bearer, inbox, post_json
 from tests.factories import make_advising, make_course, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
-
-NOTIFICATIONS = "/api/notificacoes"
-CREATE_NOTIFICATION = "apps.notifications.services.Notification.objects.create"
-
-
-def inbox(client, user):
-    return client.get(NOTIFICATIONS, headers=bearer(user)).json()["items"]
 
 
 def advised_pair():

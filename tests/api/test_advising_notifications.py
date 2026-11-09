@@ -11,7 +11,7 @@ from apps.activities.models import ActivityStatus
 from apps.advising.models import Advising, AdvisingStatus
 from apps.meetings.models import MeetingStatus
 from apps.notifications.models import Notification
-from tests.api.helpers import bearer, post_json
+from tests.api.helpers import CREATE_NOTIFICATION, bearer, inbox, post_json
 from tests.factories import (
     make_activity,
     make_advising,
@@ -23,12 +23,7 @@ from tests.factories import (
 
 pytestmark = pytest.mark.django_db
 
-CREATE_NOTIFICATION = "apps.notifications.services.Notification.objects.create"
 REASON = "Concluímos o ciclo de orientação do TCC."
-
-
-def inbox(client, user):
-    return client.get("/api/notificacoes", headers=bearer(user)).json()["items"]
 
 
 def advised_pair():

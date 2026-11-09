@@ -170,7 +170,7 @@ def answer_request(teacher: Teacher, request_id: int, action: AnswerAction) -> A
         reference_id=advising_request.id,
         payload={
             "teacher_name": teacher.user.full_name,
-            "decision": "accepted" if action == AnswerAction.ACCEPT else "rejected",
+            "decision": action.decision,
         },
     )
     return AdvisingRequest.objects.with_effective_status().get(pk=request_id)

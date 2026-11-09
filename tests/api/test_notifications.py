@@ -93,6 +93,46 @@ def test_the_newest_come_first_and_ties_are_broken_by_the_id(client):
     assert ids == [third.id, second.id, first.id]
 
 
+@pytest.mark.parametrize(
+    ("type_", "payload"),
+    [
+        (
+            NotificationType.ACTIVITY_CREATED,
+            {"activity_title": "A", "teacher_name": "B", "deadline": None},
+        ),
+        (
+            NotificationType.ACTIVITY_CREATED,
+            {"activity_title": "A", "teacher_name": "B", "deadline": "não é uma data"},
+        ),
+        (
+            NotificationType.ACTIVITY_CHANGED,
+            {"activity_title": "A", "teacher_name": "B", "changes": None},
+        ),
+        (
+            NotificationType.ACTIVITY_CHANGED,
+            {"activity_title": "A", "teacher_name": "B", "changes": [42]},
+        ),
+        (
+            NotificationType.MEETING_REQUESTED,
+            {"author_name": "A", "author_type": "student", "scheduled_at": "ontem"},
+        ),
+        (NotificationType.ADVISING_ENDED, {"teacher_name": "A", "archived_activities": "x"}),
+    ],
+)
+def test_a_malformed_payload_never_breaks_the_list_and_falls_back_to_the_label(
+    client, type_, payload
+):
+    student = make_student().user
+    make_notification(student, type=type_, payload=payload)
+    make_notification(student, type=NotificationType.ACTIVITY_COMMENTED)
+
+    response = listing(client, student)
+
+    assert response.status_code == 200
+    messages = {item["type"]: item["message"] for item in response.json()["items"]}
+    assert messages[type_] == NotificationType(type_).label
+
+
 def test_notifications_created_at_the_same_instant_are_ordered_by_the_id_newest_first(client):
     student = make_student().user
     created = [make_notification(student) for _ in range(3)]

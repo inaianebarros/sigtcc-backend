@@ -38,6 +38,20 @@ def _local_iso(moment: datetime.datetime) -> str:
     return timezone.localtime(moment).isoformat()
 
 
+def _answer_payload(
+    responder: User, meeting: Meeting, action: AnswerAction, rejection_reason: str
+) -> dict:
+    """The snapshot of an answer: who answered, what, when the meeting is, and why if rejected."""
+    payload = {
+        "responder_name": responder.full_name,
+        "decision": action.decision,
+        "scheduled_at": _local_iso(meeting.scheduled_at),
+    }
+    if action == AnswerAction.REJECT:
+        payload["reason"] = rejection_reason
+    return payload
+
+
 def to_scheduled_at(day: datetime.date, at: datetime.time) -> datetime.datetime:
     """The date and the time as given in the project time zone, strictly after now (RF17)."""
     moment = datetime.datetime.combine(day, at, tzinfo=ZoneInfo(settings.TIME_ZONE))
@@ -175,20 +189,13 @@ def answer_meeting(
         meeting.status = MeetingStatus.REJECTED
         meeting.rejection_reason = rejection_reason
     meeting.save(update_fields=["status", "rejection_reason"])
-    answer_payload = {
-        "responder_name": user.full_name,
-        "decision": "accepted" if action == AnswerAction.ACCEPT else "rejected",
-        "scheduled_at": _local_iso(meeting.scheduled_at),
-    }
-    if action == AnswerAction.REJECT:
-        answer_payload["reason"] = rejection_reason
     # The author asked for the meeting and is the one waiting for the answer (RF38, RF41).
     notify(
         meeting.author,
         NotificationType.MEETING_ANSWERED,
         reference_type=MEETING_REFERENCE,
         reference_id=meeting.id,
-        payload=answer_payload,
+        payload=_answer_payload(user, meeting, action, rejection_reason),
     )
     return meeting
 

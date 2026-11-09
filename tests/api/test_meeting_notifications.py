@@ -8,17 +8,12 @@ from django.test import Client
 
 from apps.meetings.models import Meeting, MeetingStatus
 from apps.notifications.models import Notification
-from tests.api.helpers import bearer, post_json
+from tests.api.helpers import CREATE_NOTIFICATION, bearer, inbox, post_json
 from tests.factories import make_advising, make_course, make_meeting, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
 
-CREATE_NOTIFICATION = "apps.notifications.services.Notification.objects.create"
 WHEN = "2099-12-31T14:30:00-03:00"
-
-
-def inbox(client, user):
-    return client.get("/api/notificacoes", headers=bearer(user)).json()["items"]
 
 
 def advised_pair():
