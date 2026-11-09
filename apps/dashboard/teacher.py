@@ -8,7 +8,9 @@ from apps.activities.models import ActivityStatus
 from apps.activities.progress import count_activities, counted_activities
 from apps.advising.models import Advising, AdvisingStatus
 from apps.advising.thesis import topic_of
+from apps.meetings.models import Meeting
 
+from .meetings import meetings_block, upcoming_meetings
 from .upcoming import upcoming_activities
 
 ATTENTION_LIMIT = 5
@@ -51,6 +53,23 @@ def _attention_advisees(teacher: Teacher, today) -> dict:
     return {"items": items, "has_more": len(rows) > ATTENTION_LIMIT}
 
 
+def _next_meetings(teacher: Teacher) -> dict:
+    """The accepted future meetings of the active advisings, with the advisee as the other party."""
+    meetings = Meeting.objects.filter(
+        advising__teacher=teacher, advising__status=AdvisingStatus.ACTIVE
+    ).select_related("advising__student__user")
+    rows = upcoming_meetings(meetings, timezone.now())
+    return meetings_block(
+        rows,
+        lambda meeting: {
+            "student": {
+                "id": meeting.advising.student.user_id,
+                "full_name": meeting.advising.student.user.full_name,
+            }
+        },
+    )
+
+
 def teacher_dashboard(teacher: Teacher) -> dict:
     """The teacher's summary of the active advisings (RF51), from one clock (RN24, RN37).
 
@@ -65,6 +84,7 @@ def teacher_dashboard(teacher: Teacher) -> dict:
             "activities": None,
             "attention_advisees": None,
             "next_deadlines": None,
+            "next_meetings": None,
         }
     activities = counted_activities().filter(
         advising__teacher=teacher, advising__status=AdvisingStatus.ACTIVE
@@ -77,4 +97,5 @@ def teacher_dashboard(teacher: Teacher) -> dict:
         "next_deadlines": upcoming_activities(
             activities.select_related("advising__student__user"), today
         ),
+        "next_meetings": _next_meetings(teacher),
     }
