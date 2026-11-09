@@ -10,10 +10,11 @@ from apps.accounts.models import Student, Teacher
 from apps.activities.models import Activity, ActivityStatus
 from apps.meetings.models import SYSTEM_CANCELLATION_REASON, Meeting, MeetingStatus
 from apps.notifications.models import (
+    ADVISING_REFERENCE,
     ADVISING_REQUEST_REFERENCE,
-    Notification,
     NotificationType,
 )
+from apps.notifications.services import notify
 from config.errors import ConflictError
 
 from .deadlines import answer_cutoff
@@ -99,11 +100,12 @@ def request_advising(student: Student, teacher_id: int) -> AdvisingRequest:
             )
     except IntegrityError as error:
         raise ConflictError(PENDING_REQUEST_MESSAGE) from error
-    Notification.objects.create(
-        recipient=teacher.user,
-        type=NotificationType.ADVISING_REQUEST_RECEIVED,
+    notify(
+        teacher.user,
+        NotificationType.ADVISING_REQUEST_RECEIVED,
         reference_type=ADVISING_REQUEST_REFERENCE,
         reference_id=advising_request.id,
+        payload={"student_name": student.user.full_name},
     )
     return advising_request
 
@@ -161,11 +163,15 @@ def answer_request(teacher: Teacher, request_id: int, action: AnswerAction) -> A
         advising_request.status = AdvisingRequestStatus.REJECTED
     advising_request.responded_at = timezone.now()
     advising_request.save(update_fields=["status", "responded_at"])
-    Notification.objects.create(
-        recipient=student.user,
-        type=NotificationType.ADVISING_REQUEST_ANSWERED,
+    notify(
+        student.user,
+        NotificationType.ADVISING_REQUEST_ANSWERED,
         reference_type=ADVISING_REQUEST_REFERENCE,
         reference_id=advising_request.id,
+        payload={
+            "teacher_name": teacher.user.full_name,
+            "decision": "accepted" if action == AnswerAction.ACCEPT else "rejected",
+        },
     )
     return AdvisingRequest.objects.with_effective_status().get(pk=request_id)
 
@@ -200,15 +206,23 @@ def student_request_status(student: Student) -> StudentRequestStatus:
     return StudentRequestStatus(latest_request, active_advising, blocked_reason)
 
 
-def close_advising(advising: Advising, reason: str) -> None:
+@dataclass(frozen=True)
+class EndingSummary:
+    """What ending an advising changed: the open activities archived and the meetings cancelled."""
+
+    archived_activities: int
+    cancelled_meetings: int
+
+
+def close_advising(advising: Advising, reason: str) -> EndingSummary:
     """Ends a locked advising and everything that depends on it (RN07, RN34)."""
     if advising.status == AdvisingStatus.ENDED:
         raise ConflictError(ALREADY_ENDED_MESSAGE)
     now = timezone.now()
-    Activity.objects.filter(
+    archived = Activity.objects.filter(
         advising=advising, deleted_at__isnull=True, status__in=ARCHIVED_ON_END
     ).update(status=ActivityStatus.ARCHIVED)
-    Meeting.objects.filter(
+    cancelled = Meeting.objects.filter(
         advising=advising, status__in=CANCELLED_ON_END, scheduled_at__gt=now
     ).update(
         status=MeetingStatus.CANCELLED,
@@ -219,6 +233,7 @@ def close_advising(advising: Advising, reason: str) -> None:
     advising.ended_at = now
     advising.end_reason = reason
     advising.save(update_fields=["status", "ended_at", "end_reason"])
+    return EndingSummary(archived_activities=archived, cancelled_meetings=cancelled)
 
 
 @transaction.atomic
@@ -226,7 +241,18 @@ def end_advising(teacher: Teacher, advising_id: int, reason: str) -> Advising:
     advising = Advising.objects.select_for_update().filter(pk=advising_id, teacher=teacher).first()
     if advising is None:
         raise HttpError(404, "Orientação não encontrada.")
-    close_advising(advising, reason)
+    ending = close_advising(advising, reason)
+    notify(
+        advising.student.user,
+        NotificationType.ADVISING_ENDED,
+        reference_type=ADVISING_REFERENCE,
+        reference_id=advising.id,
+        payload={
+            "teacher_name": teacher.user.full_name,
+            "archived_activities": ending.archived_activities,
+            "cancelled_meetings": ending.cancelled_meetings,
+        },
+    )
     return advising
 
 

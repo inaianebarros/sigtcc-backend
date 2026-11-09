@@ -72,6 +72,10 @@ def test_a_student_requests_advising_from_an_available_teacher_of_their_course(c
         ADVISING_REQUEST_REFERENCE,
         advising_request.id,
     )
+    assert notification.payload == {"student_name": student.user.full_name}
+    (shown,) = client.get("/api/notificacoes", headers=bearer(teacher.user)).json()["items"]
+    assert shown["message"] == f"{student.user.full_name} enviou uma solicitação de orientação."
+    assert client.get("/api/notificacoes", headers=bearer(student.user)).json()["count"] == 0
 
 
 def make_unavailable(teacher):
@@ -246,7 +250,7 @@ def test_a_failing_notification_leaves_no_request_behind():
     quiet_client = Client(raise_request_exception=False)
 
     with patch(
-        "apps.advising.services.Notification.objects.create", side_effect=RuntimeError("boom")
+        "apps.notifications.services.Notification.objects.create", side_effect=RuntimeError("boom")
     ):
         response = post_request(quiet_client, student.user, teacher.user_id)
 

@@ -77,6 +77,20 @@ def test_a_teacher_accepts_a_pending_request_and_an_active_advising_is_created(c
         ADVISING_REQUEST_REFERENCE,
         received.id,
     )
+    assert notification.payload == {
+        "teacher_name": received.teacher.user.full_name,
+        "decision": "accepted",
+    }
+    (shown,) = client.get("/api/notificacoes", headers=bearer(received.student.user)).json()[
+        "items"
+    ]
+    assert (
+        shown["message"]
+        == f"{received.teacher.user.full_name} aceitou a sua solicitação de orientação."
+    )
+    assert (
+        client.get("/api/notificacoes", headers=bearer(received.teacher.user)).json()["count"] == 0
+    )
 
 
 def test_a_teacher_rejects_a_pending_request_without_creating_an_advising(client):
@@ -98,6 +112,17 @@ def test_a_teacher_rejects_a_pending_request_without_creating_an_advising(client
     assert (notification.reference_type, notification.reference_id) == (
         ADVISING_REQUEST_REFERENCE,
         received.id,
+    )
+    assert notification.payload == {
+        "teacher_name": received.teacher.user.full_name,
+        "decision": "rejected",
+    }
+    (shown,) = client.get("/api/notificacoes", headers=bearer(received.student.user)).json()[
+        "items"
+    ]
+    assert (
+        shown["message"]
+        == f"{received.teacher.user.full_name} recusou a sua solicitação de orientação."
     )
 
 
@@ -234,7 +259,7 @@ def test_a_failing_notification_leaves_the_request_pending_and_creates_no_advisi
     quiet_client = Client(raise_request_exception=False)
 
     with patch(
-        "apps.advising.services.Notification.objects.create", side_effect=RuntimeError("boom")
+        "apps.notifications.services.Notification.objects.create", side_effect=RuntimeError("boom")
     ):
         response = answer(quiet_client, received.teacher.user, received.id, "accept")
 
