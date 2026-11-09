@@ -122,13 +122,17 @@ def _locked_meeting_of_party(user: User, meeting_id: int) -> Meeting:
     return Meeting.objects.select_related("author").get(pk=meeting_id)
 
 
+def _ensure_not_past(meeting: Meeting) -> None:
+    if meeting.scheduled_at <= timezone.now():
+        raise ConflictError(TIME_PASSED_MESSAGE)
+
+
 def _ensure_can_be_answered(meeting: Meeting) -> None:
     if meeting.status == MeetingStatus.CANCELLED:
         raise ConflictError(CANCELLED_MESSAGE)
     if meeting.status != MeetingStatus.PENDING:
         raise ConflictError(ALREADY_ANSWERED_MESSAGE)
-    if meeting.scheduled_at <= timezone.now():
-        raise ConflictError(TIME_PASSED_MESSAGE)
+    _ensure_not_past(meeting)
 
 
 @transaction.atomic
@@ -179,8 +183,7 @@ def edit_meeting(
         raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
     if meeting.status in (MeetingStatus.REJECTED, MeetingStatus.CANCELLED):
         raise ConflictError(NOT_EDITABLE_MESSAGE)
-    if meeting.scheduled_at <= timezone.now():
-        raise ConflictError(TIME_PASSED_MESSAGE)
+    _ensure_not_past(meeting)
     changes: dict[str, FieldChange] = {}
     if day is not None or at is not None:
         current = meeting.scheduled_at.astimezone(ZoneInfo(settings.TIME_ZONE))
@@ -217,8 +220,7 @@ def cancel_meeting(user: User, meeting_id: int, reason: str) -> Meeting:
         raise ConflictError(REJECTED_NOT_CANCELLABLE_MESSAGE)
     if meeting.status == MeetingStatus.CANCELLED:
         raise ConflictError(ALREADY_CANCELLED_MESSAGE)
-    if meeting.scheduled_at <= timezone.now():
-        raise ConflictError(TIME_PASSED_MESSAGE)
+    _ensure_not_past(meeting)
     meeting.status = MeetingStatus.CANCELLED
     meeting.cancellation_reason = reason
     meeting.save(update_fields=["status", "cancellation_reason"])

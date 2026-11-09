@@ -11,7 +11,7 @@ from pydantic import StringConstraints, model_validator
 
 from apps.accounts.permissions import IsStudent, IsTeacher
 from apps.advising.models import AnswerAction
-from config.schemas import ErrorOut, FieldErrorsOut
+from config.schemas import ErrorOut, FieldErrorsOut, check_partial_update
 
 from .models import Meeting
 from .services import answer_meeting, cancel_meeting, create_meeting, edit_meeting
@@ -62,11 +62,7 @@ class MeetingPatchIn(Schema):
 
     @model_validator(mode="after")
     def at_least_one_field_and_no_nulls(self):
-        if not self.model_fields_set & {"date", "time", "description"}:
-            raise ValueError("Informe ao menos um campo: date, time ou description.")
-        for field in self.model_fields_set:
-            if getattr(self, field) is None:
-                raise ValueError(f"O campo {field} não pode ser nulo.")
+        check_partial_update(self, ("date", "time", "description"))
         return self
 
 

@@ -13,7 +13,7 @@ from pydantic import StringConstraints, field_validator, model_validator
 from apps.accounts.permissions import IsStudent, IsTeacher
 from apps.advising.schemas import TeacherSummaryOut
 from config.pagination import BoundedLimitOffsetPagination
-from config.schemas import ErrorOut, FieldErrorsOut, Page
+from config.schemas import ErrorOut, FieldErrorsOut, Page, check_partial_update
 
 from .models import Activity, ActivityStatus, Review, Submission, SubmissionFile
 from .queries import activity_detail, list_activities
@@ -59,11 +59,7 @@ class ActivityPatchIn(Schema):
 
     @model_validator(mode="after")
     def at_least_one_field_and_no_nulls(self):
-        if not self.model_fields_set & set(EDITABLE_FIELDS):
-            raise ValueError("Informe ao menos um campo: title, description ou deadline.")
-        for field in self.model_fields_set:
-            if getattr(self, field) is None:
-                raise ValueError(f"O campo {field} não pode ser nulo.")
+        check_partial_update(self, EDITABLE_FIELDS)
         return self
 
 
