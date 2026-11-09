@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from django.utils import timezone
 
 from apps.accounts.models import Student
@@ -85,15 +87,7 @@ def student_dashboard(student: Student) -> dict:
             "teacher": TeacherSummaryOut.from_teacher(advising.teacher),
             "thesis_topic": topic.description if topic else None,
         },
-        "activities": {
-            "total": counts.total,
-            "pending": counts.pending,
-            "in_progress": counts.in_progress,
-            "in_review": counts.in_review,
-            "completed": counts.completed,
-            "overdue": counts.overdue,
-            "progress_percent": counts.progress_percent,
-        },
+        "activities": {**asdict(counts), "progress_percent": counts.progress_percent},
         "next_activities": _next_activities(advising, today),
         "last_request": None,
         "has_ended_advisings": has_ended_advisings,
