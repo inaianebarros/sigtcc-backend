@@ -14,7 +14,7 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
 
 WORKDIR /app
 
-# WITH_DEV=1 inclui o grupo "dev" (pytest, ruff, boto3); use 0 para uma imagem só com runtime.
+# WITH_DEV=1 inclui o grupo "dev" (pytest e ruff); use 0 para uma imagem só com runtime.
 ARG WITH_DEV=1
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
