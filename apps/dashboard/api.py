@@ -2,15 +2,16 @@ from django.http import HttpRequest
 from ninja_extra import api_controller, http_get
 from ninja_jwt.authentication import JWTAuth
 
-from apps.accounts.permissions import IsStudent
+from apps.accounts.permissions import IsStudent, IsTeacher
 from config.schemas import ErrorOut
 
-from .schemas import StudentDashboardOut
+from .schemas import StudentDashboardOut, TeacherDashboardOut
 from .student import student_dashboard
+from .teacher import teacher_dashboard
 
 
 @api_controller("/painel", tags=["Painel"], auth=JWTAuth())
-class StudentDashboardController:
+class DashboardController:
     @http_get(
         "/aluno",
         response={200: StudentDashboardOut, 401: ErrorOut, 403: ErrorOut},
@@ -32,3 +33,24 @@ class StudentDashboardController:
     )
     def student(self, request: HttpRequest):
         return student_dashboard(request.user.student)
+
+    @http_get(
+        "/professor",
+        response={200: TeacherDashboardOut, 401: ErrorOut, 403: ErrorOut},
+        permissions=[IsTeacher],
+        summary="A Dashboard do Professor",
+        description=(
+            "Somente leitura (RF51). Soma só as orientações ativas do Professor e as atividades "
+            "que não foram arquivadas nem excluídas (RN35): advisees_count, activities (total, "
+            "por status, atrasadas e progress_percent, truncado e nulo sem atividades, RN36), "
+            "attention_advisees e next_deadlines. Os orientandos de atenção (RN38) têm ao menos "
+            "uma atividade atrasada ou em revisão e vêm por mais atrasadas, depois mais em "
+            "revisão e, por fim, pelo nome sem diferenciar maiúsculas; até 5, com has_more, e "
+            "com o tema do TCC quando cadastrado. A classificação é informativa. Os próximos "
+            "prazos são as atividades pendentes, em andamento ou em revisão, por prazo (as "
+            "atrasadas primeiro), até 5, com has_more, o Aluno e a indicação de atraso (RN37). "
+            "Sem orientação ativa, a resposta é vazia: advisees_count 0 e o resto nulo."
+        ),
+    )
+    def teacher(self, request: HttpRequest):
+        return teacher_dashboard(request.user.teacher)
