@@ -7,7 +7,6 @@ from django.db.models.deletion import ProtectedError
 from apps.accounts.models import COURSE_WITH_TEACHERS_MESSAGE, Course, Institute, User, UserType
 from tests.factories import (
     DEFAULT_PASSWORD,
-    make_admin,
     make_course,
     make_student,
     make_teacher,
@@ -18,12 +17,6 @@ pytestmark = pytest.mark.django_db
 
 COURSES = "/admin/accounts/course/"
 INTRUDER_COURSE = "Invasão"
-
-
-@pytest.fixture
-def admin_client(client):
-    client.force_login(make_admin())
-    return client
 
 
 def delete_url(course):

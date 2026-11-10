@@ -46,7 +46,7 @@ uv run python manage.py runserver
 
 ## Administrador (Django Admin)
 
-O Administrador usa o Django Admin em `/admin/` (sessão do Django, separada do JWT), e não a API nem o frontend (ADR 0010). Ele só é criado por `createsuperuser` (sempre com o tipo `admin`); Professor e Aluno nunca entram no `/admin/`. Lá ele cadastra, edita e exclui Cursos; um curso com Professores ou Alunos vinculados não pode ser excluído (RN17).
+O Administrador usa o Django Admin em `/admin/` (sessão do Django, separada do JWT), e não a API nem o frontend (ADR 0010). Ele só é criado por `createsuperuser` (sempre com o tipo `admin`); Professor e Aluno nunca entram no `/admin/`. Lá ele cadastra, edita e exclui Cursos e Áreas de Interesse; um curso (RN17) ou uma área (RN18) com Professores ou Alunos vinculados não pode ser excluído.
 
 ```bash
 uv run python manage.py createsuperuser    # no Compose: docker compose run --rm backend python manage.py createsuperuser
