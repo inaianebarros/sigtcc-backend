@@ -48,6 +48,8 @@ uv run python manage.py runserver
 
 ```bash
 uv run pytest                 # testes (exigem PostgreSQL; criam um banco de teste)
+uv run pytest --cov           # cobertura de linhas e ramos de accounts, advising e meetings; falha abaixo de 80% no total
+./scripts/check_coverage.sh   # o mesmo, e exige 80% em cada um dos três apps (é o que a CI, #64, vai rodar)
 uv run ruff check .           # lint
 uv run ruff format --check .  # formatação
 uv run python manage.py check

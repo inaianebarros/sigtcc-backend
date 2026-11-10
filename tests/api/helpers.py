@@ -61,9 +61,15 @@ def travel(seconds):
 
 
 def wait_for_a_request_blocked_on_a_lock(timeout=10):
+    """Waits until another connection is blocked on a lock.
+
+    Inside an open transaction PostgreSQL keeps one snapshot of `pg_stat_activity` until the
+    transaction ends, so the snapshot is cleared before each look.
+    """
     deadline = time.monotonic() + timeout
     with connection.cursor() as cursor:
         while time.monotonic() < deadline:
+            cursor.execute("SELECT pg_stat_clear_snapshot()")
             cursor.execute(
                 "SELECT 1 FROM pg_stat_activity "
                 "WHERE datname = current_database() AND wait_event_type = 'Lock'"
