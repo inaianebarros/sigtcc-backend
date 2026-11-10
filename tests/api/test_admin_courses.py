@@ -5,15 +5,19 @@ from django.core.management import call_command
 from django.db.models.deletion import ProtectedError
 
 from apps.accounts.models import COURSE_WITH_TEACHERS_MESSAGE, Course, Institute, User, UserType
-from tests.factories import DEFAULT_PASSWORD, make_course, make_student, make_teacher, make_user
+from tests.factories import (
+    DEFAULT_PASSWORD,
+    make_admin,
+    make_course,
+    make_student,
+    make_teacher,
+    make_user,
+)
 
 pytestmark = pytest.mark.django_db
 
 COURSES = "/admin/accounts/course/"
-
-
-def make_admin():
-    return User.objects.create_superuser(email="admin@example.com", password=DEFAULT_PASSWORD)
+INTRUDER_COURSE = "Invasão"
 
 
 @pytest.fixture
@@ -24,6 +28,15 @@ def admin_client(client):
 
 def delete_url(course):
     return f"{COURSES}{course.pk}/delete/"
+
+
+def assert_the_admin_refuses_to_delete(admin_client, course):
+    page = admin_client.get(delete_url(course))
+    assert page.status_code == 200
+    assert len(page.context["protected"]) == 1
+    response = admin_client.post(delete_url(course), {"post": "yes"})
+    assert response.status_code == 200
+    assert Course.objects.filter(pk=course.pk).exists()
 
 
 def test_the_administrator_lists_the_courses(admin_client):
@@ -75,15 +88,6 @@ def test_the_administrator_deletes_a_course_without_bonds(admin_client):
     assert not Course.objects.filter(pk=course.pk).exists()
 
 
-def assert_the_admin_refuses_to_delete(admin_client, course):
-    page = admin_client.get(delete_url(course))
-    assert page.status_code == 200
-    assert page.context["protected"]
-    response = admin_client.post(delete_url(course), {"post": "yes"})
-    assert response.status_code == 200
-    assert Course.objects.filter(pk=course.pk).exists()
-
-
 def test_a_course_with_a_student_cannot_be_deleted(admin_client):
     student = make_student()
 
@@ -114,28 +118,40 @@ def test_the_bulk_delete_of_the_admin_also_refuses_a_course_in_use(admin_client)
     )
 
     assert response.status_code == 200
+    assert response.context["protected"]
     assert Course.objects.filter(pk__in=[in_use.pk, free.pk]).count() == 2
 
 
-def test_the_model_refuses_to_delete_a_course_in_use_whoever_calls_it():
-    by_teacher = make_course()
-    make_teacher(courses=[by_teacher])
-    by_student = make_student().course
-    free = make_course()
+def test_the_model_refuses_to_delete_a_course_with_a_teacher():
+    course = make_course()
+    make_teacher(courses=[course])
 
     with pytest.raises(ProtectedError, match=COURSE_WITH_TEACHERS_MESSAGE):
-        by_teacher.delete()
-    with pytest.raises(ProtectedError):
-        by_student.delete()
-    with pytest.raises(ProtectedError):
-        Course.objects.filter(pk__in=[free.pk, by_teacher.pk]).delete()
+        course.delete()
+    with pytest.raises(ProtectedError, match=COURSE_WITH_TEACHERS_MESSAGE):
+        Course.objects.filter(pk=course.pk).delete()
 
-    assert Course.objects.filter(pk__in=[free.pk, by_teacher.pk, by_student.pk]).count() == 3
-    free.delete()
-    assert not Course.objects.filter(pk=free.pk).exists()
-    another_free = make_course()
-    Course.objects.filter(pk=another_free.pk).delete()
-    assert not Course.objects.filter(pk=another_free.pk).exists()
+    assert Course.objects.filter(pk=course.pk).exists()
+
+
+def test_the_model_refuses_to_delete_a_course_with_a_student():
+    course = make_student().course
+
+    with pytest.raises(ProtectedError):
+        course.delete()
+    with pytest.raises(ProtectedError):
+        Course.objects.filter(pk=course.pk).delete()
+
+    assert Course.objects.filter(pk=course.pk).exists()
+
+
+def test_the_model_deletes_courses_without_bonds_one_by_one_or_in_bulk():
+    single, first, second = make_course(), make_course(), make_course()
+
+    single.delete()
+    Course.objects.filter(pk__in=[first.pk, second.pk]).delete()
+
+    assert not Course.objects.filter(pk__in=[single.pk, first.pk, second.pk]).exists()
 
 
 @pytest.mark.parametrize("user_type", [UserType.STUDENT, UserType.TEACHER])
@@ -146,7 +162,7 @@ def test_a_student_or_a_teacher_does_not_enter_the_admin(client, user_type):
 
     pages = [client.get("/admin/"), client.get(COURSES), client.get(f"{COURSES}add/")]
     posts = [
-        client.post(f"{COURSES}add/", {"institute": course.institute_id, "name": "Invasão"}),
+        client.post(f"{COURSES}add/", {"institute": course.institute_id, "name": INTRUDER_COURSE}),
         client.post(delete_url(course), {"post": "yes"}),
     ]
 
@@ -154,7 +170,7 @@ def test_a_student_or_a_teacher_does_not_enter_the_admin(client, user_type):
     for response in pages + posts:
         assert response.status_code == 302
         assert "/admin/login/" in response["Location"]
-    assert not Course.objects.filter(name="Invasão").exists()
+    assert not Course.objects.filter(name=INTRUDER_COURSE).exists()
     assert Course.objects.filter(pk=course.pk).exists()
 
 
@@ -179,3 +195,18 @@ def test_the_administrator_is_created_by_createsuperuser(monkeypatch):
     admin = User.objects.get(email="novo-admin@example.com")
     assert (admin.type, admin.is_staff, admin.is_superuser) == (UserType.ADMIN, True, True)
     assert admin.check_password(DEFAULT_PASSWORD)
+
+
+@pytest.mark.parametrize("requested_type", [UserType.STUDENT, UserType.TEACHER])
+def test_createsuperuser_always_makes_an_administrator(monkeypatch, requested_type):
+    monkeypatch.setenv("DJANGO_SUPERUSER_PASSWORD", DEFAULT_PASSWORD)
+
+    call_command(
+        "createsuperuser",
+        interactive=False,
+        email="outro-admin@example.com",
+        full_name="Outra Pessoa",
+        type=requested_type,
+    )
+
+    assert User.objects.get(email="outro-admin@example.com").type == UserType.ADMIN

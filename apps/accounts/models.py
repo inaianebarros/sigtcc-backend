@@ -21,7 +21,7 @@ class UserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email: str, password: str, **extra_fields) -> "User":
-        extra_fields.setdefault("type", UserType.ADMIN)
+        extra_fields["type"] = UserType.ADMIN
         extra_fields.setdefault("full_name", "Administrador")
         extra_fields["is_staff"] = True
         extra_fields["is_superuser"] = True
@@ -62,10 +62,14 @@ COURSE_WITH_TEACHERS_MESSAGE = (
 )
 
 
+def teachers_of(courses) -> models.QuerySet["Teacher"]:
+    return Teacher.objects.filter(courses__in=courses).select_related("user").distinct()
+
+
 def ensure_courses_have_no_teachers(courses) -> None:
     """RN17. `Student.course` is already protected by its foreign key, but `Teacher.courses` is a
     many-to-many, which Django would delete silently, so the rule is checked here (ADR 0010)."""
-    teachers = list(Teacher.objects.filter(courses__in=courses).distinct())
+    teachers = list(teachers_of(courses))
     if teachers:
         raise models.ProtectedError(COURSE_WITH_TEACHERS_MESSAGE, teachers)
 
