@@ -33,6 +33,10 @@ def make_user(user_type=UserType.STUDENT, email=None, full_name=None, is_active=
     )
 
 
+def make_admin(email="admin@example.com"):
+    return User.objects.create_superuser(email=email, password=DEFAULT_PASSWORD)
+
+
 def make_course(institute=None):
     institute = institute or Institute.objects.create(name=f"Instituto {next(_sequence)}")
     return Course.objects.create(institute=institute, name=f"Curso {next(_sequence)}")
