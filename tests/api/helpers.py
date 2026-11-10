@@ -15,6 +15,8 @@ PASSWORD = "Senha-Segura-2026"
 LOGIN_URL = "/api/auth/login"
 REFRESH_URL = "/api/auth/refresh"
 LOGOUT_URL = "/api/auth/logout"
+CHANGE_PASSWORD_URL = "/api/auth/change-password"
+NEW_PASSWORD = "Nova-Senha-Segura-2026"
 ME_URL = "/api/auth/me"
 REFRESH_COOKIE = "refresh_token"
 

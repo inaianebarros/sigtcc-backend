@@ -4,6 +4,7 @@ from ninja_extra import api_controller, http_post
 from ninja_jwt.authentication import JWTAuth
 
 from config.errors import FieldValidationError
+from config.rate_limit import enforce_ip_limit
 from config.schemas import ErrorOut, FieldErrorsOut
 
 from .failure_limit import clear_failures, ensure_not_blocked, record_failure
@@ -29,10 +30,12 @@ class PasswordChangeController:
         description=(
             "Exige a senha atual. Encerra as outras sessões do usuário (RN27) e abre uma nova "
             "para este dispositivo. Os erros de validação (422) vêm por campo e todos de uma vez; "
-            "só a senha atual errada conta para o limite de tentativas (429)."
+            "só a senha atual errada conta para o limite de tentativas por conta e IP (429). Cada "
+            "requisição também conta para o limite por IP, seja qual for a conta (429 com Retry-After)."
         ),
     )
     def change(self, request: HttpRequest, payload: ChangePasswordIn, response: HttpResponse):
+        enforce_ip_limit("change_password_ip", request)
         ensure_trusted_origin(request)
         user = request.user
         account = str(user.id)

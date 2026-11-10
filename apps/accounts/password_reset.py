@@ -4,6 +4,7 @@ from smtplib import SMTPException
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
+from django.db import transaction
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from ninja_extra.exceptions import APIException
@@ -47,8 +48,12 @@ def send_reset_link(email: str) -> None:
 
 
 def _user_for_link(uid: str, token: str) -> User:
+    # Locks the user: used inside `reset_password`'s transaction, it makes a link single-use even
+    # under concurrency and keeps any session from being created before the revocation.
     try:
-        user = User.objects.get(pk=urlsafe_base64_decode(uid).decode(), is_active=True)
+        user = User.objects.select_for_update().get(
+            pk=urlsafe_base64_decode(uid).decode(), is_active=True
+        )
     except (User.DoesNotExist, ValueError, TypeError, OverflowError) as error:
         raise InvalidResetLink() from error
     if not default_token_generator.check_token(user, token):
@@ -56,6 +61,7 @@ def _user_for_link(uid: str, token: str) -> User:
     return user
 
 
+@transaction.atomic
 def reset_password(uid: str, token: str, password: str, confirmation: str) -> None:
     user = _user_for_link(uid, token)
     errors = validate_new_password(password, confirmation, user)
