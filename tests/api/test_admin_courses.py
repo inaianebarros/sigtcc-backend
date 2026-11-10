@@ -133,6 +133,9 @@ def test_the_model_refuses_to_delete_a_course_in_use_whoever_calls_it():
     assert Course.objects.filter(pk__in=[free.pk, by_teacher.pk, by_student.pk]).count() == 3
     free.delete()
     assert not Course.objects.filter(pk=free.pk).exists()
+    another_free = make_course()
+    Course.objects.filter(pk=another_free.pk).delete()
+    assert not Course.objects.filter(pk=another_free.pk).exists()
 
 
 @pytest.mark.parametrize("user_type", [UserType.STUDENT, UserType.TEACHER])
