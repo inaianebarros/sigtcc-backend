@@ -114,7 +114,7 @@ class UserAdmin(admin.ModelAdmin):
     ordering = ("full_name",)
     fields = ("full_name", "email", "type", "is_active", "created_at", "last_login")
     readonly_fields = fields
-    actions = ["deactivate_user"]
+    actions = ["deactivate_selected_user"]
 
     @admin.display(description="Situação", ordering="is_active")
     def situation(self, user: User) -> str:
@@ -130,7 +130,7 @@ class UserAdmin(admin.ModelAdmin):
         return False
 
     @admin.action(description="Excluir (desativar) usuário")
-    def deactivate_user(self, request, queryset):
+    def deactivate_selected_user(self, request, queryset):
         users = list(queryset)
         refusal = self._refusal_for(users)
         if refusal:

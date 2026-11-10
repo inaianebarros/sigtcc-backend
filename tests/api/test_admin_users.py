@@ -28,10 +28,10 @@ from tests.factories import (
 pytestmark = pytest.mark.django_db
 
 USERS = "/admin/accounts/user/"
-ACTION = "deactivate_user"
+ACTION = "deactivate_selected_user"
 
 
-def select(*users, **extra):
+def action_data(*users, **extra):
     return {
         "action": ACTION,
         helpers.ACTION_CHECKBOX_NAME: [user.pk for user in users],
@@ -39,7 +39,7 @@ def select(*users, **extra):
     }
 
 
-def listed(admin_client, **filters):
+def listed_emails(admin_client, **filters):
     response = admin_client.get(USERS, filters)
     assert response.status_code == 200
     return {user.email for user in response.context["cl"].result_list}
@@ -77,10 +77,10 @@ def test_the_listing_filters_by_profile(admin_client):
     student = make_student()
     teacher = make_teacher()
 
-    assert listed(admin_client, profile="student") >= {student.user.email}
-    assert teacher.user.email not in listed(admin_client, profile="student")
-    assert teacher.user.email in listed(admin_client, profile="teacher")
-    assert student.user.email not in listed(admin_client, profile="teacher")
+    assert student.user.email in listed_emails(admin_client, profile=UserType.STUDENT)
+    assert teacher.user.email not in listed_emails(admin_client, profile=UserType.STUDENT)
+    assert teacher.user.email in listed_emails(admin_client, profile=UserType.TEACHER)
+    assert student.user.email not in listed_emails(admin_client, profile=UserType.TEACHER)
 
 
 def test_the_listing_filters_by_course_for_students_and_teachers(admin_client):
@@ -90,7 +90,7 @@ def test_the_listing_filters_by_course_for_students_and_teachers(admin_client):
     teacher = make_teacher(courses=[course, other_course])
     outsider = make_teacher(courses=[other_course])
 
-    emails = listed(admin_client, course=course.pk)
+    emails = listed_emails(admin_client, course=course.pk)
 
     assert emails == {student.user.email, teacher.user.email}
     assert other_student.user.email not in emails
@@ -115,7 +115,7 @@ def test_the_listing_filters_by_institute_without_repeating_a_teacher(admin_clie
 def test_the_action_asks_for_confirmation_before_deactivating(admin_client):
     student = make_student()
 
-    response = admin_client.post(USERS, select(student.user))
+    response = admin_client.post(USERS, action_data(student.user))
 
     assert response.status_code == 200
     assert student.user.full_name in response.content.decode()
@@ -128,7 +128,7 @@ def test_confirming_deactivates_the_user_and_ends_the_bonds(admin_client):
     meeting = make_meeting(advising, status=MeetingStatus.ACCEPTED)
     refresh = RefreshToken.for_user(advising.student.user)
 
-    response = admin_client.post(USERS, select(advising.student.user, post="yes"))
+    response = admin_client.post(USERS, action_data(advising.student.user, post="yes"))
 
     assert response.status_code == 302
     assert not User.objects.get(pk=advising.student.user_id).is_active
@@ -142,7 +142,7 @@ def test_confirming_deactivates_the_user_and_ends_the_bonds(admin_client):
 def test_deactivating_a_teacher_ends_the_advisings_of_the_teacher(admin_client):
     advising = make_advising()
 
-    admin_client.post(USERS, select(advising.teacher.user, post="yes"))
+    admin_client.post(USERS, action_data(advising.teacher.user, post="yes"))
 
     advising.refresh_from_db()
     assert not User.objects.get(pk=advising.teacher.user_id).is_active
@@ -152,12 +152,12 @@ def test_deactivating_a_teacher_ends_the_advisings_of_the_teacher(admin_client):
 def test_the_action_takes_one_user_at_a_time(admin_client):
     first, second = make_student(), make_teacher()
 
-    confirmation = admin_client.post(USERS, select(first.user, second.user))
-    executed = admin_client.post(USERS, select(first.user, second.user, post="yes"))
+    confirmation = admin_client.post(USERS, action_data(first.user, second.user))
+    executed = admin_client.post(USERS, action_data(first.user, second.user, post="yes"))
 
     for response in (confirmation, executed):
         assert response.status_code == 302
-        assert messages_of(response)
+        assert messages_of(response)[-1] == "Selecione um único usuário para desativar."
     assert User.objects.get(pk=first.user.pk).is_active
     assert User.objects.get(pk=second.user.pk).is_active
 
@@ -165,10 +165,10 @@ def test_the_action_takes_one_user_at_a_time(admin_client):
 def test_an_administrator_cannot_be_deactivated(admin_client):
     other_admin = make_admin(email="outro@example.com")
 
-    response = admin_client.post(USERS, select(other_admin, post="yes"))
+    response = admin_client.post(USERS, action_data(other_admin, post="yes"))
 
     assert response.status_code == 302
-    assert messages_of(response)
+    assert messages_of(response) == ["O Administrador não pode ser desativado por aqui."]
     assert User.objects.get(pk=other_admin.pk).is_active
 
 
@@ -176,10 +176,10 @@ def test_an_already_deactivated_user_is_reported_before_asking_for_confirmation(
     inactive = make_user(UserType.STUDENT, is_active=False)
 
     for extra in ({}, {"post": "yes"}):
-        response = admin_client.post(USERS, select(inactive, **extra))
+        response = admin_client.post(USERS, action_data(inactive, **extra))
 
         assert response.status_code == 302
-        assert any("desativado" in message for message in messages_of(response))
+        assert messages_of(response)[-1] == "Este usuário já foi desativado."
 
 
 def test_a_conflict_found_while_deactivating_is_reported(admin_client):
@@ -188,10 +188,10 @@ def test_a_conflict_found_while_deactivating_is_reported(admin_client):
     with patch(
         "apps.accounts.admin.deactivate_user", side_effect=ConflictError("Conflito de teste.")
     ):
-        response = admin_client.post(USERS, select(student.user, post="yes"))
+        response = admin_client.post(USERS, action_data(student.user, post="yes"))
 
     assert response.status_code == 302
-    assert "Conflito de teste." in messages_of(response)
+    assert messages_of(response) == ["Conflito de teste."]
 
 
 def test_is_active_is_declared_read_only_in_the_admin():
@@ -204,10 +204,10 @@ def test_a_failure_in_the_cascade_is_reported_and_leaves_the_user_active(admin_c
     advising = make_advising()
 
     with patch("apps.accounts.deactivation.close_advising", side_effect=RuntimeError("falha")):
-        response = admin_client.post(USERS, select(advising.student.user, post="yes"))
+        response = admin_client.post(USERS, action_data(advising.student.user, post="yes"))
 
     assert response.status_code == 302
-    assert messages_of(response)
+    assert messages_of(response) == ["Não foi possível desativar o usuário. Nada foi alterado."]
     assert User.objects.get(pk=advising.student.user_id).is_active
     advising.refresh_from_db()
     assert advising.status == AdvisingStatus.ACTIVE
@@ -252,7 +252,7 @@ def test_a_student_or_a_teacher_does_not_reach_the_users_admin(client, user_type
     client.force_login(make_user(user_type))
     victim = make_student()
 
-    responses = [client.get(USERS), client.post(USERS, select(victim.user, post="yes"))]
+    responses = [client.get(USERS), client.post(USERS, action_data(victim.user, post="yes"))]
 
     for response in responses:
         assert response.status_code == 302
