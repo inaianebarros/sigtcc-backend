@@ -48,6 +48,8 @@ def send_reset_link(email: str) -> None:
 
 
 def _user_for_link(uid: str, token: str) -> User:
+    # Locks the user: used inside `reset_password`'s transaction, it makes a link single-use even
+    # under concurrency and keeps any session from being created before the revocation.
     try:
         user = User.objects.select_for_update().get(
             pk=urlsafe_base64_decode(uid).decode(), is_active=True
@@ -61,8 +63,6 @@ def _user_for_link(uid: str, token: str) -> User:
 
 @transaction.atomic
 def reset_password(uid: str, token: str, password: str, confirmation: str) -> None:
-    # The user row is locked from the check of the link to the end, so a link is used only once
-    # and no session is created between the new password and the revocation.
     user = _user_for_link(uid, token)
     errors = validate_new_password(password, confirmation, user)
     if errors:

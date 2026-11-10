@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from apps.accounts.models import User
-from tests.api.helpers import LOGIN_URL, bearer, errors_by_field, post_json
+from tests.api.helpers import CHANGE_PASSWORD_URL, LOGIN_URL, bearer, errors_by_field, post_json
 from tests.factories import make_user
 
 pytestmark = pytest.mark.django_db
@@ -17,7 +17,6 @@ MESSAGE = "A senha deve ter no máximo 128 caracteres."
 STUDENT_URL = "/api/auth/register/aluno"
 TEACHER_URL = "/api/auth/register/professor"
 RESET_URL = "/api/auth/reset-password"
-CHANGE_URL = "/api/auth/change-password"
 
 
 def registration(password):
@@ -67,7 +66,7 @@ def change_case():
         "password": TOO_LONG,
         "password_confirmation": TOO_LONG,
     }
-    return request_with(CHANGE_URL, body, bearer(user)), [
+    return request_with(CHANGE_PASSWORD_URL, body, bearer(user)), [
         "current_password",
         "password",
         "password_confirmation",
@@ -97,14 +96,12 @@ def test_a_password_over_the_limit_is_never_hashed(browser, case):
     with (
         patch.object(User, "set_password") as set_password,
         patch.object(User, "check_password") as check_password,
-        patch("apps.accounts.sessions.User.set_password") as unknown_account_hash,
     ):
         response = post_json(browser, url, body, headers=headers)
 
     assert response.status_code == 422
     set_password.assert_not_called()
     check_password.assert_not_called()
-    unknown_account_hash.assert_not_called()
 
 
 def test_a_password_of_exactly_the_limit_goes_on_to_the_normal_flow(browser):

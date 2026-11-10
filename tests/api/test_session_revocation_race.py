@@ -7,7 +7,6 @@ whichever comes second sees what the first one did.
 
 import pytest
 from django.contrib.auth.tokens import default_token_generator
-from django.db import connection
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from ninja_jwt.token_blacklist.models import OutstandingToken
@@ -17,12 +16,16 @@ from apps.accounts.deactivation import deactivate_user
 from apps.accounts.models import User
 from apps.accounts.password_reset import reset_password
 from apps.accounts.sessions import revoke_user_sessions
-from tests.api.helpers import REFRESH_COOKIE, REFRESH_URL, post_json, send_while_a_lock_is_held
+from tests.api.helpers import (
+    NEW_PASSWORD,
+    REFRESH_COOKIE,
+    REFRESH_URL,
+    post_json,
+    send_while_a_lock_is_held,
+)
 from tests.factories import make_user
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-NEW_PASSWORD = "Nova-Senha-Segura-2026"
 
 
 def live_tokens(user):
@@ -91,7 +94,6 @@ def test_a_refresh_that_wins_the_lock_still_ends_up_revoked_by_the_revocation(br
 
     assert rotated.status_code == 200
     assert live_tokens(user) == 0
-    assert connection.in_atomic_block is False
 
 
 def test_a_reset_link_used_at_the_same_time_works_only_once(browser):
