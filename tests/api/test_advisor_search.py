@@ -316,11 +316,28 @@ def seed_teachers(course, areas, total):
     )
 
 
+def analyze_seeded_tables():
+    """Refreshes the planner statistics of the tables just filled.
+
+    After the tests that truncate the tables the statistics say they are empty, and the planner may
+    pick a plan that is slow for thousands of rows, which made this test fail only in the full run.
+    """
+    tables = [
+        User._meta.db_table,
+        Teacher._meta.db_table,
+        Teacher.courses.through._meta.db_table,
+        Teacher.areas_of_interest.through._meta.db_table,
+    ]
+    with connection.cursor() as cursor:
+        cursor.execute(f"ANALYZE {', '.join(tables)}")
+
+
 def test_a_few_thousand_teachers_are_searched_within_three_seconds(client):
     student, course = student_and_course()
     areas = [make_area() for _ in range(5)]
     student.areas_of_interest.set(areas)
     seed_teachers(course, areas, total=3000)
+    analyze_seeded_tables()
     headers = bearer(student.user)
 
     started = time.perf_counter()

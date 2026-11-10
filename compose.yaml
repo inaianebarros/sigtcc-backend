@@ -28,7 +28,7 @@ services:
       context: .
       target: runtime
     command: ["sh", "docker/dev-start.sh"]
-    environment:
+    environment: &backend-environment
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?defina DJANGO_SECRET_KEY no .env}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
       # "backend" é necessário porque o proxy do Vite repassa Host: backend:8000.
@@ -166,17 +166,29 @@ services:
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
 
-  # --- Reservado: cron da expiração de solicitações (RN20, ADR backend 0003, issue #60) ---
-  # Quando o comando de gerenciamento existir, adicione aqui um serviço com a MESMA imagem do
-  # backend, sem portas, dependendo do db saudável, que execute o comando de expiração em
-  # intervalo fixo (por exemplo um loop/cron chamando "python manage.py <comando-da-#60>").
-  # Não implementado nesta issue.
-  #
-  # expiration-cron:
-  #   build: { context: ., target: runtime }
-  #   environment: {}   # reutilizar as variáveis de ambiente do serviço backend
-  #   depends_on:
-  #     db: { condition: service_healthy }
+  # Expiração das solicitações de orientação (RN20, RF44, RF45, ADR backend 0003, issue #60): a mesma
+  # imagem e as mesmas variáveis do backend, sem portas, executando o comando a cada hora num laço.
+  # O comando é idempotente: só marca o que já passou de 7 dias, e uma falha é tentada de novo na
+  # hora seguinte. Espera o backend ficar saudável porque é ele quem aplica as migrations.
+  expiration-cron:
+    build:
+      context: .
+      target: runtime
+    command:
+      - sh
+      - -c
+      - "while true; do python manage.py expire_advising_requests || true; sleep 3600; done"
+    environment: *backend-environment
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
 
 volumes:
   db_data:

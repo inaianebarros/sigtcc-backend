@@ -109,6 +109,13 @@ def _advising_request_answered(payload: Payload) -> str:
     return f"{payload['teacher_name']} {verb} a sua solicitação de orientação."
 
 
+def _advising_request_unanswered(payload: Payload) -> str:
+    return (
+        f"{payload['teacher_name']} não respondeu a sua solicitação de orientação em 7 dias. "
+        "Você já pode enviar uma nova."
+    )
+
+
 def _activity_review_result(payload: Payload) -> str:
     accepted = payload["decision"] == "accepted"
     text = (
@@ -123,6 +130,7 @@ def _activity_review_result(payload: Payload) -> str:
 _BUILDERS: dict[str, Callable[[Payload], str]] = {
     NotificationType.ADVISING_REQUEST_RECEIVED: _advising_request_received,
     NotificationType.ADVISING_REQUEST_ANSWERED: _advising_request_answered,
+    NotificationType.ADVISING_REQUEST_UNANSWERED: _advising_request_unanswered,
     NotificationType.ACTIVITY_CREATED: _activity_created,
     NotificationType.ACTIVITY_CHANGED: _activity_changed,
     NotificationType.ACTIVITY_DELETED: _activity_deleted,

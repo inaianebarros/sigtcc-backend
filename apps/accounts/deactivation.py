@@ -54,7 +54,10 @@ def _end_active_advisings(user: User) -> None:
 
 def _cancel_pending_requests(user: User) -> None:
     """A pending request has no "cancelled" status: it becomes unanswered, which frees the student
-    to ask again (RN05) and keeps it out of the teacher's pending list."""
+    to ask again (RN05) and keeps it out of the teacher's pending list.
+
+    It is not the 7-day expiration (#60) and sends no notification: that one says the teacher did
+    not answer, which would be false here."""
     AdvisingRequest.objects.filter(_bonds_of(user), status=AdvisingRequestStatus.PENDING).update(
         status=AdvisingRequestStatus.UNANSWERED
     )

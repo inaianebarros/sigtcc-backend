@@ -18,6 +18,7 @@ from apps.notifications.services import notify
 from config.errors import ConflictError
 
 from .deadlines import answer_cutoff
+from .expiration import expire_overdue_requests
 from .models import (
     ANSWERED_STATUSES,
     Advising,
@@ -96,9 +97,7 @@ def request_advising(student: Student, teacher_id: int) -> AdvisingRequest:
     if blocked_reason is not None:
         raise ConflictError(_BLOCK_MESSAGES[blocked_reason])
     _ensure_teacher_accepts_requests(locked_student, teacher)
-    AdvisingRequest.objects.filter(student=locked_student).overdue_pending().update(
-        status=AdvisingRequestStatus.UNANSWERED
-    )
+    expire_overdue_requests(AdvisingRequest.objects.filter(student=locked_student))
 
     try:
         with transaction.atomic():
