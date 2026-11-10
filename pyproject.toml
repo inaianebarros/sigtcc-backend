@@ -26,8 +26,9 @@ python_files = ["test_*.py"]
 testpaths = ["tests"]
 markers = ["integration: needs the real RustFS of the Compose running"]
 
-# Cobertura de linhas e de ramos (#55). O comando é `uv run pytest --cov`: ele lê as pastas daqui
-# e falha abaixo de `fail_under`. Uma falta de cobertura vira teste novo, nunca exclusão da medida.
+# Cobertura de linhas e de ramos (#55). `uv run pytest --cov` lê as pastas daqui e falha abaixo de
+# `fail_under` no total; `scripts/check_coverage.sh` também exige o mínimo em cada app. Uma falta de
+# cobertura vira teste novo, nunca exclusão da medida.
 [tool.coverage.run]
 branch = true
 source = ["apps/accounts", "apps/advising", "apps/meetings"]

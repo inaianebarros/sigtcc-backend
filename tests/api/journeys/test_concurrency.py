@@ -8,7 +8,6 @@ activity is ever left open in an ended advising.
 
 import datetime
 import threading
-import time
 
 import pytest
 from django.db import connection, transaction
@@ -18,14 +17,13 @@ from django.utils import timezone
 from apps.activities.models import Activity, ActivityStatus
 from apps.advising.models import Advising, AdvisingStatus
 from apps.meetings.models import Meeting, MeetingStatus
-from tests.api.helpers import bearer, post_json
-from tests.api.journeys.helpers import at
+from tests.api.helpers import bearer, post_json, wait_for_a_request_blocked_on_a_lock
+from tests.api.journeys.helpers import at, end_advising
 from tests.factories import make_advising, make_course, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 RACES = 12
-REASON = "Concluímos o ciclo de orientação do TCC."
 OPEN_ACTIVITY = (ActivityStatus.PENDING, ActivityStatus.IN_PROGRESS, ActivityStatus.IN_REVIEW)
 OPEN_MEETING = (MeetingStatus.PENDING, MeetingStatus.ACCEPTED)
 
@@ -49,25 +47,6 @@ def activity_body(student):
         "description": "Entregar o capítulo 2 do TCC",
         "deadline": (timezone.localdate() + datetime.timedelta(days=10)).isoformat(),
     }
-
-
-def wait_until_a_request_is_blocked(timeout=20):
-    """Waits until another connection is blocked on a row lock held by the caller's transaction.
-
-    It polls every 100 ms: the request in the other thread needs a moment to load Django before
-    it reaches the database, and a tighter loop only competes with it.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        time.sleep(0.1)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT 1 FROM pg_stat_activity "
-                "WHERE datname = current_database() AND wait_event_type = 'Lock'"
-            )
-            if cursor.fetchone():
-                return
-    raise AssertionError("no request ever blocked on the advising lock")
 
 
 def race(first, second):
@@ -97,12 +76,7 @@ def race(first, second):
 
 
 def ends(teacher, advising):
-    return lambda: post_json(
-        Client(),
-        f"/api/orientacao/{advising.id}/encerrar",
-        {"reason": REASON},
-        headers=bearer(teacher.user),
-    )
+    return lambda: end_advising(Client(), teacher, advising.id)
 
 
 def assert_nothing_open_in_the_ended_advising(advising):
@@ -151,7 +125,7 @@ class TestTheEndingRacingWithAMeeting:
             locked = Advising.objects.select_for_update().get(pk=advising.pk)
             thread = threading.Thread(target=end_while_the_meeting_is_being_written)
             thread.start()
-            wait_until_a_request_is_blocked()
+            wait_for_a_request_blocked_on_a_lock(timeout=20)
             Meeting.objects.create(
                 advising=locked,
                 author=student.user,
@@ -208,7 +182,7 @@ class TestTheEndingRacingWithAnActivity:
             locked = Advising.objects.select_for_update().get(pk=advising.pk)
             thread = threading.Thread(target=end_while_the_activity_is_being_written)
             thread.start()
-            wait_until_a_request_is_blocked()
+            wait_for_a_request_blocked_on_a_lock(timeout=20)
             Activity.objects.create(
                 advising=locked,
                 title="Capítulo 2",
