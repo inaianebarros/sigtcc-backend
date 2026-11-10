@@ -1,0 +1,41 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    {{ media }}
+    <script src="{% static 'admin/js/cancel.js' %}" async></script>
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-{{ opts.app_label }} model-{{ opts.model_name }} delete-confirmation{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">Início</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; Excluir (desativar) usuário
+</div>
+{% endblock %}
+
+{% block content %}
+<p>Tem certeza de que deseja desativar o usuário <strong>{{ user_to_deactivate.full_name }}</strong> ({{ user_to_deactivate.email }})?</p>
+<p>A conta fica desativada e o histórico é preservado. O e-mail continua ocupado. Ao confirmar, na mesma operação:</p>
+<ul>
+    <li>as orientações ativas são encerradas;</li>
+    <li>as atividades abertas dessas orientações são arquivadas;</li>
+    <li>as reuniões pendentes ou aceitas que ainda não aconteceram são canceladas;</li>
+    <li>as solicitações de orientação pendentes são canceladas;</li>
+    <li>as sessões ativas são encerradas.</li>
+</ul>
+<p>Esta ação não pode ser desfeita pelo Admin.</p>
+<form method="post">{% csrf_token %}
+<div>
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ user_to_deactivate.pk }}">
+    <input type="hidden" name="action" value="deactivate_user">
+    <input type="hidden" name="post" value="yes">
+    <input type="submit" value="Sim, tenho certeza">
+    <a href="#" class="button cancel-link">Não, voltar</a>
+</div>
+</form>
+{% endblock %}
