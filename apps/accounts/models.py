@@ -101,11 +101,44 @@ class Course(models.Model):
         return self.name
 
 
+AREA_IN_USE_MESSAGE = (
+    "Esta área de interesse não pode ser excluída porque há alunos ou professores vinculados a ela."
+)
+
+
+def students_in_areas(areas) -> models.QuerySet["Student"]:
+    return Student.objects.filter(areas_of_interest__in=areas).select_related("user").distinct()
+
+
+def teachers_in_areas(areas) -> models.QuerySet["Teacher"]:
+    return Teacher.objects.filter(areas_of_interest__in=areas).select_related("user").distinct()
+
+
+def ensure_areas_have_no_users(areas) -> None:
+    """RN18. Both links are many-to-many, which Django would delete silently, so the rule is
+    checked here (ADR 0010). Only students and teachers count: an activity has no area."""
+    linked = [*students_in_areas(areas), *teachers_in_areas(areas)]
+    if linked:
+        raise models.ProtectedError(AREA_IN_USE_MESSAGE, linked)
+
+
+class AreaOfInterestQuerySet(models.QuerySet):
+    def delete(self):
+        ensure_areas_have_no_users(self)
+        return super().delete()
+
+
 class AreaOfInterest(models.Model):
+    objects = AreaOfInterestQuerySet.as_manager()
+
     name = models.CharField(max_length=150, unique=True)
 
     class Meta:
         verbose_name_plural = "areas of interest"
+
+    def delete(self, *args, **kwargs):
+        ensure_areas_have_no_users([self])
+        return super().delete(*args, **kwargs)
 
     def __str__(self) -> str:
         return self.name

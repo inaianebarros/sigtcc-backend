@@ -2,6 +2,8 @@ import pytest
 from django.core.cache import cache
 from django.test import Client
 
+from tests.factories import make_admin
+
 TRUSTED_ORIGIN = "http://localhost:3000"
 
 
@@ -27,3 +29,10 @@ def in_memory_submission_storage(settings):
         **settings.STORAGES,
         "submissions": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
     }
+
+
+@pytest.fixture
+def admin_client(client, db):
+    """A client logged in to the Django Admin as the administrator (session, not JWT)."""
+    client.force_login(make_admin())
+    return client
