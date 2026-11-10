@@ -67,6 +67,16 @@ uv run python manage.py check
 
 Apps por domínio em `apps/`: `accounts`, `advising`, `activities`, `meetings` e `notifications`. As decisões de arquitetura ficam nas ADRs do repositório de documentação do projeto.
 
+## Expiração das solicitações de orientação
+
+Uma solicitação pendente há mais de 7 dias é marcada como "Não respondida" e o aluno recebe o aviso (RN20, RF44, RF45). O comando é idempotente (só toca no que já venceu) e pode ser executado à mão:
+
+```bash
+uv run python manage.py expire_advising_requests    # no Compose: docker compose run --rm backend python manage.py expire_advising_requests
+```
+
+No Compose, o serviço `expiration-cron` (mesma imagem do backend, sem portas) o executa a cada hora, num laço. Cada solicitação é marcada e notificada na própria transação: uma falha desfaz só aquela solicitação, o comando segue com as outras e termina com erro para aparecer no log, e a hora seguinte tenta de novo. A marcação também acontece quando o aluno envia uma nova solicitação com a anterior vencida, pela mesma função, sem duplicar o aviso.
+
 ## Autenticação
 
 Sessão por JWT (ADR backend 0001 e 0006): `POST /api/auth/login` devolve o access token (5 minutos) no corpo e grava o refresh token em cookie `httpOnly` restrito a `/api/auth`. `POST /api/auth/refresh` troca o cookie por um novo par (cada refresh token vale uma vez; reapresentar um já usado revoga todas as sessões do usuário), `POST /api/auth/logout` bloqueia o refresh token e `GET /api/auth/me` devolve o usuário do access token (`Authorization: Bearer ...`). Login, refresh e logout exigem o cabeçalho `Origin` e só aceitam as origens de `JWT_TRUSTED_ORIGINS`: quem usa curl ou Postman precisa enviá-lo (por exemplo `-H "Origin: http://localhost:3000"`). Permissões por tipo de conta: `IsStudent`, `IsTeacher` e `IsAdministrator` em `apps/accounts/permissions.py`. As senhas aceitas têm no máximo 128 caracteres (422 no campo acima disso, sem rodar o hash), e cada rota de autenticação, inclusive `/auth/change-password`, tem também um limite de requisições por IP (variáveis `AUTH_<ESCOPO>_IP_LIMIT` e `AUTH_<ESCOPO>_IP_WINDOW_SECONDS` no `.env.example`).
