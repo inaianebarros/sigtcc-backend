@@ -31,6 +31,10 @@ from .name_search import filter_by_name
 
 ARCHIVED_ON_END = (ActivityStatus.PENDING, ActivityStatus.IN_PROGRESS, ActivityStatus.IN_REVIEW)
 CANCELLED_ON_END = (MeetingStatus.PENDING, MeetingStatus.ACCEPTED)
+SYSTEM_END_REASON = (
+    "Esta orientação foi encerrada automaticamente pelo sistema "
+    "porque a conta de um dos participantes foi desativada."
+)
 ALREADY_ENDED_MESSAGE = "Esta orientação já foi encerrada."
 ACTIVE_ADVISING_MESSAGE = "Você já tem um orientador ativo."
 PENDING_REQUEST_MESSAGE = "Você já tem uma solicitação pendente."
@@ -77,8 +81,11 @@ def _ensure_teacher_accepts_requests(student: Student, teacher: Teacher) -> None
 @transaction.atomic
 def request_advising(student: Student, teacher_id: int) -> AdvisingRequest:
     locked_student = Student.objects.select_for_update().get(pk=student.pk)
+    # The teacher's account row is locked so that a deactivation (RN19) either finishes before
+    # this request, which is then refused, or waits for it and cancels the request it created.
     teacher = (
         Teacher.objects.select_related("user")
+        .select_for_update(of=("user",))
         .filter(user_id=teacher_id, user__is_active=True)
         .first()
     )
