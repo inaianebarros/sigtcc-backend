@@ -44,6 +44,16 @@ uv run python manage.py runserver
 
 - API: http://127.0.0.1:8000/api/ — documentação OpenAPI em `/api/docs`, verificação de saúde em `/api/health`.
 
+## Administrador (Django Admin)
+
+O Administrador usa o Django Admin em `/admin/` (login por e-mail e senha, com sessão do Django, separada do JWT), e não a API nem o frontend (ADR 0010). Ele é criado só por `createsuperuser`; Professor e Aluno nunca entram no `/admin/`:
+
+```bash
+uv run python manage.py createsuperuser    # no Compose: docker compose run --rm backend python manage.py createsuperuser
+```
+
+O comando pede e-mail, nome completo, tipo (`admin`) e senha. Pelo `/admin/` o Administrador cadastra, edita e exclui Cursos (um curso com Professores ou Alunos vinculados não pode ser excluído, RN17).
+
 ## Qualidade
 
 ```bash

@@ -57,7 +57,28 @@ class Institute(models.Model):
         return self.name
 
 
+COURSE_WITH_TEACHERS_MESSAGE = (
+    "Este curso não pode ser excluído porque há professores vinculados a ele."
+)
+
+
+def ensure_courses_have_no_teachers(courses) -> None:
+    """RN17. `Student.course` is already protected by its foreign key, but `Teacher.courses` is a
+    many-to-many, which Django would delete silently, so the rule is checked here (ADR 0010)."""
+    teachers = list(Teacher.objects.filter(courses__in=courses).distinct())
+    if teachers:
+        raise models.ProtectedError(COURSE_WITH_TEACHERS_MESSAGE, teachers)
+
+
+class CourseQuerySet(models.QuerySet):
+    def delete(self):
+        ensure_courses_have_no_teachers(self)
+        return super().delete()
+
+
 class Course(models.Model):
+    objects = CourseQuerySet.as_manager()
+
     institute = models.ForeignKey(Institute, on_delete=models.PROTECT, related_name="courses")
     name = models.CharField(max_length=150)
 
@@ -67,6 +88,10 @@ class Course(models.Model):
                 fields=["institute", "name"], name="course_name_unique_per_institute"
             ),
         ]
+
+    def delete(self, *args, **kwargs):
+        ensure_courses_have_no_teachers([self])
+        return super().delete(*args, **kwargs)
 
     def __str__(self) -> str:
         return self.name
