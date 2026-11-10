@@ -18,7 +18,7 @@ from apps.advising.models import (
 from apps.advising.services import SYSTEM_END_REASON, close_advising
 from apps.meetings.models import SYSTEM_CANCELLATION_REASON, Meeting, MeetingStatus
 from config.errors import ConflictError
-from tests.api.helpers import LOGIN_URL, ME_URL, PASSWORD, bearer, post_json
+from tests.api.helpers import LOGIN_URL, ME_URL, bearer, post_json
 from tests.factories import (
     DEFAULT_PASSWORD,
     make_activity,
@@ -197,7 +197,10 @@ def test_the_email_of_a_deactivated_user_stays_taken():
     assert User.objects.filter(email=student.user.email).count() == 1
     with pytest.raises(IntegrityError), transaction.atomic():
         User.objects.create_user(
-            email=student.user.email, password=PASSWORD, full_name="Outra Pessoa", type="student"
+            email=student.user.email,
+            password=DEFAULT_PASSWORD,
+            full_name="Outra Pessoa",
+            type="student",
         )
 
 

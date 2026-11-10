@@ -80,33 +80,47 @@ def wait_for_a_request_blocked_on_a_lock(timeout=10):
     raise AssertionError("no request ever blocked on the advising lock")
 
 
-def send_while_the_advising_ends(advising, send_request):
-    """Sends a request that must wait for the advising lock, then ends the advising.
+def send_while_a_lock_is_held(lock_and_act, send_request):
+    """Sends a request that must wait for a row lock, then lets the lock holder act and commit.
 
-    A second transaction holds the lock; once a request is blocked on it, that transaction
-    ends the advising and commits, so the request runs after the end (ADR 0004). Needs a test
-    marked `django_db(transaction=True)`.
+    `lock_and_act(wait_for_the_request)` runs in a second transaction: it takes the lock, calls
+    `wait_for_the_request()` once, and does its work, which commits after that. The request is
+    sent only once the lock is held, so it runs after the work (ADR 0004). Needs a test marked
+    `django_db(transaction=True)`.
     """
     holding_the_lock = threading.Event()
     failures = []
 
-    def end_the_advising_while_holding_the_lock():
+    def hold_the_lock():
         try:
             with transaction.atomic():
-                locked = Advising.objects.select_for_update().get(pk=advising.pk)
-                holding_the_lock.set()
-                wait_for_a_request_blocked_on_a_lock()
-                close_advising(locked, "Encerrada durante a ação.")
+                lock_and_act(lambda: _announce_and_wait(holding_the_lock))
         except Exception as error:  # noqa: BLE001 - reported to the main thread
             failures.append(error)
             holding_the_lock.set()
         finally:
             connection.close()
 
-    ending = threading.Thread(target=end_the_advising_while_holding_the_lock)
-    ending.start()
+    holder = threading.Thread(target=hold_the_lock)
+    holder.start()
     assert holding_the_lock.wait(timeout=10)
     response = send_request()
-    ending.join(timeout=10)
+    holder.join(timeout=20)
     assert failures == []
     return response
+
+
+def _announce_and_wait(holding_the_lock):
+    holding_the_lock.set()
+    wait_for_a_request_blocked_on_a_lock(timeout=20)
+
+
+def send_while_the_advising_ends(advising, send_request):
+    """Sends a request that must wait for the advising lock, then ends the advising."""
+
+    def end_the_advising(wait_for_the_request):
+        locked = Advising.objects.select_for_update().get(pk=advising.pk)
+        wait_for_the_request()
+        close_advising(locked, "Encerrada durante a ação.")
+
+    return send_while_a_lock_is_held(end_the_advising, send_request)
