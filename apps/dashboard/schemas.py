@@ -41,11 +41,24 @@ class LastRequestOut(Schema):
     teacher: TeacherSummaryOut
 
 
+class StudentMeetingOut(Schema):
+    id: int
+    scheduled_at: datetime
+    teacher: TeacherSummaryOut
+    description: str
+
+
+class StudentMeetingsOut(Schema):
+    items: list[StudentMeetingOut]
+    has_more: bool
+
+
 class StudentDashboardOut(Schema):
     has_active_advising: bool
     advising: DashboardAdvisingOut | None
     activities: ActivityIndicatorsOut | None
     next_activities: NextActivitiesOut | None
+    next_meetings: StudentMeetingsOut | None
     last_request: LastRequestOut | None
     has_ended_advisings: bool
 
@@ -80,8 +93,21 @@ class DeadlinesOut(Schema):
     has_more: bool
 
 
+class TeacherMeetingOut(Schema):
+    id: int
+    scheduled_at: datetime
+    student: UserRefOut
+    description: str
+
+
+class TeacherMeetingsOut(Schema):
+    items: list[TeacherMeetingOut]
+    has_more: bool
+
+
 class TeacherDashboardOut(Schema):
     advisees_count: int
     activities: ActivityIndicatorsOut | None
     attention_advisees: AttentionAdviseesOut | None
     next_deadlines: DeadlinesOut | None
+    next_meetings: TeacherMeetingsOut | None

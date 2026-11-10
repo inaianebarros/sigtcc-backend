@@ -11,6 +11,7 @@ from apps.accounts.models import UserType
 from apps.activities.models import Activity, ActivityStatus
 from apps.advising.models import ThesisTopic
 from apps.advising.services import close_advising
+from apps.meetings.models import Meeting, MeetingStatus
 from tests.api.helpers import bearer
 from tests.factories import make_advising, make_course, make_student, make_teacher, make_user
 
@@ -76,7 +77,13 @@ def test_the_numbers_add_up_the_active_advisings_of_the_teacher(client):
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"advisees_count", "activities", "attention_advisees", "next_deadlines"}
+    assert set(body) == {
+        "advisees_count",
+        "activities",
+        "attention_advisees",
+        "next_deadlines",
+        "next_meetings",
+    }
     assert body["advisees_count"] == 2
     assert body["activities"] == {
         "total": 6,
@@ -128,6 +135,7 @@ def test_a_teacher_without_active_advisings_gets_an_empty_response(client, with_
         "activities": None,
         "attention_advisees": None,
         "next_deadlines": None,
+        "next_meetings": None,
     }
 
 
@@ -342,6 +350,7 @@ def test_the_number_of_queries_does_not_grow_with_the_advisees_or_the_activities
         ThesisTopic.objects.create(advising=linked, description="Tema")
         for offset in range(5):
             add(linked, list(ActivityStatus)[offset % 4], days=offset - 3)
+            add_meeting(linked, hours=offset + 1)
 
     assert queries_for_a_read() == few
 
@@ -352,3 +361,92 @@ def test_the_dashboard_is_documented_in_the_openapi_schema(client):
     operation = schema["paths"]["/api/painel/professor"]["get"]
     assert set(operation["responses"]) >= {"200", "401", "403"}
     assert operation["summary"]
+
+
+def add_meeting(
+    advising, status=MeetingStatus.ACCEPTED, hours=48, description="Reunião de orientação"
+):
+    return Meeting.objects.create(
+        advising=advising,
+        author=advising.teacher.user,
+        scheduled_at=timezone.now() + datetime.timedelta(hours=hours),
+        description=description,
+        status=status,
+        rejection_reason="Sem horário." if status == MeetingStatus.REJECTED else "",
+    )
+
+
+def test_the_next_meetings_are_the_accepted_future_ones_of_all_the_advisees_in_order(client):
+    teacher, course = teacher_with_course()
+    ana = advisee(teacher, course, "Ana")
+    bruno = advisee(teacher, course, "Bruno")
+    late = add_meeting(ana, hours=100)
+    soon = add_meeting(bruno, hours=2, description="Primeira")
+    middle = add_meeting(ana, hours=50)
+
+    meetings = get(client, teacher.user).json()["next_meetings"]
+
+    assert [item["id"] for item in meetings["items"]] == [soon.id, middle.id, late.id]
+    assert meetings["has_more"] is False
+    first = meetings["items"][0]
+    assert set(first) == {"id", "scheduled_at", "student", "description"}
+    assert first["student"] == {"id": bruno.student.user_id, "full_name": "Bruno"}
+    assert first["description"] == "Primeira"
+    assert first["scheduled_at"].endswith("-03:00")
+
+
+def test_pending_refused_cancelled_and_past_meetings_do_not_appear(client):
+    teacher, course = teacher_with_course()
+    linked = advisee(teacher, course, "Ana")
+    add_meeting(linked, MeetingStatus.PENDING, hours=24)
+    add_meeting(linked, MeetingStatus.REJECTED, hours=24)
+    add_meeting(linked, MeetingStatus.CANCELLED, hours=24)
+    add_meeting(linked, MeetingStatus.ACCEPTED, hours=-2)
+    wanted = add_meeting(linked, MeetingStatus.ACCEPTED, hours=24)
+
+    meetings = get(client, teacher.user).json()["next_meetings"]
+
+    assert [item["id"] for item in meetings["items"]] == [wanted.id]
+
+
+def test_the_meetings_of_ended_advisings_and_of_other_teachers_never_appear(client):
+    teacher, course = teacher_with_course()
+    mine = add_meeting(advisee(teacher, course, "Ana"), hours=10)
+    ended = advisee(teacher, course, "Bruno")
+    add_meeting(ended, hours=3)
+    close_advising(ended, "Concluímos o ciclo de orientação.")
+    other_teacher = make_teacher(courses=[course])
+    add_meeting(advisee(other_teacher, course, "De outro"), hours=2)
+
+    meetings = get(client, teacher.user).json()["next_meetings"]
+
+    assert [item["id"] for item in meetings["items"]] == [mine.id]
+
+
+def test_the_meetings_are_limited_to_5_and_say_when_there_are_more(client):
+    teacher, course = teacher_with_course()
+    linked = advisee(teacher, course, "Ana")
+    for hours in range(1, 7):
+        add_meeting(linked, hours=hours)
+
+    meetings = get(client, teacher.user).json()["next_meetings"]
+
+    assert len(meetings["items"]) == 5
+    assert meetings["has_more"] is True
+
+
+def test_a_long_description_is_summarized(client):
+    teacher, course = teacher_with_course()
+    add_meeting(advisee(teacher, course, "Ana"), hours=1, description="a" * 300)
+
+    item = get(client, teacher.user).json()["next_meetings"]["items"][0]
+
+    assert len(item["description"]) == 100
+    assert item["description"].endswith("…")
+
+
+def test_with_advisees_but_no_meetings_the_list_is_empty(client):
+    teacher, course = teacher_with_course()
+    advisee(teacher, course, "Ana")
+
+    assert get(client, teacher.user).json()["next_meetings"] == {"items": [], "has_more": False}

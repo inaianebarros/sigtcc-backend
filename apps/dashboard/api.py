@@ -26,7 +26,11 @@ class DashboardController:
             "atividade aberta (RN36). Atrasada é o prazo anterior a hoje no servidor, com "
             "status diferente de concluída; o status não muda (RN37, RN24). As próximas "
             "atividades são as pendentes, em andamento ou em revisão, por prazo (as atrasadas "
-            "primeiro), até 5, e has_more diz se há mais. Sem orientação ativa: "
+            "primeiro), até 5, e has_more diz se há mais. next_meetings traz as próximas reuniões "
+            "aceitas da orientação ativa, as que ainda não aconteceram, da mais próxima para a "
+            "mais distante, até 5, com has_more, o horário no fuso do projeto, o Professor "
+            "participante e a descrição resumida em até 100 caracteres; pendentes, recusadas, "
+            "canceladas e já realizadas não entram. Sem orientação ativa: "
             "has_active_advising é falso, last_request traz a última solicitação se ela estiver "
             "pendente, recusada ou não respondida, e has_ended_advisings diz se há histórico."
         ),
@@ -49,7 +53,11 @@ class DashboardController:
             "com o tema do TCC quando cadastrado. A classificação é informativa. Os próximos "
             "prazos são as atividades pendentes, em andamento ou em revisão, por prazo (as "
             "atrasadas primeiro), até 5, com has_more, o Aluno e a indicação de atraso (RN37). "
-            "Sem orientação ativa, a resposta é vazia: advisees_count 0 e o resto nulo."
+            "next_meetings traz as próximas reuniões aceitas das orientações ativas, as que ainda "
+            "não aconteceram, da mais próxima para a mais distante, até 5, com has_more, o "
+            "horário no fuso do projeto, o Orientando e a descrição resumida em até 100 "
+            "caracteres. Sem orientação ativa, a resposta é vazia: advisees_count 0 e o resto "
+            "nulo."
         ),
     )
     def teacher(self, request: HttpRequest):

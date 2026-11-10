@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from django.utils import timezone
 
 from apps.accounts.models import Student
@@ -10,7 +12,9 @@ from apps.advising.models import (
 )
 from apps.advising.schemas import TeacherSummaryOut
 from apps.advising.thesis import topic_of
+from apps.meetings.models import Meeting
 
+from .meetings import meetings_block, upcoming_meetings
 from .upcoming import upcoming_activities
 
 # An accepted request is the one that started an advising: it is not a "last request" to act on.
@@ -40,13 +44,21 @@ def _last_request(student: Student) -> dict | None:
     }
 
 
+def _next_meetings(advising: Advising, now: datetime) -> dict:
+    """The accepted future meetings of the advising, with the advisor as the other party."""
+    teacher = TeacherSummaryOut.from_teacher(advising.teacher)
+    rows = upcoming_meetings(Meeting.objects.filter(advising=advising), now)
+    return meetings_block(rows, lambda _meeting: {"teacher": teacher})
+
+
 def student_dashboard(student: Student) -> dict:
     """The student's summary (RF50): everything is computed here, from one clock (RN24, RN37).
 
     Only the active advising counts (RN35). Without one, the dashboard says so and shows the last
     request and whether there is a history of ended advisings (RF49).
     """
-    today = timezone.localdate()
+    now = timezone.now()
+    today = timezone.localdate(now)
     advising = (
         Advising.objects.filter(student=student, status=AdvisingStatus.ACTIVE)
         .select_related("teacher__user", "thesis_topic")
@@ -61,6 +73,7 @@ def student_dashboard(student: Student) -> dict:
             "advising": None,
             "activities": None,
             "next_activities": None,
+            "next_meetings": None,
             "last_request": _last_request(student),
             "has_ended_advisings": has_ended_advisings,
         }
@@ -76,6 +89,7 @@ def student_dashboard(student: Student) -> dict:
         "next_activities": upcoming_activities(
             counted_activities().filter(advising=advising), today
         ),
+        "next_meetings": _next_meetings(advising, now),
         "last_request": None,
         "has_ended_advisings": has_ended_advisings,
     }
