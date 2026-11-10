@@ -6,14 +6,19 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
+from apps.accounts.deactivation import deactivate_user
 from apps.advising.models import Advising, AdvisingStatus, ThesisTopic
+from apps.advising.services import SYSTEM_END_REASON
 from tests.api.helpers import bearer
 from tests.factories import make_admin, make_advising, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
 
 HISTORY_URL = "/api/orientacao/historico"
+EMPTY = {"items": [], "count": 0}
+ITEM_FIELDS = {"id", "counterpart", "started_at", "ended_at", "reason", "thesis_topic"}
 REASON = "Concluímos o ciclo de orientação do TCC."
 
 
@@ -21,7 +26,7 @@ def history(client, user, **params):
     return client.get(HISTORY_URL, params, headers=bearer(user))
 
 
-def end(advising, days_ago=0, reason=REASON, started_days_ago=None):
+def mark_ended(advising, days_ago=0, reason=REASON, started_days_ago=None):
     update = {
         "status": AdvisingStatus.ENDED,
         "ended_at": timezone.now() - timedelta(days=days_ago),
@@ -34,6 +39,11 @@ def end(advising, days_ago=0, reason=REASON, started_days_ago=None):
     return advising
 
 
+def same_moment(text, moment):
+    """The API keeps milliseconds, the database keeps microseconds."""
+    return abs(parse_datetime(text) - moment) < timedelta(milliseconds=1)
+
+
 def test_a_student_sees_an_ended_advising_with_the_teacher_the_dates_the_reason_and_the_topic(
     client,
 ):
@@ -41,7 +51,7 @@ def test_a_student_sees_an_ended_advising_with_the_teacher_the_dates_the_reason_
     student = make_student()
     advising = make_advising(student=student, teacher=teacher)
     ThesisTopic.objects.create(advising=advising, description="Aprendizado de máquina")
-    end(advising, started_days_ago=40)
+    mark_ended(advising, started_days_ago=40)
 
     response = history(client, student.user)
 
@@ -58,13 +68,14 @@ def test_a_student_sees_an_ended_advising_with_the_teacher_the_dates_the_reason_
             "thesis_topic": "Aprendizado de máquina",
         }
     ]
-    assert body["items"][0]["started_at"] < body["items"][0]["ended_at"]
+    assert same_moment(body["items"][0]["started_at"], advising.started_at)
+    assert same_moment(body["items"][0]["ended_at"], advising.ended_at)
 
 
 def test_a_teacher_sees_the_advisings_they_ended_with_the_student(client):
     teacher = make_teacher()
     student = make_student(full_name="Ana Aluna")
-    advising = end(make_advising(student=student, teacher=teacher))
+    advising = mark_ended(make_advising(student=student, teacher=teacher))
 
     response = history(client, teacher.user)
 
@@ -77,7 +88,7 @@ def test_a_teacher_sees_the_advisings_they_ended_with_the_student(client):
 
 def test_the_topic_is_null_when_the_advising_never_had_one(client):
     student = make_student()
-    end(make_advising(student=student))
+    mark_ended(make_advising(student=student))
 
     item = history(client, student.user).json()["items"][0]
 
@@ -87,8 +98,8 @@ def test_the_topic_is_null_when_the_advising_never_had_one(client):
 def test_a_student_sees_every_ended_advising_with_each_teacher(client):
     student = make_student()
     first_teacher, second_teacher = make_teacher(), make_teacher()
-    first = end(make_advising(student=student, teacher=first_teacher), days_ago=20)
-    second = end(make_advising(student=student, teacher=second_teacher), days_ago=5)
+    first = mark_ended(make_advising(student=student, teacher=first_teacher), days_ago=20)
+    second = mark_ended(make_advising(student=student, teacher=second_teacher), days_ago=5)
 
     items = history(client, student.user).json()["items"]
 
@@ -104,16 +115,16 @@ def test_the_active_advising_is_not_in_the_history(client):
     teacher = make_teacher()
     make_advising(student=student, teacher=teacher)
 
-    assert history(client, student.user).json() == {"items": [], "count": 0}
-    assert history(client, teacher.user).json() == {"items": [], "count": 0}
+    assert history(client, student.user).json() == EMPTY
+    assert history(client, teacher.user).json() == EMPTY
 
 
 def test_a_user_never_receives_the_advisings_of_another_user(client):
     mine_teacher, other_teacher = make_teacher(), make_teacher()
     mine_student = make_student()
     other_student = make_student(full_name="Beatriz Alheia")
-    mine = end(make_advising(student=mine_student, teacher=mine_teacher))
-    other = end(
+    mine = mark_ended(make_advising(student=mine_student, teacher=mine_teacher))
+    other = mark_ended(
         make_advising(
             student=other_student,
             teacher=other_teacher,
@@ -128,17 +139,17 @@ def test_a_user_never_receives_the_advisings_of_another_user(client):
         assert "Beatriz Alheia" not in response.text
         assert "Tema de outra pessoa" not in response.text
     stranger = history(client, make_student().user).json()
-    assert stranger == {"items": [], "count": 0}
+    assert stranger == EMPTY
     other_teacher_items = history(client, other_teacher.user).json()["items"]
     assert [item["id"] for item in other_teacher_items] == [other.id]
 
 
 def test_the_history_goes_from_the_most_recent_ending_to_the_oldest_then_by_id(client):
     teacher = make_teacher()
-    oldest = end(make_advising(teacher=teacher), days_ago=30)
-    newest = end(make_advising(teacher=teacher), days_ago=1)
-    tied_first = end(make_advising(teacher=teacher), days_ago=10)
-    tied_second = end(make_advising(teacher=teacher), days_ago=10)
+    oldest = mark_ended(make_advising(teacher=teacher), days_ago=30)
+    newest = mark_ended(make_advising(teacher=teacher), days_ago=1)
+    tied_first = mark_ended(make_advising(teacher=teacher), days_ago=10)
+    tied_second = mark_ended(make_advising(teacher=teacher), days_ago=10)
     Advising.objects.filter(pk=tied_second.pk).update(ended_at=tied_first.ended_at)
 
     items = history(client, teacher.user).json()["items"]
@@ -153,7 +164,7 @@ def test_the_history_goes_from_the_most_recent_ending_to_the_oldest_then_by_id(c
 
 def test_the_history_is_paginated_in_that_order_over_more_than_one_page(client):
     teacher = make_teacher()
-    advisings = [end(make_advising(teacher=teacher), days_ago=day) for day in range(1, 6)]
+    advisings = [mark_ended(make_advising(teacher=teacher), days_ago=day) for day in range(1, 6)]
     expected = [advising.id for advising in advisings]
 
     first = history(client, teacher.user, limit=2, offset=0).json()
@@ -168,11 +179,11 @@ def test_the_history_is_paginated_in_that_order_over_more_than_one_page(client):
 
 def test_an_item_has_no_data_beyond_the_ones_of_the_history(client):
     student = make_student()
-    end(make_advising(student=student))
+    mark_ended(make_advising(student=student))
 
     item = history(client, student.user).json()["items"][0]
 
-    assert set(item) == {"id", "counterpart", "started_at", "ended_at", "reason", "thesis_topic"}
+    assert set(item) == ITEM_FIELDS
     assert set(item["counterpart"]) == {"id", "full_name"}
 
 
@@ -186,12 +197,12 @@ def test_the_administrator_receives_403(client):
 
 def test_the_number_of_queries_does_not_grow_with_the_number_of_advisings(client):
     student = make_student()
-    end(make_advising(student=student), days_ago=1)
+    mark_ended(make_advising(student=student), days_ago=1)
     with CaptureQueriesContext(connection) as few:
         history(client, student.user)
 
     for number in range(2, 12):
-        advising = end(make_advising(student=student), days_ago=number)
+        advising = mark_ended(make_advising(student=student), days_ago=number)
         ThesisTopic.objects.create(advising=advising, description=f"Tema {number}")
     with CaptureQueriesContext(connection) as many:
         history(client, student.user)
@@ -202,10 +213,21 @@ def test_the_number_of_queries_does_not_grow_with_the_number_of_advisings(client
 def test_the_openapi_documents_the_history(client):
     schema = client.get("/api/openapi.json").json()
 
-    operation = schema["paths"]["/api/orientacao/historico"]["get"]
+    operation = schema["paths"][HISTORY_URL]["get"]
     assert {"limit", "offset"} <= {parameter["name"] for parameter in operation["parameters"]}
     assert operation["description"]
     item = schema["components"]["schemas"]["EndedAdvisingItemOut"]
-    assert {"id", "counterpart", "started_at", "ended_at", "reason", "thesis_topic"} <= set(
-        item["properties"]
-    )
+    assert ITEM_FIELDS <= set(item["properties"])
+
+
+@pytest.mark.parametrize("deactivated", ["student", "teacher"])
+def test_an_advising_ended_by_the_system_is_in_the_history_of_the_other_party(client, deactivated):
+    student, teacher = make_student(), make_teacher()
+    advising = make_advising(student=student, teacher=teacher)
+    deactivate_user(student.user if deactivated == "student" else teacher.user)
+    remaining = teacher.user if deactivated == "student" else student.user
+
+    items = history(client, remaining).json()["items"]
+
+    assert [item["id"] for item in items] == [advising.id]
+    assert items[0]["reason"] == SYSTEM_END_REASON

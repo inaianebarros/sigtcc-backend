@@ -289,19 +289,18 @@ def list_advisees(teacher: Teacher, search: str | None = None):
 
 
 def list_ended_advisings(user: User):
-    """The ended advisings of a student or of a teacher, the other party included (RF49).
-
-    Each one carries the id and the name of the other party, and the frozen topic (RN12).
-    """
+    """The ended advisings of a student or of a teacher, with the other party and the frozen
+    topic (RF49, RN12). Includes the ones the system ended when an account was deactivated."""
     if user.type == UserType.STUDENT:
-        advisings, other_party = Advising.objects.filter(student=user.student), "teacher__user"
+        advisings, counterpart = Advising.objects.filter(student=user.student), "teacher__user"
     else:
-        advisings, other_party = Advising.objects.filter(teacher=user.teacher), "student__user"
+        advisings, counterpart = Advising.objects.filter(teacher=user.teacher), "student__user"
     return (
         advisings.filter(status=AdvisingStatus.ENDED)
         .select_related("thesis_topic")
         .annotate(
-            counterpart_id=F(f"{other_party}__id"), counterpart_name=F(f"{other_party}__full_name")
+            counterpart_id=F(f"{counterpart}__id"),
+            counterpart_name=F(f"{counterpart}__full_name"),
         )
         .order_by("-ended_at", "-id")
     )
