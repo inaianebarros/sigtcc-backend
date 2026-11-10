@@ -2,11 +2,11 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from ninja.errors import HttpError
 
-from apps.accounts.models import Student, Teacher
+from apps.accounts.models import Student, Teacher, User, UserType
 from apps.activities.models import Activity, ActivityStatus
 from apps.meetings.models import SYSTEM_CANCELLATION_REASON, Meeting, MeetingStatus
 from apps.notifications.models import (
@@ -285,4 +285,23 @@ def list_advisees(teacher: Teacher, search: str | None = None):
             completed_count=_activities_in(ActivityStatus.COMPLETED),
         )
         .order_by("-started_at", "-id")
+    )
+
+
+def list_ended_advisings(user: User):
+    """The ended advisings of a student or of a teacher, the other party included (RF49).
+
+    Each one carries the id and the name of the other party, and the frozen topic (RN12).
+    """
+    if user.type == UserType.STUDENT:
+        advisings, other_party = Advising.objects.filter(student=user.student), "teacher__user"
+    else:
+        advisings, other_party = Advising.objects.filter(teacher=user.teacher), "student__user"
+    return (
+        advisings.filter(status=AdvisingStatus.ENDED)
+        .select_related("thesis_topic")
+        .annotate(
+            counterpart_id=F(f"{other_party}__id"), counterpart_name=F(f"{other_party}__full_name")
+        )
+        .order_by("-ended_at", "-id")
     )
