@@ -18,12 +18,10 @@ def overdue_request_ids(
 
 
 def expire_request(request_id: int, cutoff: datetime | None = None) -> bool:
-    """Marks one overdue pending request as unanswered and tells its student (RN20, RF44, RF45).
+    """Marks one overdue pending request as unanswered and notifies its student (RN20, RF44, RF45).
 
-    The only place where a request becomes unanswered, whether by the scheduled command or by the
-    marking made when the student asks again, so each one gets exactly one notification, in the
-    same transaction. It locks the row and checks again, so a request that someone else marked in
-    the meantime is skipped. Returns whether this call marked it.
+    Used by the command and by the marking made when the student asks again. It locks the row and
+    checks again, so a request marked meanwhile is skipped. Returns whether this call marked it.
     """
     with transaction.atomic():
         advising_request = (

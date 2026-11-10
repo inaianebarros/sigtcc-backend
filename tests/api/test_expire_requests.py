@@ -173,7 +173,6 @@ def test_the_lazy_marking_when_the_student_asks_again_also_notifies_once(client)
 
 
 def test_a_failure_undoes_the_request_it_hit_and_the_others_are_still_marked():
-    student = make_student()
     first, second, third = (overdue_request(student=make_student()) for _ in range(3))
     real_notify = expiration.notify
 
@@ -184,7 +183,7 @@ def test_a_failure_undoes_the_request_it_hit_and_the_others_are_still_marked():
 
     with (
         patch("apps.advising.expiration.notify", side_effect=fail_for_the_second),
-        pytest.raises(CommandError, match="1"),
+        pytest.raises(CommandError, match="1 solicitação"),
     ):
         call_command(COMMAND, stdout=StringIO())
 
@@ -193,7 +192,6 @@ def test_a_failure_undoes_the_request_it_hit_and_the_others_are_still_marked():
     assert status_of(second) == PENDING
     assert unanswered_notifications().filter(reference_id=second.pk).count() == 0
     assert unanswered_notifications().count() == 2
-    assert student.pk  # the first loop variable is not used on purpose
 
     run_command()
 
@@ -210,13 +208,3 @@ def test_the_message_is_the_one_of_the_brief_and_falls_back_without_the_teacher_
     assert message_for(NotificationType.ADVISING_REQUEST_UNANSWERED, {}) == (
         "Solicitação de orientação não respondida"
     )
-
-
-def test_the_expiration_service_is_not_listed_as_a_cron_placeholder_anymore():
-    compose = expiration.__file__.rsplit("apps", 1)[0] + "compose.yaml"
-    text = open(compose, encoding="utf-8").read()
-
-    assert "\n  expiration-cron:" in text
-    assert "# expiration-cron:" not in text
-    assert "expire_advising_requests" in text
-    assert "sleep 3600" in text

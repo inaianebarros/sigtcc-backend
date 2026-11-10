@@ -20,7 +20,8 @@ class Command(BaseCommand):
         failed: list[int] = []
         for request_id in overdue_request_ids(cutoff=cutoff):
             try:
-                expired += expire_request(request_id, cutoff)
+                if expire_request(request_id, cutoff):
+                    expired += 1
             except Exception:
                 # Each request has its own transaction: this one is undone, the others go on.
                 logger.exception("failed to expire advising request %s", request_id)
@@ -31,6 +32,6 @@ class Command(BaseCommand):
             self.stdout.write("Nenhuma solicitação vencida.")
         if failed:
             raise CommandError(
-                f"{len(failed)} solicitação(ões) não puderam ser marcadas ({failed}); "
-                "o comando tenta de novo na próxima execução."
+                f"{len(failed)} solicitação(ões) não puderam ser marcadas "
+                f"(ids {', '.join(map(str, failed))}); a próxima execução tenta de novo."
             )

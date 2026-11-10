@@ -15,6 +15,8 @@ from tests.factories import make_advising_request
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
+COMMAND = "expire_advising_requests"
+
 
 def test_a_request_marked_while_the_command_waits_for_its_lock_is_not_notified_twice():
     advising_request = make_advising_request()
@@ -29,7 +31,7 @@ def test_a_request_marked_while_the_command_waits_for_its_lock_is_not_notified_t
 
     send_while_a_lock_is_held(
         mark_while_holding_the_lock,
-        lambda: call_command("expire_advising_requests", stdout=StringIO()),
+        lambda: call_command(COMMAND, stdout=StringIO()),
     )
 
     advising_request.refresh_from_db()
