@@ -178,6 +178,7 @@ def _auth_rate(name: str, limit: int, window_seconds: int) -> tuple[int, int]:
 AUTH_RATE_LIMITS = {
     "login_failures": _auth_rate("LOGIN_FAILURES", 5, 15 * 60),
     "change_password_failures": _auth_rate("CHANGE_PASSWORD_FAILURES", 5, 15 * 60),
+    "change_password_ip": _auth_rate("CHANGE_PASSWORD_IP", 10, 60 * 60),
     "login_ip": _auth_rate("LOGIN_IP", 20, 60),
     "refresh_ip": _auth_rate("REFRESH_IP", 30, 60),
     "logout_ip": _auth_rate("LOGOUT_IP", 30, 60),

@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 from ninja_extra.exceptions import AuthenticationFailed, PermissionDenied
 from ninja_jwt.exceptions import TokenBackendError, TokenError
@@ -60,18 +61,23 @@ def rotate_session(refresh_token: str | None, response: HttpResponse) -> str:
     except TokenError as error:
         _revoke_sessions_if_token_was_reused(refresh_token)
         raise AuthenticationFailed(INVALID_SESSION) from error
-    try:
-        user = User.objects.get(id=current["user_id"])
-    except (KeyError, User.DoesNotExist) as error:
-        raise AuthenticationFailed(INVALID_SESSION) from error
-    if not user.is_active:
-        raise AuthenticationFailed(INVALID_SESSION)
+    # The user's row lock serializes this rotation with every revocation of the same user (a
+    # password change or reset, a deactivation): whichever runs second sees what the first did, so
+    # no refresh token is created outside a revocation's snapshot (ADR 0006, RN27).
+    with transaction.atomic():
+        try:
+            user = User.objects.select_for_update().get(id=current["user_id"])
+        except (KeyError, User.DoesNotExist) as error:
+            raise AuthenticationFailed(INVALID_SESSION) from error
+        if not user.is_active:
+            raise AuthenticationFailed(INVALID_SESSION)
 
-    # blacklist() returns (record, created): "created" is false when another request already used it
-    _, first_use = current.blacklist()
-    if not first_use:
-        raise AuthenticationFailed(INVALID_SESSION)
-    return start_session(user, response)
+        # blacklist() returns (record, created): "created" is false when another request already
+        # used it, or when a revocation that ran while this request waited for the lock did.
+        _, first_use = current.blacklist()
+        if not first_use:
+            raise AuthenticationFailed(INVALID_SESSION)
+        return start_session(user, response)
 
 
 def end_session(refresh_token: str | None, response: HttpResponse) -> None:
@@ -83,7 +89,14 @@ def end_session(refresh_token: str | None, response: HttpResponse) -> None:
     response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, path=settings.JWT_REFRESH_COOKIE_PATH)
 
 
+@transaction.atomic
 def revoke_user_sessions(user_id: int) -> None:
+    """Blacklists every live refresh token of the user.
+
+    Takes the user's row lock first (a no-op when the caller already holds it), so a rotation that
+    is running finishes before the snapshot of the live tokens is taken.
+    """
+    User.objects.select_for_update().filter(pk=user_id).first()
     active_tokens = OutstandingToken.objects.filter(user_id=user_id, blacklistedtoken__isnull=True)
     BlacklistedToken.objects.bulk_create(
         [BlacklistedToken(token=token) for token in active_tokens], ignore_conflicts=True

@@ -1,7 +1,8 @@
 from typing import Annotated
 
 from ninja import Schema
-from pydantic import BaseModel, ConfigDict, StrictBool, StringConstraints
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StrictBool, StringConstraints
+from pydantic_core import PydanticCustomError
 
 from .models import PublishedArticle, Student, Teacher
 
@@ -24,13 +25,34 @@ class AreaOfInterestOut(Schema):
 
 StrippedStr = Annotated[str, StringConstraints(strip_whitespace=True)]
 
+PASSWORD_MAX_LENGTH = 128
+PASSWORD_TOO_LONG_MESSAGE = f"A senha deve ter no máximo {PASSWORD_MAX_LENGTH} caracteres."
+
+
+def _reject_too_long_password(value: object) -> object:
+    """Refuses an oversized password before anything hashes it (RNF05).
+
+    Hashing costs the same for each attempt, so an unbounded password is a cheap way to burn CPU.
+    """
+    if isinstance(value, str) and len(value) > PASSWORD_MAX_LENGTH:
+        raise PydanticCustomError("password_too_long", PASSWORD_TOO_LONG_MESSAGE)
+    return value
+
+
+# The one type of every password the API receives: login, registrations, reset and change.
+Password = Annotated[
+    str,
+    BeforeValidator(_reject_too_long_password),
+    Field(json_schema_extra={"maxLength": PASSWORD_MAX_LENGTH}),
+]
+
 
 class ProfileRegistrationIn(Schema):
     registration_number: StrippedStr
     full_name: StrippedStr
     email: StrippedStr
-    password: str
-    password_confirmation: str
+    password: Password
+    password_confirmation: Password
     institute_id: int
     area_ids: list[int]
 
@@ -180,7 +202,7 @@ class TeacherProfileOut(Schema):
 
 class LoginIn(Schema):
     email: str
-    password: str
+    password: Password
 
 
 class SessionUserOut(Schema):
@@ -211,14 +233,14 @@ class ForgotPasswordIn(Schema):
 class ResetPasswordIn(Schema):
     uid: str
     token: str
-    password: str
-    password_confirmation: str
+    password: Password
+    password_confirmation: Password
 
 
 class ChangePasswordIn(Schema):
-    current_password: str
-    password: str
-    password_confirmation: str
+    current_password: Password
+    password: Password
+    password_confirmation: Password
 
 
 class MessageOut(Schema):
