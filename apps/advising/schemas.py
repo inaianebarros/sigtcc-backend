@@ -126,6 +126,31 @@ class EndedAdvisingOut(Schema):
     reason: str = Field(alias="end_reason")
 
 
+class PartySummaryOut(Schema):
+    id: int
+    full_name: str
+
+
+class EndedAdvisingItemOut(Schema):
+    """One ended advising in the history of a student or of a teacher (RF49)."""
+
+    id: int
+    counterpart: PartySummaryOut
+    started_at: datetime
+    ended_at: datetime
+    reason: str = Field(alias="end_reason")
+    thesis_topic: str | None
+
+    @staticmethod
+    def resolve_counterpart(obj: Advising) -> PartySummaryOut:
+        return PartySummaryOut(id=obj.counterpart_id, full_name=obj.counterpart_name)
+
+    @staticmethod
+    def resolve_thesis_topic(obj: Advising) -> str | None:
+        topic = topic_of(obj)
+        return topic.description if topic else None
+
+
 class AdvisingRequestAnswerOut(AdvisingRequestItemOut):
     advising: AdvisingOut | None
 

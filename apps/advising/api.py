@@ -19,6 +19,7 @@ from .schemas import (
     AdvisingRequestItemOut,
     AdvisingRequestOut,
     EndAdvisingIn,
+    EndedAdvisingItemOut,
     EndedAdvisingOut,
     RequestStatusOut,
 )
@@ -26,6 +27,7 @@ from .services import (
     answer_request,
     end_advising,
     list_advisees,
+    list_ended_advisings,
     list_received_requests,
     request_advising,
     student_request_status,
@@ -127,3 +129,20 @@ class AdvisingRequestController:
         search: Annotated[str | None, Query(max_length=100)] = None,
     ):
         return list_advisees(request.user.teacher, search)
+
+    @http_get(
+        "/historico",
+        response=Page[EndedAdvisingItemOut],
+        permissions=[IsStudent | IsTeacher],
+        summary="O histórico de orientações encerradas do usuário",
+        description=(
+            "O Aluno vê as suas orientações encerradas e o Professor as que ele orientou, da "
+            "que terminou há menos tempo para a mais antiga (RF49). Cada item traz a outra parte "
+            "(id e nome), o início, o encerramento, o motivo (RN33) e o tema do TCC congelado "
+            "(RN12), ou nulo se a orientação não teve tema. Só as orientações do próprio usuário: "
+            "nada de outra pessoa é devolvido. A orientação ativa não aparece."
+        ),
+    )
+    @paginate(BoundedLimitOffsetPagination)
+    def history(self, request: HttpRequest):
+        return list_ended_advisings(request.user)
