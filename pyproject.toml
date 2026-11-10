@@ -15,6 +15,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
     "pytest-django>=4.14.0",
     "ruff>=0.17.3",
 ]
@@ -24,6 +25,17 @@ DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
 markers = ["integration: needs the real RustFS of the Compose running"]
+
+# Cobertura de linhas e de ramos (#55). O comando é `uv run pytest --cov`: ele lê as pastas daqui
+# e falha abaixo de `fail_under`. Uma falta de cobertura vira teste novo, nunca exclusão da medida.
+[tool.coverage.run]
+branch = true
+source = ["apps/accounts", "apps/advising", "apps/meetings"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_empty = true
 
 [tool.ruff]
 line-length = 100
