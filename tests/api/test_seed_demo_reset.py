@@ -54,17 +54,21 @@ def seeded(catalog, debug):
     run()
 
 
+def demo_ids():
+    return set(demo_users().values_list("id", flat=True))
+
+
 def user_of(slug):
     return User.objects.get(email=f"{slug}@{DEMO_DOMAIN}")
 
 
 def test_the_reset_recreates_the_whole_set_with_new_rows(seeded):
-    old_ids = set(demo_users().values_list("id", flat=True))
+    old_ids = demo_ids()
 
     run("--reset", "--yes")
 
     assert demo_users().count() == CAST_SIZE
-    assert not old_ids & set(demo_users().values_list("id", flat=True))
+    assert not old_ids & demo_ids()
     assert Activity.objects.filter(advising__student__user=user_of(COMPLETE_STUDENT)).count() == 6
 
 
@@ -161,25 +165,25 @@ def test_without_yes_it_shows_how_many_users_it_removes_and_asks(seeded):
 
 
 def test_a_negative_answer_cancels_and_changes_nothing(seeded):
-    old_ids = set(demo_users().values_list("id", flat=True))
+    old_ids = demo_ids()
 
     output = run("--reset", answer="n")
 
     assert "cancelado" in output.lower()
-    assert set(demo_users().values_list("id", flat=True)) == old_ids
+    assert demo_ids() == old_ids
 
 
 def test_without_yes_and_without_a_terminal_it_asks_for_yes_and_changes_nothing(seeded):
-    old_ids = set(demo_users().values_list("id", flat=True))
+    old_ids = demo_ids()
 
     with patch("builtins.input", side_effect=EOFError), pytest.raises(CommandError, match="--yes"):
         call_command("seed_demo_data", "--reset", stdout=StringIO())
 
-    assert set(demo_users().values_list("id", flat=True)) == old_ids
+    assert demo_ids() == old_ids
 
 
 def test_a_failure_in_the_middle_of_the_removal_undoes_everything(seeded):
-    old_ids = set(demo_users().values_list("id", flat=True))
+    old_ids = demo_ids()
     counts = (Activity.objects.count(), Meeting.objects.count(), Notification.objects.count())
 
     with (
@@ -188,7 +192,7 @@ def test_a_failure_in_the_middle_of_the_removal_undoes_everything(seeded):
     ):
         run("--reset", "--yes")
 
-    assert set(demo_users().values_list("id", flat=True)) == old_ids
+    assert demo_ids() == old_ids
     assert counts == (
         Activity.objects.count(),
         Meeting.objects.count(),
@@ -201,12 +205,12 @@ def test_it_refuses_while_a_real_user_is_tied_to_a_demonstration_user(seeded):
     real_student = make_student(course=course, full_name="Aluno Real")
     demo_teacher = user_of("prof2.sem-orientandos").teacher
     AdvisingRequest.objects.create(student=real_student, teacher=demo_teacher)
-    old_ids = set(demo_users().values_list("id", flat=True))
+    old_ids = demo_ids()
 
     with pytest.raises(CommandError, match="usuários reais"):
         run("--reset", "--yes")
 
-    assert set(demo_users().values_list("id", flat=True)) == old_ids
+    assert demo_ids() == old_ids
     assert AdvisingRequest.objects.filter(student=real_student).exists()
 
 
@@ -254,8 +258,20 @@ def test_the_reset_twice_in_a_row_works(seeded):
 
 
 def test_the_yes_option_alone_does_nothing_special(seeded):
-    old_ids = set(demo_users().values_list("id", flat=True))
+    old_ids = demo_ids()
 
     run("--yes")
 
-    assert set(demo_users().values_list("id", flat=True)) == old_ids
+    assert demo_ids() == old_ids
+
+
+def test_the_refusal_comes_before_the_question(seeded):
+    real_student = make_student(course=Course.objects.get(name="Ciência da Computação"))
+    AdvisingRequest.objects.create(
+        student=real_student, teacher=user_of("prof2.sem-orientandos").teacher
+    )
+
+    with patch("builtins.input") as asked, pytest.raises(CommandError, match="usuários reais"):
+        call_command("seed_demo_data", "--reset", stdout=StringIO())
+
+    asked.assert_not_called()

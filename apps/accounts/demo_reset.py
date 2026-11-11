@@ -31,6 +31,10 @@ def _is_demo(side: str) -> Q:
     return Q(**{f"{side}__user__email__iendswith": f"@{DEMO_DOMAIN}"})
 
 
+def _demo_party() -> Q:
+    return _is_demo("student") | _is_demo("teacher")
+
+
 def _foreign_links() -> int:
     """Advisings and requests with a demonstration user on one side and a real user on the other."""
     mixed = (_is_demo("student") & ~_is_demo("teacher")) | (
@@ -69,22 +73,27 @@ def _delete_stored_files(keys: list[str]) -> None:
             logger.exception("Could not remove the stored file %s of the demonstration data", key)
 
 
-def reset_demo_data() -> int:
-    """Deletes the demonstration users and their data; returns how many users it removed."""
+def ensure_no_real_user_is_tied() -> None:
+    """Refuses while a real user has a request or an advising with a demonstration user."""
     if _foreign_links():
         raise DemoSeedError(
             "Há solicitações ou orientações ligando usuários reais a usuários de demonstração: "
             "nada foi apagado."
         )
+
+
+def reset_demo_data() -> int:
+    """Deletes the demonstration users and their data; returns how many users it removed."""
+    ensure_no_real_user_is_tied()
     with transaction.atomic():
         users = demo_users()
-        advisings = Advising.objects.filter(_is_demo("student") | _is_demo("teacher"))
+        advisings = Advising.objects.filter(_demo_party())
         keys = _delete_activities(advisings)
         _delete_meetings(advisings)
         ThesisTopic.objects.filter(advising__in=advisings).delete()
         _delete_notifications(users)
         advisings.delete()
-        AdvisingRequest.objects.filter(_is_demo("student") | _is_demo("teacher")).delete()
+        AdvisingRequest.objects.filter(_demo_party()).delete()
         PublishedArticle.objects.filter(
             Q(student__user__in=users) | Q(teacher__user__in=users)
         ).delete()

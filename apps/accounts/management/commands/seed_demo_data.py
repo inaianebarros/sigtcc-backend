@@ -4,11 +4,13 @@ from django.core.management.base import BaseCommand, CommandError
 from apps.accounts.demo_activities import seed_activity_scenarios
 from apps.accounts.demo_history import seed_ended_advising
 from apps.accounts.demo_meetings import seed_meeting_scenarios
-from apps.accounts.demo_reset import demo_users, reset_demo_data
+from apps.accounts.demo_reset import demo_users, ensure_no_real_user_is_tied, reset_demo_data
 from apps.accounts.demo_scenarios import seed_active_advisings, seed_request_scenarios
 from apps.accounts.demo_seed import DEMO_PASSWORD, DemoSeedError, seed_demo_users
 from apps.accounts.demo_volume import seed_volume
 from config.errors import FieldValidationError
+
+CONFIRMATIONS = {"s", "sim", "y", "yes"}
 
 
 class Command(BaseCommand):
@@ -83,6 +85,10 @@ class Command(BaseCommand):
         if not count:
             self.stdout.write("Nenhum dado de demonstração para apagar.")
             return True
+        try:
+            ensure_no_real_user_is_tied()
+        except DemoSeedError as error:
+            raise CommandError(str(error)) from error
         if not assume_yes and not self._confirmed(count):
             self.stdout.write("Reinício cancelado: nada foi apagado.")
             return False
@@ -102,4 +108,4 @@ class Command(BaseCommand):
             answer = input(prompt)
         except EOFError as error:
             raise CommandError("Sem terminal para confirmar: use --yes.") from error
-        return answer.strip().lower() in {"s", "sim", "y", "yes"}
+        return answer.strip().lower() in CONFIRMATIONS
