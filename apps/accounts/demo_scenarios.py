@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from apps.advising.deadlines import ANSWER_DEADLINE
 from apps.advising.expiration import expire_request
-from apps.advising.models import AdvisingRequest, AnswerAction
+from apps.advising.models import Advising, AdvisingRequest, AnswerAction
 from apps.advising.services import answer_request, request_advising
 
 from .demo_seed import demo_email
@@ -21,12 +21,15 @@ ADVISOR = "prof1.orientandos"
 PENDING_STUDENT = "aluno2.solicitacao-pendente"
 REFUSED_STUDENT = "aluno3.solicitacao-recusada"
 UNANSWERED_STUDENT = "aluno4.solicitacao-nao-respondida"
+COMPLETE_STUDENT = "aluno5.orientacao-completa"
+EMPTY_STUDENT = "aluno6.orientacao-vazia"
 
 # Relative to the seven-day deadline (RN20), so the scenarios follow it if the rule changes.
 PENDING_AGE = ANSWER_DEADLINE - timedelta(days=1)
 REFUSED_AGE = ANSWER_DEADLINE + timedelta(days=5)
 UNANSWERED_AGE = ANSWER_DEADLINE + timedelta(days=2)
 RESPONSE_DELAY = timedelta(days=1)
+ADVISING_AGES = {COMPLETE_STUDENT: timedelta(days=30), EMPTY_STUDENT: timedelta(days=20)}
 
 
 def _student(slug: str) -> Student:
@@ -76,4 +79,24 @@ def seed_request_scenarios() -> int:
         expire_request(advising_request.pk)
         created += 1
 
+    return created
+
+
+@transaction.atomic
+def seed_active_advisings() -> int:
+    """Students 5 and 6 get an active advising with teacher 1, through request and acceptance."""
+    advisor = _advisor()
+    created = 0
+    for slug, age in ADVISING_AGES.items():
+        student = _student(slug)
+        if Advising.objects.filter(student=student).exists():
+            continue
+        advising_request = request_advising(student, advisor.user_id)
+        answer_request(advisor, advising_request.pk, AnswerAction.ACCEPT)
+        Advising.objects.filter(request=advising_request).update(started_at=timezone.now() - age)
+        AdvisingRequest.objects.filter(pk=advising_request.pk).update(
+            requested_at=timezone.now() - age - RESPONSE_DELAY,
+            responded_at=timezone.now() - age,
+        )
+        created += 1
     return created

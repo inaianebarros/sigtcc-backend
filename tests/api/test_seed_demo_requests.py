@@ -23,12 +23,8 @@ PENDING = "aluno2.solicitacao-pendente"
 REFUSED = "aluno3.solicitacao-recusada"
 UNANSWERED = "aluno4.solicitacao-nao-respondida"
 TEACHER = "prof1.orientandos"
-OTHERS = [
-    "aluno5.orientacao-completa",
-    "aluno6.orientacao-vazia",
-    "aluno7.orientacao-encerrada",
-    "aluno8.outro-curso",
-]
+ACCEPTED = ["aluno5.orientacao-completa", "aluno6.orientacao-vazia"]
+WITHOUT_REQUESTS = ["aluno7.orientacao-encerrada", "aluno8.outro-curso"]
 
 
 def user_of(slug):
@@ -105,13 +101,15 @@ def test_the_first_teacher_lists_the_requests_of_different_students(client, seed
         user_of(PENDING).full_name: "pending",
         user_of(REFUSED).full_name: "rejected",
         user_of(UNANSWERED).full_name: "unanswered",
+        user_of(ACCEPTED[0]).full_name: "accepted",
+        user_of(ACCEPTED[1]).full_name: "accepted",
     }
 
 
-def test_the_other_students_have_no_request_in_this_series_step(seeded):
-    assert (
-        AdvisingRequest.objects.filter(student__user__in=[user_of(s) for s in OTHERS]).count() == 0
-    )
+def test_students_seven_and_eight_have_no_request_yet(seeded):
+    students = [user_of(slug) for slug in WITHOUT_REQUESTS]
+
+    assert AdvisingRequest.objects.filter(student__user__in=students).count() == 0
 
 
 def test_the_services_notify_the_teacher_and_the_students(seeded):
@@ -126,7 +124,8 @@ def test_the_services_notify_the_teacher_and_the_students(seeded):
         recipient=user_of(UNANSWERED), type=NotificationType.ADVISING_REQUEST_UNANSWERED
     )
 
-    assert received.count() == 3
+    # The three scenarios and the two accepted requests of the active advisings.
+    assert received.count() == 5
     assert answered.count() == 1
     assert answered.get().payload["decision"] == "rejected"
     assert unanswered.count() == 1
@@ -138,5 +137,5 @@ def test_running_it_again_duplicates_neither_requests_nor_notifications(seeded):
 
     seed()
 
-    assert AdvisingRequest.objects.count() == requests_before == 3
+    assert AdvisingRequest.objects.count() == requests_before == 5
     assert Notification.objects.count() == notifications_before
