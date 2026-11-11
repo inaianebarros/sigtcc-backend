@@ -59,6 +59,10 @@ def activity(title):
     return Activity.objects.get(advising__student__user=user_of(COMPLETE_STUDENT), title=title)
 
 
+def complete_student_activities():
+    return Activity.objects.filter(advising__student__user=user_of(COMPLETE_STUDENT))
+
+
 def listed(client, slug, **params):
     response = client.get(LIST_URL, params, headers=bearer(user_of(slug)))
     return {item["title"]: item for item in response.json()["items"]}
@@ -208,7 +212,7 @@ def test_without_the_storage_only_the_activities_that_need_files_are_skipped(cat
     with patch("apps.activities.services.submission_storage", return_value=broken):
         output = seed()
 
-    titles = set(Activity.objects.values_list("title", flat=True))
+    titles = set(complete_student_activities().values_list("title", flat=True))
     assert titles == {PENDING_TITLE, OVERDUE_TITLE, IN_PROGRESS_TITLE}
     assert "armazenamento" in output.lower()
     assert Submission.objects.count() == 0
@@ -222,7 +226,7 @@ def test_running_again_with_the_storage_back_completes_the_skipped_activities(ca
 
     seed()
 
-    titles = set(Activity.objects.values_list("title", flat=True))
+    titles = set(complete_student_activities().values_list("title", flat=True))
     assert titles == {
         PENDING_TITLE,
         IN_PROGRESS_TITLE,
@@ -231,7 +235,7 @@ def test_running_again_with_the_storage_back_completes_the_skipped_activities(ca
         OVERDUE_TITLE,
         REFUSED_TITLE,
     }
-    assert Activity.objects.count() == 6
+    assert complete_student_activities().count() == 6
     assert Review.objects.count() == 2
 
 

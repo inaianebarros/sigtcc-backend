@@ -2,6 +2,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.accounts.demo_activities import seed_activity_scenarios
+from apps.accounts.demo_history import seed_ended_advising
 from apps.accounts.demo_scenarios import seed_active_advisings, seed_request_scenarios
 from apps.accounts.demo_seed import DEMO_PASSWORD, DemoSeedError, seed_demo_users
 from config.errors import FieldValidationError
@@ -24,6 +25,7 @@ class Command(BaseCommand):
             created_requests = seed_request_scenarios()
             seed_active_advisings()
             created_activities, skipped = seed_activity_scenarios()
+            seed_ended_advising()
         except DemoSeedError as error:
             raise CommandError(str(error)) from error
         except FieldValidationError as error:
