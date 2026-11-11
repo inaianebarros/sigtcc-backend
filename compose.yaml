@@ -66,6 +66,7 @@ services:
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
       EMAIL_USE_TLS: ${EMAIL_USE_TLS:-false}
+      EMAIL_TIMEOUT: ${EMAIL_TIMEOUT:-10}
       MAILPIT_API_URL: http://mailpit:8025
       # Nomes esperados pelo django-storages/boto3 (issue #49). Em dev usa a credencial raiz do RustFS.
       AWS_S3_ENDPOINT_URL: http://rustfs:9000
@@ -185,6 +186,34 @@ services:
       db:
         condition: service_healthy
       backend:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  # E-mail de cada notificação (RF54, RNF04, ADR 0011, issue #156): a mesma imagem e as mesmas
+  # variáveis do backend, sem portas, executando o comando a cada 30 segundos num laço (o mesmo
+  # intervalo do polling). O comando é idempotente e trava cada notificação enquanto a envia, então
+  # uma falha é tentada de novo na rodada seguinte (até 5 vezes) e rodar o comando à mão ao mesmo
+  # tempo não duplica o e-mail. Sem este serviço nenhum e-mail de notificação é enviado. Espera o
+  # backend ficar saudável porque é ele quem aplica as migrations, e o Mailpit para ter onde entregar.
+  email-cron:
+    build:
+      context: .
+      target: runtime
+    command:
+      - sh
+      - -c
+      - "while true; do python manage.py send_notification_emails || true; sleep 30; done"
+    environment: *backend-environment
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

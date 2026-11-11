@@ -1,5 +1,7 @@
 """The command that e-mails each pending notification to its recipient (RF54, RNF04, #153)."""
 
+from io import StringIO
+
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -249,3 +251,14 @@ def test_an_account_deactivated_after_the_notification_was_created_is_not_e_mail
 
     assert mailoutbox == []
     assert reload(notification).email_sent_at is not None
+
+
+def test_the_demonstration_seed_creates_notifications_that_are_e_mailed(catalog, debug, mailoutbox):
+    call_command("seed_demo_data", stdout=StringIO())
+    created = Notification.objects.filter(email_sent_at__isnull=True).count()
+    assert created > 0
+
+    call_command(COMMAND, stdout=StringIO())
+
+    assert len(mailoutbox) == created
+    assert not Notification.objects.filter(email_sent_at__isnull=True).exists()

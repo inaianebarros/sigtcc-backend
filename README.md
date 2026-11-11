@@ -31,7 +31,7 @@ docker compose up --build
 - Parar: `docker compose down` (mantém os dados). `docker compose down -v` APAGA os volumes (banco e objetos do RustFS).
 - Dependências do frontend mudaram (`package-lock.json`)? `docker compose build frontend`, depois recrie o volume de `node_modules`: `docker compose rm -sf frontend && docker volume rm sigtcc_frontend_node_modules && docker compose up -d frontend`.
 - Linux: o contêiner do backend roda como UID 10001 e o do frontend como UID 1000; ajuste permissões da pasta montada se a recarga ou a escrita falhar.
-- O serviço de cron da expiração de solicitações (#60) tem lugar reservado (comentado) no `compose.yaml`. Produção e CI/CD ficam na issue #64.
+- Dois serviços de cron rodam em laço com a mesma imagem do backend: `expiration-cron` (expiração das solicitações, #60) e `email-cron` (e-mail das notificações, #156). Produção e CI/CD ficam na issue #64.
 
 ## Desenvolvimento local sem Docker
 
@@ -76,6 +76,24 @@ uv run python manage.py expire_advising_requests    # no Compose: docker compose
 ```
 
 No Compose, o serviço `expiration-cron` (mesma imagem do backend, sem portas) o executa a cada hora, num laço. Cada solicitação é marcada e notificada na própria transação: uma falha desfaz só aquela solicitação, o comando segue com as outras e termina com erro para aparecer no log, e a hora seguinte tenta de novo. A marcação também acontece quando o aluno envia uma nova solicitação com a anterior vencida, pela mesma função, sem duplicar o aviso.
+
+## E-mail das notificações
+
+Cada notificação criada também é enviada por e-mail ao destinatário (RF54, ADR 0011), em até 1 minuto (RNF04). O assunto é o tipo da notificação, e o corpo traz o mesmo texto que o sistema mostra e um link para ele (`FRONTEND_URL`). O comando pode ser executado à mão:
+
+```bash
+uv run python manage.py send_notification_emails    # no Compose: docker compose run --rm backend python manage.py send_notification_emails
+```
+
+No Compose, o serviço `email-cron` (mesma imagem do backend, sem portas) o executa a cada 30 segundos, num laço, e os e-mails aparecem no Mailpit, em http://localhost:8025. **Sem esse serviço nenhum e-mail de notificação é enviado.** A notificação nasce junto da ação (uma linha no banco), e o comando envia as pendentes em ordem de criação, uma por transação:
+
+- uma falha do SMTP desfaz só aquela notificação, que continua pendente e ganha uma tentativa; no quinto fracasso o comando desiste dela e registra em log, e ela segue visível no sistema. O comando segue com as outras e termina com erro, para aparecer no log;
+- conta desativada (RN19) não recebe e-mail, e a notificação é marcada como processada sem contar como falha;
+- cada notificação é travada enquanto é enviada (`skip_locked`), então o laço e uma execução à mão ao mesmo tempo não duplicam o e-mail;
+- as notificações que já existiam quando o recurso foi criado foram marcadas como enviadas pela migration, para ninguém receber o histórico;
+- a seed de demonstração também gera e-mails, como qualquer ação. O Mailpit local guarda um número limitado de mensagens, então as mais antigas saem quando a seed em volume as empurra.
+
+Em `EMAIL_HOST` e nas demais variáveis `EMAIL_*` do `.env` fica o SMTP; `EMAIL_TIMEOUT` (padrão 10 s) evita que um servidor sem resposta trave o envio.
 
 ## Dados de demonstração
 
