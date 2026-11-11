@@ -79,7 +79,7 @@ No Compose, o serviço `expiration-cron` (mesma imagem do backend, sem portas) o
 
 ## Dados de demonstração
 
-Para testar todas as telas com Aluno, Professor e Administrador, o comando `seed_demo_data` cria os usuários de demonstração. **Só para uso local**: eles têm uma senha conhecida, e o comando recusa rodar com `DJANGO_DEBUG` falso (ADR 0005). Ele usa o cadastro real da aplicação, é idempotente (cria só o que falta) e precisa do catálogo carregado (`loaddata fixtures/seed.json`, que o Compose já faz na subida):
+Para testar todas as telas com Aluno, Professor e Administrador, o comando `seed_demo_data` cria os usuários de demonstração. **Só para uso local**: eles têm uma senha conhecida, e o comando recusa rodar com `DJANGO_DEBUG` falso (ADR 0005). Ele usa o cadastro real da aplicação, é idempotente (cria só o que falta) e precisa do catálogo carregado (`loaddata fixtures/seed.json`, que o Compose já faz na subida se o arquivo existir):
 
 ```bash
 uv run python manage.py seed_demo_data    # no Compose: docker compose run --rm backend python manage.py seed_demo_data

@@ -1,4 +1,4 @@
-"""The demonstration users of every profile, created through the real registration (#138).
+"""The demonstration users of every profile, created through the real registration.
 
 Local use only: the users share a known password (ADR 0005).
 """
@@ -13,7 +13,10 @@ from .services import register_student, register_teacher
 
 DEMO_DOMAIN = "demo.ufopa.local"
 DEMO_PASSWORD = "Senha-Demo-2026"
-ADMIN_NAME = "admin"
+ADMIN_SLUG = "admin"
+ADMIN_FULL_NAME = "Administrador de Demonstração"
+STUDENT_REGISTRATION_PREFIX = "2024DEMO"
+TEACHER_REGISTRATION_PREFIX = "PDEMO"
 
 INSTITUTE = "Instituto de Engenharia e Geociências"
 OWN_COURSE = "Ciência da Computação"
@@ -27,7 +30,7 @@ class DemoSeedError(Exception):
 
 @dataclass(frozen=True)
 class DemoStudent:
-    name: str
+    slug: str
     full_name: str
     areas: tuple[str, ...]
     course: str = OWN_COURSE
@@ -35,7 +38,7 @@ class DemoStudent:
 
 @dataclass(frozen=True)
 class DemoTeacher:
-    name: str
+    slug: str
     full_name: str
     areas: tuple[str, ...]
     course: str = OWN_COURSE
@@ -118,15 +121,25 @@ TEACHERS = (
 )
 
 
-def demo_email(name: str) -> str:
-    return f"{name}@{DEMO_DOMAIN}"
+def demo_email(slug: str) -> str:
+    return f"{slug}@{DEMO_DOMAIN}"
 
 
-def _exists(name: str) -> bool:
-    return User.objects.filter(email__iexact=demo_email(name)).exists()
+def _exists(slug: str) -> bool:
+    return User.objects.filter(email__iexact=demo_email(slug)).exists()
 
 
-def _catalog() -> tuple[Institute, dict[str, Course], dict[str, AreaOfInterest]]:
+@dataclass(frozen=True)
+class Catalog:
+    institute: Institute
+    courses: dict[str, Course]
+    areas: dict[str, AreaOfInterest]
+
+    def area_ids(self, names: tuple[str, ...]) -> list[int]:
+        return [self.areas[name].id for name in names]
+
+
+def _catalog() -> Catalog:
     institute = Institute.objects.filter(name=INSTITUTE).first()
     own_course = Course.objects.filter(institute=institute, name=OWN_COURSE).first()
     if institute is None or own_course is None:
@@ -136,35 +149,35 @@ def _catalog() -> tuple[Institute, dict[str, Course], dict[str, AreaOfInterest]]
     needed = {name for person in (*STUDENTS, *TEACHERS) for name in person.areas}
     if needed - areas.keys():
         raise DemoSeedError(f"Faltam áreas de interesse no catálogo. {CATALOG_HINT}")
-    return institute, {OWN_COURSE: own_course, OTHER_COURSE: other_course}, areas
+    return Catalog(institute, {OWN_COURSE: own_course, OTHER_COURSE: other_course}, areas)
 
 
-def _create_student(number, person, institute, courses, areas) -> None:
+def _create_student(number: int, person: DemoStudent, catalog: Catalog) -> None:
     register_student(
         StudentRegistrationIn(
-            registration_number=f"2024DEMO{number:02d}",
+            registration_number=f"{STUDENT_REGISTRATION_PREFIX}{number:02d}",
             full_name=person.full_name,
-            email=demo_email(person.name),
+            email=demo_email(person.slug),
             password=DEMO_PASSWORD,
             password_confirmation=DEMO_PASSWORD,
-            institute_id=institute.id,
-            course_id=courses[person.course].id,
-            area_ids=[areas[name].id for name in person.areas],
+            institute_id=catalog.institute.id,
+            course_id=catalog.courses[person.course].id,
+            area_ids=catalog.area_ids(person.areas),
         )
     )
 
 
-def _create_teacher(number, person, institute, courses, areas) -> None:
+def _create_teacher(number: int, person: DemoTeacher, catalog: Catalog) -> None:
     teacher = register_teacher(
         TeacherRegistrationIn(
-            registration_number=f"PDEMO{number:02d}",
+            registration_number=f"{TEACHER_REGISTRATION_PREFIX}{number:02d}",
             full_name=person.full_name,
-            email=demo_email(person.name),
+            email=demo_email(person.slug),
             password=DEMO_PASSWORD,
             password_confirmation=DEMO_PASSWORD,
-            institute_id=institute.id,
-            course_ids=[courses[person.course].id],
-            area_ids=[areas[name].id for name in person.areas],
+            institute_id=catalog.institute.id,
+            course_ids=[catalog.courses[person.course].id],
+            area_ids=catalog.area_ids(person.areas),
         )
     )
     if not person.is_available:
@@ -175,24 +188,22 @@ def _create_teacher(number, person, institute, courses, areas) -> None:
 @transaction.atomic
 def seed_demo_users() -> list[tuple[str, bool]]:
     """Creates the missing demonstration users; returns (e-mail, created) for each of them."""
-    institute, courses, areas = _catalog()
+    catalog = _catalog()
     report = []
-    for number, person in enumerate(STUDENTS, start=1):
-        created = not _exists(person.name)
+    for number, student in enumerate(STUDENTS, start=1):
+        created = not _exists(student.slug)
         if created:
-            _create_student(number, person, institute, courses, areas)
-        report.append((demo_email(person.name), created))
-    for number, person in enumerate(TEACHERS, start=1):
-        created = not _exists(person.name)
+            _create_student(number, student, catalog)
+        report.append((demo_email(student.slug), created))
+    for number, teacher in enumerate(TEACHERS, start=1):
+        created = not _exists(teacher.slug)
         if created:
-            _create_teacher(number, person, institute, courses, areas)
-        report.append((demo_email(person.name), created))
-    created = not _exists(ADMIN_NAME)
+            _create_teacher(number, teacher, catalog)
+        report.append((demo_email(teacher.slug), created))
+    created = not _exists(ADMIN_SLUG)
     if created:
         User.objects.create_superuser(
-            email=demo_email(ADMIN_NAME),
-            password=DEMO_PASSWORD,
-            full_name="Administrador de Demonstração",
+            email=demo_email(ADMIN_SLUG), password=DEMO_PASSWORD, full_name=ADMIN_FULL_NAME
         )
-    report.append((demo_email(ADMIN_NAME), created))
+    report.append((demo_email(ADMIN_SLUG), created))
     return report

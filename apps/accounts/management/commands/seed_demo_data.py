@@ -2,6 +2,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.accounts.demo_seed import DEMO_PASSWORD, DemoSeedError, seed_demo_users
+from config.errors import FieldValidationError
 
 
 class Command(BaseCommand):
@@ -20,6 +21,11 @@ class Command(BaseCommand):
             report = seed_demo_users()
         except DemoSeedError as error:
             raise CommandError(str(error)) from error
+        except FieldValidationError as error:
+            raise CommandError(
+                f"Não foi possível criar um usuário de demonstração: {error.errors}. "
+                "Nada foi criado."
+            ) from error
         for email, created in report:
             self.stdout.write(f"{email}{'' if created else ' (já existe)'}")
         self.stdout.write(f"Senha de todos os usuários de demonstração: {DEMO_PASSWORD}")

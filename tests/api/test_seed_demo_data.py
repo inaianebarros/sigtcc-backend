@@ -91,7 +91,9 @@ def test_running_it_again_creates_nothing_more(catalog, debug):
     second = seed()
 
     assert (User.objects.count(), Student.objects.count(), Teacher.objects.count()) == before
-    assert "já existe" in second.lower()
+    lines = [line for line in second.splitlines() if "@" in line]
+    assert len(lines) == 13
+    assert all("já existe" in line for line in lines)
 
 
 def test_it_refuses_to_run_without_debug_and_creates_nothing(catalog, settings):
@@ -183,17 +185,36 @@ def test_only_the_third_teacher_is_unavailable(catalog, debug):
     assert [teacher.user.email for teacher in unavailable] == [email("prof3.indisponivel")]
 
 
-def test_the_administrator_enters_the_admin_and_the_others_do_not(client, catalog, debug):
+def test_the_administrator_enters_the_admin(client, catalog, debug):
     seed()
     admin = User.objects.get(email=email("admin"))
 
-    assert (admin.is_staff, admin.is_superuser) == (True, True)
     client.force_login(admin)
+
+    assert (admin.type, admin.is_staff, admin.is_superuser) == (UserType.ADMIN, True, True)
     assert client.get("/admin/accounts/user/").status_code == 200
-    for name in (STUDENTS[0], TEACHERS[0]):
-        assert user_of(name).is_staff is False
-    client.force_login(user_of(STUDENTS[0]))
+
+
+@pytest.mark.parametrize("name", [STUDENTS[0], TEACHERS[0]])
+def test_a_student_and_a_teacher_do_not_enter_the_admin(client, catalog, debug, name):
+    seed()
+    user = user_of(name)
+
+    client.force_login(user)
+
+    assert user.is_staff is False
     assert client.get("/admin/accounts/user/").status_code == 302
+
+
+def test_a_registration_number_already_taken_is_reported_and_nothing_is_created(catalog, debug):
+    course = Course.objects.get(name=OWN_COURSE)
+    taken = User.objects.create_user(email="outra@example.com", password="x", full_name="Outra")
+    Student.objects.create(user=taken, course=course, registration_number="2024DEMO03")
+
+    with pytest.raises(CommandError, match="Nada foi criado"):
+        call_command(COMMAND, stdout=StringIO())
+
+    assert User.objects.count() == 1
 
 
 def test_it_prints_the_password_and_every_email(catalog, debug):
