@@ -1,4 +1,5 @@
-"""Smoke test for the Docker environment: RustFS (S3 through boto3) and Mailpit (SMTP and HTTP API).
+"""Smoke test for the Docker environment: RustFS (S3 through boto3), Mailpit (SMTP and HTTP API) and
+the email-cron service (the e-mail of a notification, RNF04).
 
 Run inside Compose:
 
@@ -11,6 +12,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -78,9 +80,53 @@ def smoke_mail() -> None:
     raise AssertionError("message did not appear in Mailpit")
 
 
+def smoke_notification_mail() -> None:
+    """A notification created now must reach Mailpit within a minute through the email-cron service
+    (RF54, RNF04). Needs the service up: docker compose up -d email-cron."""
+    import django
+
+    django.setup()
+    from apps.accounts.models import User, UserType
+    from apps.notifications.models import Notification, NotificationType
+
+    api = os.environ.get("MAILPIT_API_URL", "http://mailpit:8025")
+    address = f"smoke.{uuid.uuid4().hex[:8]}@example.com"
+    user = User.objects.create_user(
+        email=address, password=uuid.uuid4().hex, full_name="Smoke Teste", type=UserType.STUDENT
+    )
+    notification = Notification.objects.create(
+        recipient=user,
+        type=NotificationType.ADVISING_REQUEST_UNANSWERED,
+        payload={"teacher_name": "Professor Smoke"},
+    )
+    try:
+        print(f"[notification-mail] notification {notification.pk} created for {address}")
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            # The search is by recipient, so a full inbox (the list is paged) cannot hide the message.
+            query = urllib.parse.urlencode({"query": f"to:{address}"})
+            with urllib.request.urlopen(f"{api}/api/v1/search?{query}", timeout=5) as response:
+                messages = json.load(response)["messages"]
+            if messages:
+                print("[notification-mail] e-mail found in Mailpit within a minute")
+                return
+            time.sleep(2)
+        raise AssertionError(
+            "the notification was not e-mailed within a minute; is the email-cron service up? "
+            "(docker compose up -d email-cron)"
+        )
+    finally:
+        notification.delete()
+        user.delete()
+
+
 def main() -> int:
     failed = False
-    for name, step in (("storage", smoke_storage), ("mail", smoke_mail)):
+    for name, step in (
+        ("storage", smoke_storage),
+        ("mail", smoke_mail),
+        ("notification-mail", smoke_notification_mail),
+    ):
         try:
             step()
         except Exception as exc:

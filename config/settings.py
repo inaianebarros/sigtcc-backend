@@ -15,6 +15,7 @@ env = environ.Env(
     EMAIL_HOST_USER=(str, ""),
     EMAIL_HOST_PASSWORD=(str, ""),
     EMAIL_USE_TLS=(bool, False),
+    EMAIL_TIMEOUT=(int, 10),
     DEFAULT_FROM_EMAIL=(str, "SIGTCC <nao-responder@sigtcc.local>"),
     JWT_ACCESS_MINUTES=(int, 5),
     JWT_REFRESH_MINUTES=(int, 30),
@@ -92,6 +93,8 @@ EMAIL_PORT = env("EMAIL_PORT")
 EMAIL_HOST_USER = env("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
 EMAIL_USE_TLS = env("EMAIL_USE_TLS")
+# Sem prazo, um SMTP que aceita a conexão e não responde trava o envio de todas as notificações.
+EMAIL_TIMEOUT = env("EMAIL_TIMEOUT")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 
 # Os arquivos das Entregas ficam no bucket S3 (ADR 0002); o resto segue o padrão do Django.
