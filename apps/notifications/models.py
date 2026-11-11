@@ -37,6 +37,9 @@ class Notification(models.Model):
     # structure of each type is documented in the notifications API.
     payload = models.JSONField(default=dict, blank=True)
     is_read = models.BooleanField(default=False)
+    # The e-mail of the notification (RF54, ADR 0011): stamped when it is sent or settled.
+    email_sent_at = models.DateTimeField(null=True, blank=True)
+    email_attempts = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
