@@ -6,7 +6,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from apps.accounts.demo_seed import DEMO_DOMAIN
+from apps.accounts.demo_seed import DEMO_DOMAIN, DEMO_PASSWORD
 from apps.accounts.demo_volume import VOLUME_ADVISINGS, VOLUME_PREFIX, VOLUME_TEACHERS
 from apps.accounts.models import AreaOfInterest, Student, Teacher, User
 from apps.advising.models import Advising, AdvisingStatus
@@ -78,7 +78,7 @@ def test_the_search_of_the_first_student_passes_more_than_one_page(client, seede
     assert first["count"] == VOLUME_TEACHERS + 2
     assert first["count"] > PAGE_SIZE
     assert len(first["items"]) == PAGE_SIZE
-    assert len(second["items"]) > 0
+    assert len(second["items"]) == min(PAGE_SIZE, first["count"] - PAGE_SIZE)
     ids = [item["id"] for item in first["items"] + second["items"]]
     assert len(ids) == len(set(ids))
 
@@ -123,7 +123,7 @@ def test_a_volume_teacher_signs_in_with_the_single_password(browser, seeded_with
     response = post_json(
         browser,
         LOGIN_URL,
-        {"email": volume_teacher.user.email, "password": "Senha-Demo-2026"},
+        {"email": volume_teacher.user.email, "password": DEMO_PASSWORD},
     )
 
     assert response.status_code == 200
@@ -145,7 +145,7 @@ def test_running_without_the_option_afterwards_keeps_what_was_added(seeded_with_
     assert volume_users().count() == before
 
 
-def test_the_volume_does_not_change_the_small_set(client, seeded_with_volume):
+def test_the_volume_does_not_change_the_small_set(seeded_with_volume):
     for slug in ("aluno5.orientacao-completa", "aluno7.orientacao-encerrada"):
         assert Advising.objects.filter(student__user=user_of(slug)).count() == 1
     assert Advising.objects.filter(status=AdvisingStatus.ACTIVE).count() == 2
@@ -164,7 +164,7 @@ def test_the_output_tells_how_many_were_added(catalog, debug):
     first = seed("--volume")
     second = seed("--volume")
 
-    assert str(VOLUME_TEACHERS) in first
+    assert f"{VOLUME_TEACHERS} professores e {VOLUME_ADVISINGS} orientações encerradas" in first
     assert "nenhum dado novo" in second.lower()
 
 

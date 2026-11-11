@@ -34,7 +34,7 @@ class Command(BaseCommand):
             seed_active_advisings()
             created_activities, skipped = seed_activity_scenarios()
             seed_ended_advising()
-            volume = seed_volume() if options["volume"] else None
+            volume_counts = seed_volume() if options["volume"] else None
         except DemoSeedError as error:
             raise CommandError(str(error)) from error
         except FieldValidationError as error:
@@ -52,11 +52,13 @@ class Command(BaseCommand):
                 f"precisam de entregas ({', '.join(skipped)}). Rode o comando de novo com o "
                 "armazenamento no ar."
             )
-        if volume is not None:
-            teachers, advisings = volume
-            self.stdout.write(
-                f"Volume: {teachers} professores e {advisings} orientações encerradas criados agora."
-                if teachers or advisings
-                else "Volume: nenhum dado novo (já existe)."
-            )
+        if volume_counts is not None:
+            teachers, advisings = volume_counts
+            if teachers or advisings:
+                self.stdout.write(
+                    f"Volume: {teachers} professores e {advisings} orientações encerradas "
+                    "criados agora."
+                )
+            else:
+                self.stdout.write("Volume: nenhum dado novo (já existe).")
         self.stdout.write(f"Senha de todos os usuários de demonstração: {DEMO_PASSWORD}")
