@@ -9,6 +9,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
+from apps.advising.deadlines import ANSWER_DEADLINE
 from apps.advising.expiration import expire_request
 from apps.advising.models import AdvisingRequest, AnswerAction
 from apps.advising.services import answer_request, request_advising
@@ -21,9 +22,11 @@ PENDING_STUDENT = "aluno2.solicitacao-pendente"
 REFUSED_STUDENT = "aluno3.solicitacao-recusada"
 UNANSWERED_STUDENT = "aluno4.solicitacao-nao-respondida"
 
-PENDING_AGE = timedelta(days=6)
-REFUSED_AGE = timedelta(days=12)
-UNANSWERED_AGE = timedelta(days=9)
+# Relative to the seven-day deadline (RN20), so the scenarios follow it if the rule changes.
+PENDING_AGE = ANSWER_DEADLINE - timedelta(days=1)
+REFUSED_AGE = ANSWER_DEADLINE + timedelta(days=5)
+UNANSWERED_AGE = ANSWER_DEADLINE + timedelta(days=2)
+RESPONSE_DELAY = timedelta(days=1)
 
 
 def _student(slug: str) -> Student:
@@ -63,7 +66,7 @@ def seed_request_scenarios() -> int:
         answer_request(advisor, advising_request.pk, AnswerAction.REJECT)
         AdvisingRequest.objects.filter(pk=advising_request.pk).update(
             requested_at=timezone.now() - REFUSED_AGE,
-            responded_at=timezone.now() - REFUSED_AGE + timedelta(days=1),
+            responded_at=timezone.now() - REFUSED_AGE + RESPONSE_DELAY,
         )
         created += 1
 

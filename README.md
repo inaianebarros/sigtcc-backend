@@ -103,7 +103,7 @@ Todos entram com a senha `Senha-Demo-2026`, e os e-mails terminam em `@demo.ufop
 | Professor 4 | `prof4.outro-curso` | de outro curso |
 | Administrador | `admin` | Django Admin |
 
-O comando cria os perfis, o curso "Sistemas de Informação" e os cenários de solicitação de orientação: o aluno 1 sem solicitação, o 2 com uma pendente (perto do prazo de 7 dias), o 3 com uma recusada e o 4 com uma não respondida (mais de 7 dias, marcada pela expiração), todas ao professor 1 e feitas pelos serviços reais, com as notificações. As datas são relativas ao dia da execução. Os demais cenários (atividades, reuniões, histórico) chegam nas próximas issues da série (#140 a #144).
+O comando cria os perfis, o curso "Sistemas de Informação" e os cenários de solicitação de orientação: o aluno 1 sem solicitação, o 2 com uma pendente (perto do prazo de 7 dias), o 3 com uma recusada e o 4 com uma não respondida (mais de 7 dias, marcada pela expiração), todas ao professor 1 e feitas pelos serviços reais, com as notificações. A lista do professor 1 tem uma só solicitação pendente: o elenco não tem outro aluno livre para ter uma segunda. As datas são relativas ao dia da execução. Os demais cenários (atividades, reuniões, histórico) chegam nas próximas issues da série (#140 a #144).
 
 ## Autenticação
 
