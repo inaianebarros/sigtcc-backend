@@ -174,4 +174,4 @@ def test_a_missing_area_of_the_catalog_stops_the_volume_with_a_clear_error(catal
     with pytest.raises(CommandError, match="áreas"):
         call_command("seed_demo_data", "--volume", stdout=StringIO())
 
-    assert User.objects.count() == 0
+    assert not volume_users().exists()
