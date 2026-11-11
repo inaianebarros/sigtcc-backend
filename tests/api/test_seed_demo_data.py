@@ -3,7 +3,6 @@
 from io import StringIO
 
 import pytest
-from django.conf import settings as django_settings
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
@@ -39,17 +38,6 @@ TEACHERS = [
 
 def email(name):
     return f"{name}@{DEMO_DOMAIN}"
-
-
-@pytest.fixture
-def catalog():
-    """The real catalog of the project, as `loaddata` brings it to a new environment."""
-    call_command("loaddata", str(django_settings.BASE_DIR / "fixtures" / "seed.json"), verbosity=0)
-
-
-@pytest.fixture
-def debug(settings):
-    settings.DEBUG = True
 
 
 def seed():
