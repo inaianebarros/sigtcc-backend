@@ -1,5 +1,6 @@
 """The topic, the meetings and the notifications of the active advising of student 5 (#143)."""
 
+from datetime import datetime
 from io import StringIO
 
 import pytest
@@ -102,8 +103,8 @@ def test_there_is_a_held_meeting_in_the_past_and_an_expired_one(client, seeded):
 
     assert len(held) == 1
     assert len(expired) == 1
-    assert held[0]["scheduled_at"] < timezone.now().isoformat()
-    assert expired[0]["scheduled_at"] < timezone.now().isoformat()
+    assert datetime.fromisoformat(held[0]["scheduled_at"]) < timezone.now()
+    assert datetime.fromisoformat(expired[0]["scheduled_at"]) < timezone.now()
 
 
 def test_the_teacher_lists_the_meetings_of_the_advisee(client, seeded):
