@@ -2,10 +2,18 @@
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.test import override_settings
 
+from apps.accounts.deactivation import deactivate_user
 from apps.notifications.models import Notification, NotificationType
 from tests.api.helpers import bearer
-from tests.factories import make_course, make_notification, make_student, make_teacher
+from tests.factories import (
+    make_course,
+    make_notification,
+    make_student,
+    make_teacher,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -160,3 +168,84 @@ def test_each_type_is_e_mailed_once_to_its_recipient_with_its_label_and_text(
     assert message.to == [recipient.email]
     assert message.subject == notification_type.label
     assert text in message.body
+
+
+FAILING_BACKEND = "tests.api.failing_email_backend.FailingEmailBackend"
+FAILING_FOR_ONE = "tests.api.failing_email_backend.FailingForOneAddressEmailBackend"
+
+
+def pending_for(user, type=NotificationType.ADVISING_REQUEST_RECEIVED):
+    return make_notification(user, type, payload=RECEIVED)
+
+
+def reload(notification):
+    return Notification.objects.get(pk=notification.pk)
+
+
+@override_settings(EMAIL_BACKEND=FAILING_BACKEND)
+def test_a_failed_send_leaves_the_notification_pending_counts_the_attempt_and_reports_it():
+    notification = pending_for(make_teacher().user)
+
+    with pytest.raises(CommandError, match=str(notification.pk)):
+        call_command(COMMAND)
+
+    notification = reload(notification)
+    assert notification.email_sent_at is None
+    assert notification.email_attempts == 1
+
+
+@override_settings(EMAIL_BACKEND=FAILING_FOR_ONE)
+def test_a_notification_that_fails_does_not_block_the_ones_behind_it(mailoutbox):
+    rejected = make_teacher().user
+    rejected.email = "falha@example.com"
+    rejected.save(update_fields=["email"])
+    failing = pending_for(rejected)
+    healthy = pending_for(make_teacher().user)
+
+    with pytest.raises(CommandError):
+        call_command(COMMAND)
+
+    assert [message.to for message in mailoutbox] == [[healthy.recipient.email]]
+    assert reload(healthy).email_sent_at is not None
+    assert reload(failing).email_attempts == 1
+
+
+@override_settings(EMAIL_BACKEND=FAILING_BACKEND)
+def test_after_five_failures_it_gives_up_with_a_log_and_never_tries_again(caplog):
+    notification = pending_for(make_teacher().user)
+
+    for _ in range(5):
+        with pytest.raises(CommandError):
+            call_command(COMMAND)
+    call_command(COMMAND)
+
+    notification = reload(notification)
+    assert notification.email_attempts == 5
+    assert notification.email_sent_at is None
+    assert any(
+        record.levelname == "ERROR" and "gave up" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_an_inactive_account_is_not_e_mailed_and_it_is_not_a_failure(mailoutbox):
+    teacher = make_teacher(is_active=False)
+    notification = pending_for(teacher.user)
+
+    call_command(COMMAND)
+
+    assert mailoutbox == []
+    notification = reload(notification)
+    assert notification.email_sent_at is not None
+    assert notification.email_attempts == 0
+
+
+def test_an_account_deactivated_after_the_notification_was_created_is_not_e_mailed(mailoutbox):
+    teacher = make_teacher()
+    notification = pending_for(teacher.user)
+    deactivate_user(teacher.user)
+
+    call_command(COMMAND)
+
+    assert mailoutbox == []
+    assert reload(notification).email_sent_at is not None

@@ -1,13 +1,18 @@
 """The e-mail of a notification (RF54): the label of the type as subject, the same text the system
 shows as body, and a link to the system. Plain text, and nothing the notification does not show."""
 
+import logging
+
 from django.conf import settings
 from django.core.mail import send_mail
+from django.db.models import F
 
 from .messages import message_for
 from .models import Notification, NotificationType
 
 MAX_EMAIL_ATTEMPTS = 5
+
+logger = logging.getLogger("sigtcc.notifications")
 
 
 def pending_notification_ids() -> list[int]:
@@ -30,3 +35,13 @@ def email_for(notification: Notification) -> tuple[str, str]:
 def send_notification_email(notification: Notification) -> None:
     subject, body = email_for(notification)
     send_mail(subject, body, None, [notification.recipient.email])
+
+
+def record_failed_attempt(notification_id: int) -> None:
+    """Counts a failed attempt; at the last one the notification is given up and it is logged."""
+    Notification.objects.filter(pk=notification_id).update(email_attempts=F("email_attempts") + 1)
+    attempts = Notification.objects.values_list("email_attempts", flat=True).get(pk=notification_id)
+    if attempts >= MAX_EMAIL_ATTEMPTS:
+        logger.error(
+            "gave up e-mailing notification %s after %s attempts", notification_id, attempts
+        )
