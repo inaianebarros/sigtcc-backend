@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.accounts.demo_scenarios import seed_request_scenarios
 from apps.accounts.demo_seed import DEMO_PASSWORD, DemoSeedError, seed_demo_users
 from config.errors import FieldValidationError
 
@@ -19,6 +20,7 @@ class Command(BaseCommand):
             )
         try:
             report = seed_demo_users()
+            requests = seed_request_scenarios()
         except DemoSeedError as error:
             raise CommandError(str(error)) from error
         except FieldValidationError as error:
@@ -28,4 +30,5 @@ class Command(BaseCommand):
             ) from error
         for email, created in report:
             self.stdout.write(f"{email}{'' if created else ' (já existe)'}")
+        self.stdout.write(f"Solicitações de orientação criadas agora: {requests}")
         self.stdout.write(f"Senha de todos os usuários de demonstração: {DEMO_PASSWORD}")
