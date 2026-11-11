@@ -34,11 +34,11 @@ EMPTY_ADVISING_AGE = timedelta(days=20)
 ADVISING_AGES = {COMPLETE_STUDENT: COMPLETE_ADVISING_AGE, EMPTY_STUDENT: EMPTY_ADVISING_AGE}
 
 
-def _student(slug: str) -> Student:
+def demo_student(slug: str) -> Student:
     return User.objects.get(email=demo_email(slug)).student
 
 
-def _advisor() -> Teacher:
+def demo_advisor() -> Teacher:
     return User.objects.get(email=demo_email(ADVISOR)).teacher
 
 
@@ -56,15 +56,15 @@ def _send_request(student: Student, advisor: Teacher, age: timedelta) -> Advisin
 @transaction.atomic
 def seed_request_scenarios() -> int:
     """Students 1 to 4 and teacher 1: none, pending, refused and unanswered requests."""
-    advisor = _advisor()
+    advisor = demo_advisor()
     created = 0
 
-    pending = _student(PENDING_STUDENT)
+    pending = demo_student(PENDING_STUDENT)
     if not _has_requests(pending):
         _send_request(pending, advisor, PENDING_AGE)
         created += 1
 
-    refused = _student(REFUSED_STUDENT)
+    refused = demo_student(REFUSED_STUDENT)
     if not _has_requests(refused):
         # Answered while it is new (a request over 7 days cannot be answered), then aged.
         advising_request = request_advising(refused, advisor.user_id)
@@ -75,7 +75,7 @@ def seed_request_scenarios() -> int:
         )
         created += 1
 
-    unanswered = _student(UNANSWERED_STUDENT)
+    unanswered = demo_student(UNANSWERED_STUDENT)
     if not _has_requests(unanswered):
         advising_request = _send_request(unanswered, advisor, UNANSWERED_AGE)
         expire_request(advising_request.pk)
@@ -87,10 +87,10 @@ def seed_request_scenarios() -> int:
 @transaction.atomic
 def seed_active_advisings() -> int:
     """Students 5 and 6 get an active advising with teacher 1, through request and acceptance."""
-    advisor = _advisor()
+    advisor = demo_advisor()
     created = 0
     for slug, age in ADVISING_AGES.items():
-        student = _student(slug)
+        student = demo_student(slug)
         if Advising.objects.filter(student=student).exists():
             continue
         advising_request = request_advising(student, advisor.user_id)
