@@ -77,6 +77,34 @@ uv run python manage.py expire_advising_requests    # no Compose: docker compose
 
 No Compose, o serviço `expiration-cron` (mesma imagem do backend, sem portas) o executa a cada hora, num laço. Cada solicitação é marcada e notificada na própria transação: uma falha desfaz só aquela solicitação, o comando segue com as outras e termina com erro para aparecer no log, e a hora seguinte tenta de novo. A marcação também acontece quando o aluno envia uma nova solicitação com a anterior vencida, pela mesma função, sem duplicar o aviso.
 
+## Dados de demonstração
+
+Para testar todas as telas com Aluno, Professor e Administrador, o comando `seed_demo_data` cria os usuários de demonstração. **Só para uso local**: eles têm uma senha conhecida, e o comando recusa rodar com `DJANGO_DEBUG` falso (ADR 0005). Ele usa o cadastro real da aplicação, é idempotente (cria só o que falta) e precisa do catálogo carregado (`loaddata fixtures/seed.json`, que o Compose já faz na subida se o arquivo existir):
+
+```bash
+uv run python manage.py seed_demo_data    # no Compose: docker compose run --rm backend python manage.py seed_demo_data
+```
+
+Todos entram com a senha `Senha-Demo-2026`, e os e-mails terminam em `@demo.ufopa.local`:
+
+| Usuário | E-mail (antes do `@`) | Cenário |
+|---|---|---|
+| Aluno 1 | `aluno1.sem-orientacao` | sem orientação nem solicitação |
+| Aluno 2 | `aluno2.solicitacao-pendente` | solicitação pendente |
+| Aluno 3 | `aluno3.solicitacao-recusada` | solicitação recusada |
+| Aluno 4 | `aluno4.solicitacao-nao-respondida` | solicitação não respondida |
+| Aluno 5 | `aluno5.orientacao-completa` | orientação ativa completa |
+| Aluno 6 | `aluno6.orientacao-vazia` | orientação ativa vazia |
+| Aluno 7 | `aluno7.orientacao-encerrada` | orientação encerrada (histórico) |
+| Aluno 8 | `aluno8.outro-curso` | de outro curso (isolamento) |
+| Professor 1 | `prof1.orientandos` | vários orientandos |
+| Professor 2 | `prof2.sem-orientandos` | sem orientandos |
+| Professor 3 | `prof3.indisponivel` | indisponível |
+| Professor 4 | `prof4.outro-curso` | de outro curso |
+| Administrador | `admin` | Django Admin |
+
+Esta primeira etapa cria os perfis, o curso "Sistemas de Informação" e as áreas de interesse; os cenários de cada aluno (solicitações, atividades, reuniões, histórico) chegam nas próximas issues da série (#139 a #144).
+
 ## Autenticação
 
 Sessão por JWT (ADR backend 0001 e 0006): `POST /api/auth/login` devolve o access token (5 minutos) no corpo e grava o refresh token em cookie `httpOnly` restrito a `/api/auth`. `POST /api/auth/refresh` troca o cookie por um novo par (cada refresh token vale uma vez; reapresentar um já usado revoga todas as sessões do usuário), `POST /api/auth/logout` bloqueia o refresh token e `GET /api/auth/me` devolve o usuário do access token (`Authorization: Bearer ...`). Login, refresh e logout exigem o cabeçalho `Origin` e só aceitam as origens de `JWT_TRUSTED_ORIGINS`: quem usa curl ou Postman precisa enviá-lo (por exemplo `-H "Origin: http://localhost:3000"`). Permissões por tipo de conta: `IsStudent`, `IsTeacher` e `IsAdministrator` em `apps/accounts/permissions.py`. As senhas aceitas têm no máximo 128 caracteres (422 no campo acima disso, sem rodar o hash), e cada rota de autenticação, inclusive `/auth/change-password`, tem também um limite de requisições por IP (variáveis `AUTH_<ESCOPO>_IP_LIMIT` e `AUTH_<ESCOPO>_IP_WINDOW_SECONDS` no `.env.example`).
