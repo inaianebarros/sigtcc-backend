@@ -5,11 +5,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.notifications.emails import (
+    lock_pending_notification,
     pending_notification_ids,
     record_failed_attempt,
     send_notification_email,
 )
-from apps.notifications.models import Notification
 
 logger = logging.getLogger("sigtcc.notifications")
 
@@ -28,9 +28,10 @@ class Command(BaseCommand):
             mailed = False
             try:
                 with transaction.atomic():
-                    notification = Notification.objects.select_related("recipient").get(
-                        pk=notification_id
-                    )
+                    notification = lock_pending_notification(notification_id)
+                    if notification is None:
+                        # Another run is sending it, or it was sent meanwhile.
+                        continue
                     # A deactivated account (RN19) is settled without a mail, and it is no failure.
                     if notification.recipient.is_active:
                         send_notification_email(notification)

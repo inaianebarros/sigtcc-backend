@@ -26,6 +26,22 @@ def pending_notification_ids() -> list[int]:
     )
 
 
+def lock_pending_notification(notification_id: int) -> Notification | None:
+    """Locks the notification for the time of its sending, or returns None when another run holds
+    it or it is no longer pending: that run has it, so this one must not send it a second time.
+    Call it inside a transaction."""
+    return (
+        Notification.objects.select_for_update(skip_locked=True, of=("self",))
+        .select_related("recipient")
+        .filter(
+            pk=notification_id,
+            email_sent_at__isnull=True,
+            email_attempts__lt=MAX_EMAIL_ATTEMPTS,
+        )
+        .first()
+    )
+
+
 def email_for(notification: Notification) -> tuple[str, str]:
     subject = NotificationType(notification.type).label
     text = message_for(notification.type, notification.payload)
@@ -39,7 +55,12 @@ def send_notification_email(notification: Notification) -> None:
 
 def record_failed_attempt(notification_id: int) -> None:
     """Counts a failed attempt; at the last one the notification is given up and it is logged."""
-    Notification.objects.filter(pk=notification_id).update(email_attempts=F("email_attempts") + 1)
+    # Only a notification still pending counts: another run may have sent it after this one failed.
+    counted = Notification.objects.filter(pk=notification_id, email_sent_at__isnull=True).update(
+        email_attempts=F("email_attempts") + 1
+    )
+    if not counted:
+        return
     attempts = Notification.objects.values_list("email_attempts", flat=True).get(pk=notification_id)
     if attempts >= MAX_EMAIL_ATTEMPTS:
         logger.error(
