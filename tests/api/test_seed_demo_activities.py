@@ -256,3 +256,29 @@ def test_an_error_that_is_not_the_storage_stops_the_command(catalog, debug):
         seed()
 
     assert Activity.objects.count() == 0
+
+
+def test_the_complete_student_downloads_a_delivered_file(client, seeded):
+    delivered = SubmissionFile.objects.filter(
+        submission__activity=activity(IN_REVIEW_TITLE)
+    ).first()
+
+    response = client.get(
+        f"{LIST_URL}/{delivered.submission.activity_id}/arquivos/{delivered.id}",
+        headers=bearer(user_of(COMPLETE_STUDENT)),
+    )
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/pdf"
+    assert b"".join(response.streaming_content).startswith(b"%PDF-")
+
+
+def test_the_dashboard_shows_the_counts_the_progress_and_the_next_activities(client, seeded):
+    response = client.get("/api/painel/aluno", headers=bearer(user_of(COMPLETE_STUDENT)))
+
+    body = response.json()
+    assert body["has_active_advising"] is True
+    assert body["activities"]["total"] == 6
+    assert body["activities"]["overdue"] == 1
+    assert body["activities"]["progress_percent"] > 0
+    assert len(body["next_activities"]["items"]) >= 1

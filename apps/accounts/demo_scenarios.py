@@ -29,7 +29,9 @@ PENDING_AGE = ANSWER_DEADLINE - timedelta(days=1)
 REFUSED_AGE = ANSWER_DEADLINE + timedelta(days=5)
 UNANSWERED_AGE = ANSWER_DEADLINE + timedelta(days=2)
 RESPONSE_DELAY = timedelta(days=1)
-ADVISING_AGES = {COMPLETE_STUDENT: timedelta(days=30), EMPTY_STUDENT: timedelta(days=20)}
+COMPLETE_ADVISING_AGE = timedelta(days=30)
+EMPTY_ADVISING_AGE = timedelta(days=20)
+ADVISING_AGES = {COMPLETE_STUDENT: COMPLETE_ADVISING_AGE, EMPTY_STUDENT: EMPTY_ADVISING_AGE}
 
 
 def _student(slug: str) -> Student:
@@ -93,10 +95,10 @@ def seed_active_advisings() -> int:
             continue
         advising_request = request_advising(student, advisor.user_id)
         answer_request(advisor, advising_request.pk, AnswerAction.ACCEPT)
-        Advising.objects.filter(request=advising_request).update(started_at=timezone.now() - age)
+        started = timezone.now() - age
+        Advising.objects.filter(request=advising_request).update(started_at=started)
         AdvisingRequest.objects.filter(pk=advising_request.pk).update(
-            requested_at=timezone.now() - age - RESPONSE_DELAY,
-            responded_at=timezone.now() - age,
+            requested_at=started - RESPONSE_DELAY, responded_at=started
         )
         created += 1
     return created

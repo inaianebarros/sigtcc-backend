@@ -23,11 +23,9 @@ from apps.activities.services import (
     review_activity,
 )
 
+from .demo_scenarios import ADVISOR, COMPLETE_STUDENT
 from .demo_seed import demo_email
 from .models import Student, Teacher, User
-
-COMPLETE_STUDENT = "aluno5.orientacao-completa"
-ADVISOR = "prof1.orientandos"
 
 PENDING_TITLE = "Revisão bibliográfica"
 IN_PROGRESS_TITLE = "Capítulo 1 – Introdução"
