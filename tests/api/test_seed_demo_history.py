@@ -12,6 +12,7 @@ from apps.accounts.demo_seed import DEMO_DOMAIN
 from apps.accounts.models import User
 from apps.activities.models import Activity, ActivityStatus
 from apps.advising.models import Advising, AdvisingStatus, ThesisTopic
+from apps.meetings.models import SYSTEM_CANCELLATION_REASON, Meeting, MeetingStatus
 from apps.notifications.models import Notification, NotificationType
 from tests.api.helpers import bearer, post_json
 
@@ -98,7 +99,27 @@ def test_the_student_was_told_what_the_ending_archived(seeded):
     )
 
     assert notification.payload["archived_activities"] == 2
-    assert notification.payload["cancelled_meetings"] == 0
+    assert notification.payload["cancelled_meetings"] == 2
+
+
+def test_the_ending_cancelled_the_future_meetings_by_the_system(seeded):
+    advising = Advising.objects.get(student__user=user_of(ENDED_STUDENT))
+
+    meetings = Meeting.objects.filter(advising=advising)
+    assert meetings.count() == 2
+    for meeting in meetings:
+        assert meeting.status == MeetingStatus.CANCELLED
+        assert meeting.cancelled_by_system is True
+        assert meeting.cancellation_reason == SYSTEM_CANCELLATION_REASON
+
+
+def test_the_whole_story_of_the_ended_advising_is_old_and_coherent(seeded):
+    advising = Advising.objects.get(student__user=user_of(ENDED_STUDENT))
+
+    for activity in Activity.objects.filter(advising=advising):
+        assert activity.created_at > advising.started_at
+        assert activity.created_at < advising.ended_at
+        assert activity.deadline < advising.ended_at.date()
 
 
 def test_the_other_course_student_only_finds_the_teacher_of_the_own_course(client, seeded):
@@ -163,6 +184,7 @@ def test_running_it_again_duplicates_nothing(seeded):
     counts = (
         Advising.objects.count(),
         Activity.objects.count(),
+        Meeting.objects.count(),
         ThesisTopic.objects.count(),
         Notification.objects.count(),
     )
@@ -172,6 +194,7 @@ def test_running_it_again_duplicates_nothing(seeded):
     assert counts == (
         Advising.objects.count(),
         Activity.objects.count(),
+        Meeting.objects.count(),
         ThesisTopic.objects.count(),
         Notification.objects.count(),
     )
