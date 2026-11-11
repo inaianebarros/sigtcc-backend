@@ -4,10 +4,13 @@ from django.core.management.base import BaseCommand, CommandError
 from apps.accounts.demo_activities import seed_activity_scenarios
 from apps.accounts.demo_history import seed_ended_advising
 from apps.accounts.demo_meetings import seed_meeting_scenarios
+from apps.accounts.demo_reset import demo_users, ensure_no_real_user_is_tied, reset_demo_data
 from apps.accounts.demo_scenarios import seed_active_advisings, seed_request_scenarios
 from apps.accounts.demo_seed import DEMO_PASSWORD, DemoSeedError, seed_demo_users
 from apps.accounts.demo_volume import seed_volume
 from config.errors import FieldValidationError
+
+CONFIRMATIONS = {"s", "sim", "y", "yes"}
 
 
 class Command(BaseCommand):
@@ -22,6 +25,14 @@ class Command(BaseCommand):
             action="store_true",
             help="Also adds teachers and ended advisings in volume, to try the pagination.",
         )
+        parser.add_argument(
+            "--reset",
+            action="store_true",
+            help="Removes only the demonstration data and recreates it, with fresh dates.",
+        )
+        parser.add_argument(
+            "--yes", action="store_true", help="Does not ask for confirmation of the reset."
+        )
 
     def handle(self, *args, **options):
         if not settings.DEBUG:
@@ -29,6 +40,8 @@ class Command(BaseCommand):
                 "Os dados de demonstração têm uma senha conhecida e só podem ser criados em "
                 "ambiente local: defina DJANGO_DEBUG=true."
             )
+        if options["reset"] and not self._reset(options["yes"]):
+            return
         try:
             report = seed_demo_users()
             created_requests = seed_request_scenarios()
@@ -65,3 +78,34 @@ class Command(BaseCommand):
             else:
                 self.stdout.write("Volume: nenhum dado novo (já existe).")
         self.stdout.write(f"Senha de todos os usuários de demonstração: {DEMO_PASSWORD}")
+
+    def _reset(self, assume_yes: bool) -> bool:
+        """Removes the demonstration data; returns False when the user cancelled."""
+        count = demo_users().count()
+        if not count:
+            self.stdout.write("Nenhum dado de demonstração para apagar.")
+            return True
+        try:
+            ensure_no_real_user_is_tied()
+        except DemoSeedError as error:
+            raise CommandError(str(error)) from error
+        if not assume_yes and not self._confirmed(count):
+            self.stdout.write("Reinício cancelado: nada foi apagado.")
+            return False
+        try:
+            removed = reset_demo_data()
+        except DemoSeedError as error:
+            raise CommandError(str(error)) from error
+        self.stdout.write(f"Dados de demonstração apagados: {removed} usuários e o que é deles.")
+        return True
+
+    def _confirmed(self, count: int) -> bool:
+        prompt = (
+            f"Isto apagará {count} usuários de demonstração e tudo o que é deles, e recriará o "
+            "conjunto. Continuar? [s/N] "
+        )
+        try:
+            answer = input(prompt)
+        except EOFError as error:
+            raise CommandError("Sem terminal para confirmar: use --yes.") from error
+        return answer.strip().lower() in CONFIRMATIONS
