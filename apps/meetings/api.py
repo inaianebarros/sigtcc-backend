@@ -5,7 +5,7 @@ from django.http import HttpRequest
 from django.utils import timezone
 from ninja import Query, Schema
 from ninja.responses import Status
-from ninja_extra import api_controller, http_get, http_patch, http_post, paginate
+from ninja_extra import api_controller, http_get, http_patch, http_post, http_put, paginate
 from ninja_jwt.authentication import JWTAuth
 from pydantic import StringConstraints, model_validator
 
@@ -22,8 +22,16 @@ from .services import (
     create_meeting,
     edit_meeting,
     mark_meeting_held,
+    write_meeting_notes,
 )
-from .situations import MeetingSituation, can_answer, can_cancel, can_edit, can_mark_held
+from .situations import (
+    MeetingSituation,
+    can_answer,
+    can_cancel,
+    can_edit,
+    can_edit_notes,
+    can_mark_held,
+)
 
 DESCRIPTION_MAX_LENGTH = 500
 
@@ -91,6 +99,19 @@ class MeetingCancelOut(MeetingOut):
     cancelled_by_system: bool
 
 
+NOTES_MAX_LENGTH = 3000
+
+MeetingNotes = Annotated[str, StringConstraints(strip_whitespace=True, max_length=NOTES_MAX_LENGTH)]
+
+
+class MeetingNotesIn(Schema):
+    notes: MeetingNotes
+
+
+class MeetingNotesOut(MeetingOut):
+    notes: str
+
+
 class MeetingHeldOut(MeetingOut):
     held_at: datetime.datetime
 
@@ -115,6 +136,8 @@ class MeetingItemOut(MeetingOut):
     can_cancel: bool
     marked_held: bool
     can_mark_held: bool
+    notes: str
+    can_edit_notes: bool
 
     @staticmethod
     def resolve_counterpart(obj: Meeting, context) -> MeetingCounterpartOut:
@@ -138,6 +161,14 @@ class MeetingItemOut(MeetingOut):
     @staticmethod
     def resolve_marked_held(obj: Meeting) -> bool:
         return obj.held_at is not None
+
+    @staticmethod
+    def resolve_can_edit_notes(obj: Meeting, context) -> bool:
+        user = context["request"].user
+        is_advisor = obj.advising.teacher.user_id == user.id
+        return can_edit_notes(
+            obj.situation, is_advisor, obj.advising.status == AdvisingStatus.ACTIVE
+        )
 
     @staticmethod
     def resolve_can_mark_held(obj: Meeting, context) -> bool:
@@ -281,6 +312,32 @@ class MeetingController:
     )
     def mark_held(self, request: HttpRequest, meeting_id: int):
         return mark_meeting_held(request.user, meeting_id)
+
+    @http_put(
+        "/{int:meeting_id}/apontamentos",
+        response={
+            200: MeetingNotesOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsTeacher],
+        summary="O Professor orientador grava os apontamentos de uma reunião realizada",
+        description=(
+            "Substitui os apontamentos (RF58, RN44, ADR 0014): texto livre e opcional de até "
+            "3000 caracteres, sem contar os espaços das pontas; um texto vazio ou só de espaços "
+            "remove os apontamentos. Só o Professor orientador, com a orientação ativa, e só em "
+            "reunião realizada, marcada por ele (RN43) ou aceita com horário passado: pendente, "
+            "recusada, cancelada ou aceita futura não marcada responde 409. O Aluno responde 403, "
+            "e outro Professor, a orientação encerrada (apontamentos congelados) e a reunião "
+            "inexistente respondem o mesmo 404. O Aluno orientando lê os apontamentos na "
+            "listagem. Não envia notificação."
+        ),
+    )
+    def write_notes(self, request: HttpRequest, meeting_id: int, payload: MeetingNotesIn):
+        return write_meeting_notes(request.user, meeting_id, payload.notes)
 
     @http_post(
         "/{int:meeting_id}/cancelar",

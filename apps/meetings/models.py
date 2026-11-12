@@ -31,6 +31,7 @@ class Meeting(models.Model):
     rejection_reason = models.TextField(blank=True, default="")
     cancellation_reason = models.TextField(blank=True, default="")
     cancelled_by_system = models.BooleanField(default=False)
+    notes = models.TextField(blank=True, default="")
     held_at = models.DateTimeField(null=True, blank=True)
     held_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
