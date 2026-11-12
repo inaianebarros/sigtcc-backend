@@ -77,6 +77,8 @@ def test_the_student_lists_a_meeting_with_the_item_shape(client):
         "can_answer",
         "can_edit",
         "can_cancel",
+        "marked_held",
+        "can_mark_held",
     }
     assert item["id"] == meeting.id
     assert item["scheduled_at"] == in_days(3).isoformat()

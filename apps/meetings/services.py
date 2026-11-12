@@ -32,6 +32,8 @@ REASON_NOT_ALLOWED_MESSAGE = "O aceite não tem motivo."
 NOT_EDITABLE_MESSAGE = "Esta reunião não pode mais ser editada."
 REJECTED_NOT_CANCELLABLE_MESSAGE = "Esta reunião foi recusada e não pode ser cancelada."
 ALREADY_CANCELLED_MESSAGE = "Esta reunião já foi cancelada."
+ALREADY_HELD_MESSAGE = "Esta reunião já foi marcada como realizada."
+NOT_ACCEPTED_MESSAGE = "Só uma reunião aceita pode ser marcada como realizada."
 
 
 def _local_iso(moment: datetime.datetime) -> str:
@@ -175,7 +177,13 @@ def _locked_meeting_of_party(user: User, meeting_id: int) -> Meeting:
     return Meeting.objects.select_related("author").get(pk=meeting_id)
 
 
-def _ensure_not_past(meeting: Meeting) -> None:
+def _ensure_not_over(meeting: Meeting) -> None:
+    """A meeting that is over takes no answer, edit, cancellation or marking (RN09, RN10, RN43).
+
+    A meeting the teacher marked as held is refused first, with its own message, and then one whose
+    time has passed."""
+    if meeting.held_at is not None:
+        raise ConflictError(ALREADY_HELD_MESSAGE)
     if meeting.scheduled_at <= timezone.now():
         raise ConflictError(TIME_PASSED_MESSAGE)
 
@@ -185,7 +193,7 @@ def _ensure_can_be_answered(meeting: Meeting) -> None:
         raise ConflictError(CANCELLED_MESSAGE)
     if meeting.status != MeetingStatus.PENDING:
         raise ConflictError(ALREADY_ANSWERED_MESSAGE)
-    _ensure_not_past(meeting)
+    _ensure_not_over(meeting)
 
 
 @transaction.atomic
@@ -246,7 +254,7 @@ def edit_meeting(
         raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
     if meeting.status in (MeetingStatus.REJECTED, MeetingStatus.CANCELLED):
         raise ConflictError(NOT_EDITABLE_MESSAGE)
-    _ensure_not_past(meeting)
+    _ensure_not_over(meeting)
     changes: dict[str, FieldChange] = {}
     if day is not None or at is not None or end_at is not None:
         zone = ZoneInfo(settings.TIME_ZONE)
@@ -292,8 +300,31 @@ def cancel_meeting(user: User, meeting_id: int, reason: str) -> Meeting:
         raise ConflictError(REJECTED_NOT_CANCELLABLE_MESSAGE)
     if meeting.status == MeetingStatus.CANCELLED:
         raise ConflictError(ALREADY_CANCELLED_MESSAGE)
-    _ensure_not_past(meeting)
+    _ensure_not_over(meeting)
     meeting.status = MeetingStatus.CANCELLED
     meeting.cancellation_reason = reason
     meeting.save(update_fields=["status", "cancellation_reason"])
+    return meeting
+
+
+@transaction.atomic
+def mark_meeting_held(user: User, meeting_id: int) -> Meeting:
+    """The advising teacher marks an accepted meeting that has not happened as held (RF57, RN43).
+
+    The mark records the moment and the author and cannot be undone. It is refused for a pending,
+    rejected or cancelled meeting, for one already marked and for one whose time has passed (which
+    is already held). Another teacher, a Student and an ended advising get the same 404 as a
+    meeting the user cannot reach (ADR 0004). It sends no notification.
+    """
+    meeting = _locked_meeting_of_party(user, meeting_id)
+    if meeting.advising.teacher.user_id != user.id:
+        raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
+    if meeting.status == MeetingStatus.CANCELLED:
+        raise ConflictError(CANCELLED_MESSAGE)
+    if meeting.status != MeetingStatus.ACCEPTED:
+        raise ConflictError(NOT_ACCEPTED_MESSAGE)
+    _ensure_not_over(meeting)
+    meeting.held_at = timezone.now()
+    meeting.held_by = user
+    meeting.save(update_fields=["held_at", "held_by"])
     return meeting

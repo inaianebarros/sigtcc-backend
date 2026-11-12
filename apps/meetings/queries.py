@@ -9,7 +9,7 @@ from apps.accounts.models import User, UserType
 from config.errors import FieldValidationError
 
 from .models import Meeting
-from .situations import is_past, with_situation
+from .situations import is_over, with_situation
 
 STUDENT_FILTER_NOT_ALLOWED_MESSAGE = "O aluno não filtra por aluno."
 PERIOD_MESSAGE = "A data inicial não pode ser depois da data final."
@@ -54,7 +54,7 @@ def list_meetings(
     meetings = with_situation(meetings, now)
     if situation is not None:
         meetings = meetings.filter(situation=situation)
-    past = is_past(now)
+    past = is_over(now)
     return (
         meetings.select_related(*_RELATED)
         .annotate(

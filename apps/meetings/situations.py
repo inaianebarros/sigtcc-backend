@@ -8,7 +8,7 @@ from .models import MeetingStatus
 
 
 class MeetingSituation(StrEnum):
-    """What a meeting is now, derived from its status and the clock; never persisted."""
+    """What a meeting is now, derived from its status, the clock and the held mark; never persisted."""
 
     PENDING = "pending"
     ACCEPTED = "accepted"
@@ -23,9 +23,24 @@ def is_past(now: datetime) -> Q:
     return Q(scheduled_at__lte=now)
 
 
+def is_marked_held() -> Q:
+    """The teacher marked the meeting as held before its time (RN43, ADR 0014)."""
+    return Q(held_at__isnull=False)
+
+
+def is_over(now: datetime) -> Q:
+    """The meeting is over: its time passed or the teacher marked it as held."""
+    return is_past(now) | is_marked_held()
+
+
 def accepted_and_future(now: datetime | None = None) -> Q:
-    """The accepted meetings that have not happened yet (the dashboards, RF50 and RF51)."""
-    return Q(status=MeetingStatus.ACCEPTED) & ~is_past(now or timezone.now())
+    """The accepted meetings that have not happened yet, by the clock and by the mark.
+
+    Used by the dashboards (RF50, RF51). The automatic cancellation (RN34, RN19) applies the same
+    rule to pending and accepted meetings in `close_advising`: a meeting marked as held is not
+    future for any of them.
+    """
+    return Q(status=MeetingStatus.ACCEPTED) & ~is_over(now or timezone.now())
 
 
 def with_situation(meetings: QuerySet, now: datetime) -> QuerySet:
@@ -42,6 +57,11 @@ def with_situation(meetings: QuerySet, now: datetime) -> QuerySet:
             output_field=CharField(),
         )
     )
+
+
+def can_mark_held(situation: str, is_advisor: bool, advising_active: bool) -> bool:
+    """The advising teacher marks an accepted meeting that has not happened yet (RN43)."""
+    return advising_active and is_advisor and situation == MeetingSituation.ACCEPTED
 
 
 def can_answer(situation: str, is_author: bool, advising_active: bool) -> bool:
