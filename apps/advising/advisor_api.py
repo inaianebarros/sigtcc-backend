@@ -46,11 +46,12 @@ class AdvisorSearchController:
         permissions=[IsStudent],
         summary="Busca de orientadores do curso do Aluno",
         description=(
-            "Só Professores ativos do curso do Aluno (RN28), do que tem mais Áreas em comum para o "
-            "que tem menos (RN23), depois por nome e id. O parâmetro name filtra por parte do "
-            "nome, sem diferenciar maiúsculas e acentos. Por padrão só aparecem os professores "
-            "disponíveis; only_available=false inclui os indisponíveis (RN26). A disponibilidade "
-            "é informada e não altera a ordem. Paginada com limit (padrão 20, máximo 100) e offset."
+            "Só Professores ativos do curso do Aluno (RN28). Por padrão, só os que têm ao menos "
+            "uma Área em comum (RN23), disponíveis e indisponíveis; show_all=true inclui também "
+            "os sem Área em comum. A ordem é: disponíveis primeiro, mais Áreas em comum, nome "
+            "sem acento e id. O parâmetro name filtra por parte do nome, sem diferenciar "
+            "maiúsculas e acentos. Professores indisponíveis não recebem solicitações (RN26). "
+            "Paginada com limit (padrão 20, máximo 100) e offset."
         ),
     )
     @paginate(BoundedLimitOffsetPagination)
@@ -58,15 +59,15 @@ class AdvisorSearchController:
         self,
         request: HttpRequest,
         name: str | None = Query(None, max_length=150),
-        only_available: bool = Query(
-            True,
+        show_all: bool = Query(
+            False,
             description=(
-                "Verdadeiro (padrão): só professores disponíveis para orientar. "
-                "Falso: também os indisponíveis."
+                "Falso (padrão): só professores com ao menos uma área de interesse em comum. "
+                "Verdadeiro: todos os professores ativos do curso, inclusive sem área em comum."
             ),
         ),
     ):
-        return search_advisors(request.user.student, name, only_available=only_available)
+        return search_advisors(request.user.student, name, show_all=show_all)
 
 
 class AdvisorProfileOut(AdvisorBaseOut):

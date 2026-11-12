@@ -97,6 +97,7 @@ class TestRegistrationAndSession:
         self, browser, client
     ):
         course = make_course()
+        shared_area = make_area()
         registered = post_json(
             browser,
             "/api/auth/register/professor",
@@ -108,7 +109,7 @@ class TestRegistrationAndSession:
                 "password_confirmation": PASSWORD,
                 "institute_id": course.institute_id,
                 "course_ids": [course.id],
-                "area_ids": [make_area().id],
+                "area_ids": [shared_area.id],
             },
         )
         assert registered.status_code == 201
@@ -121,7 +122,7 @@ class TestRegistrationAndSession:
         me = browser.get(ME_URL, headers=bearer_of(login))
         assert me.json()["active_advisees_count"] == 0
 
-        student = make_student(course=course)
+        student = make_student(course=course, areas=[shared_area])
         names = [item["full_name"] for item in search_advisors(client, student).json()["items"]]
         assert names == ["Beatriz Lima"]
 
@@ -136,13 +137,13 @@ class TestTheLifeOfAnAdvising:
         course = make_course()
         shared = [make_area(), make_area()]
         student = make_student(course=course, areas=shared, full_name="Ana Souza")
-        weak = make_teacher(courses=[course], full_name="Zélia Pouca Afinidade")
+        weak = make_teacher(courses=[course], areas=shared[:1], full_name="Zélia Pouca Afinidade")
         strong = make_teacher(courses=[course], areas=shared, full_name="Carlos Lima")
 
         # The student searches the advisors: the one with more areas in common comes first.
         results = search_advisors(client, student).json()["items"]
         assert [item["id"] for item in results] == [strong.user_id, weak.user_id]
-        assert [item["compatibility"] for item in results] == [2, 0]
+        assert [item["compatibility"] for item in results] == [2, 1]
 
         # The request, and RN04: no second request while one is pending.
         created = request_advising(client, student, strong)
