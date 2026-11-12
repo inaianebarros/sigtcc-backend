@@ -210,6 +210,24 @@ class ActivityCountsOut(Schema):
     completed: int
 
 
+class CalendarAdviseeOut(Schema):
+    id: int
+    full_name: str
+    ended: bool
+
+    @staticmethod
+    def resolve_id(obj: Student) -> int:
+        return obj.user_id
+
+    @staticmethod
+    def resolve_full_name(obj: Student) -> str:
+        return obj.user.full_name
+
+    @staticmethod
+    def resolve_ended(obj: Student) -> bool:
+        return not obj.has_active
+
+
 class AdviseeOut(Schema):
     advising_id: int
     student: AdviseeStudentOut
