@@ -44,7 +44,12 @@ def my_request_status(client, student):
 
 def request_meeting(client, user, days, description="Revisar o capítulo 2 do TCC", student=None):
     date, time = at(days)
-    body = {"date": date, "time": time, "description": description}
+    body = {
+        "date": date,
+        "time": time,
+        "end_time": "23:59:59",
+        "description": description,
+    }
     if student is not None:
         body["student_id"] = student.user_id
     return post_json(client, "/api/reunioes", body, headers=bearer(user))

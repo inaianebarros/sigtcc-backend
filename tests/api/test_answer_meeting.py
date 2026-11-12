@@ -55,6 +55,7 @@ def test_the_teacher_accepts_a_meeting_the_student_requested(client):
     assert set(body) == {
         "id",
         "scheduled_at",
+        "ends_at",
         "description",
         "status",
         "author",

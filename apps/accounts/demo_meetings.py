@@ -59,12 +59,19 @@ def _day(in_days: int) -> date:
 
 def _teacher_proposes(context: Context, description: str, in_days: int, at_hour: int) -> Meeting:
     return create_meeting(
-        context.teacher.user, _day(in_days), time(at_hour, 0), description, context.student.user_id
+        context.teacher.user,
+        _day(in_days),
+        time(at_hour, 0),
+        time(at_hour + 1, 0),
+        description,
+        context.student.user_id,
     )
 
 
 def _student_requests(context: Context, description: str, in_days: int, at_hour: int) -> Meeting:
-    return create_meeting(context.student.user, _day(in_days), time(at_hour, 0), description)
+    return create_meeting(
+        context.student.user, _day(in_days), time(at_hour, 0), time(at_hour + 1, 0), description
+    )
 
 
 def _accept(user: User, meeting: Meeting) -> None:
@@ -106,15 +113,22 @@ def _cancelled_by_the_student(context: Context, description: str) -> None:
     cancel_meeting(context.student.user, meeting.pk, "Vou viajar nesse dia, desculpe o aviso.")
 
 
+def _move_to_the_past(meeting: Meeting, ago: timedelta) -> None:
+    start = timezone.now() - ago
+    Meeting.objects.filter(pk=meeting.pk).update(
+        scheduled_at=start, ends_at=start + timedelta(hours=1)
+    )
+
+
 def _held(context: Context, description: str) -> None:
     meeting = _teacher_proposes(context, description, in_days=2, at_hour=10)
     _accept(context.student.user, meeting)
-    Meeting.objects.filter(pk=meeting.pk).update(scheduled_at=timezone.now() - HELD_AGO)
+    _move_to_the_past(meeting, HELD_AGO)
 
 
 def _expired(context: Context, description: str) -> None:
     meeting = _student_requests(context, description, in_days=2, at_hour=17)
-    Meeting.objects.filter(pk=meeting.pk).update(scheduled_at=timezone.now() - EXPIRED_AGO)
+    _move_to_the_past(meeting, EXPIRED_AGO)
 
 
 PLANS = (

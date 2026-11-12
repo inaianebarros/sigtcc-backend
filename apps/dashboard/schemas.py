@@ -44,6 +44,7 @@ class LastRequestOut(Schema):
 class StudentMeetingOut(Schema):
     id: int
     scheduled_at: datetime
+    ends_at: datetime
     teacher: TeacherSummaryOut
     description: str
 
@@ -96,6 +97,7 @@ class DeadlinesOut(Schema):
 class TeacherMeetingOut(Schema):
     id: int
     scheduled_at: datetime
+    ends_at: datetime
     student: UserRefOut
     description: str
 

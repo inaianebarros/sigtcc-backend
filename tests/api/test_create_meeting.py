@@ -36,7 +36,12 @@ def at(days=0, hours=0, minutes=0):
 
 def payload(**overrides):
     date, time = at(days=3)
-    body = {"date": date, "time": time, "description": "Revisar o capítulo 2 do TCC"}
+    body = {
+        "date": date,
+        "time": min(time, "22:00"),
+        "end_time": "23:59:59",
+        "description": "Revisar o capítulo 2 do TCC",
+    }
     return {**body, **overrides}
 
 
@@ -59,7 +64,7 @@ def test_the_student_requests_a_meeting_with_the_active_advisor(client):
 
     assert response.status_code == 201
     result = response.json()
-    assert set(result) == {"id", "scheduled_at", "description", "status", "author"}
+    assert set(result) == {"id", "scheduled_at", "ends_at", "description", "status", "author"}
     assert result["scheduled_at"] == "2099-12-31T14:30:00-03:00"
     assert result["description"] == "Revisar o capítulo 2 do TCC"
     assert result["status"] == "pending"
@@ -301,7 +306,7 @@ def test_the_teacher_requests_a_meeting_with_an_active_advisee(client):
 
     assert response.status_code == 201
     result = response.json()
-    assert set(result) == {"id", "scheduled_at", "description", "status", "author"}
+    assert set(result) == {"id", "scheduled_at", "ends_at", "description", "status", "author"}
     assert result["scheduled_at"] == "2099-12-31T14:30:00-03:00"
     assert result["status"] == "pending"
     assert result["author"] == {
@@ -393,3 +398,62 @@ def test_the_openapi_documents_the_404_of_the_teacher_path(client):
     operation = client.get("/api/openapi.json").json()["paths"]["/api/reunioes"]["post"]
 
     assert {"201", "401", "403", "404", "409", "422"} <= set(operation["responses"])
+
+
+def test_the_response_and_the_row_carry_the_end(client):
+    student, _, _ = advised_student()
+
+    response = create_meeting(
+        client, student.user, payload(date="2099-12-31", time="14:30", end_time="16:00")
+    )
+
+    assert response.status_code == 201
+    assert response.json()["ends_at"] == "2099-12-31T16:00:00-03:00"
+    meeting = Meeting.objects.get(pk=response.json()["id"])
+    assert meeting.ends_at == datetime.datetime(2099, 12, 31, 16, 0, tzinfo=SANTAREM)
+
+
+def test_the_end_is_required(client):
+    student, _, _ = advised_student()
+    body = payload()
+    del body["end_time"]
+
+    response = create_meeting(client, student.user, body)
+
+    assert response.status_code == 422
+    assert "end_time" in [error["loc"][-1] for error in response.json()["detail"]]
+    assert Meeting.objects.count() == 0
+
+
+@pytest.mark.parametrize("end_time", ["14:30", "14:29", "00:10"])
+def test_an_end_equal_to_or_before_the_start_is_refused(client, end_time):
+    student, _, _ = advised_student()
+
+    response = create_meeting(
+        client, student.user, payload(date="2099-12-31", time="14:30", end_time=end_time)
+    )
+
+    assert response.status_code == 422
+    (error,) = response.json()["detail"]
+    assert error["loc"][-1] == "end_time"
+    assert "depois da hora de início" in error["msg"]
+    assert Meeting.objects.count() == 0
+
+
+def test_any_duration_is_accepted_and_the_teacher_also_needs_the_end(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    student = make_student(course=course)
+    make_advising(student=student, teacher=teacher)
+
+    short = create_meeting(
+        client,
+        teacher.user,
+        payload(time="10:00", end_time="10:01", student_id=student.user_id),
+    )
+    without_end = payload(student_id=student.user_id)
+    del without_end["end_time"]
+    missing = create_meeting(client, teacher.user, without_end)
+
+    assert short.status_code == 201
+    assert missing.status_code == 422

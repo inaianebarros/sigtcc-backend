@@ -370,6 +370,7 @@ def add_meeting(
         advising=advising,
         author=advising.teacher.user,
         scheduled_at=timezone.now() + datetime.timedelta(hours=hours),
+        ends_at=timezone.now() + datetime.timedelta(hours=hours + 1),
         description=description,
         status=status,
         rejection_reason="Sem horário." if status == MeetingStatus.REJECTED else "",
@@ -389,7 +390,7 @@ def test_the_next_meetings_are_the_accepted_future_ones_of_all_the_advisees_in_o
     assert [item["id"] for item in meetings["items"]] == [soon.id, middle.id, late.id]
     assert meetings["has_more"] is False
     first = meetings["items"][0]
-    assert set(first) == {"id", "scheduled_at", "student", "description"}
+    assert set(first) == {"id", "scheduled_at", "ends_at", "student", "description"}
     assert first["student"] == {"id": bruno.student.user_id, "full_name": "Bruno"}
     assert first["description"] == "Primeira"
     assert first["scheduled_at"].endswith("-03:00")

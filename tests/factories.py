@@ -97,10 +97,12 @@ def make_activity(advising=None):
 
 def make_meeting(advising=None, status=MeetingStatus.PENDING, scheduled_at=None, author=None):
     advising = advising or make_advising()
+    scheduled_at = scheduled_at or timezone.now() + datetime.timedelta(days=3)
     return Meeting.objects.create(
         advising=advising,
         author=author or advising.teacher.user,
-        scheduled_at=scheduled_at or timezone.now() + datetime.timedelta(days=3),
+        scheduled_at=scheduled_at,
+        ends_at=scheduled_at + datetime.timedelta(hours=1),
         description="Reunião de orientação",
         status=status,
         rejection_reason="Sem horário." if status == MeetingStatus.REJECTED else "",

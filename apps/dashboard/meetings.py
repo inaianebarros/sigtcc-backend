@@ -44,6 +44,7 @@ def meetings_block(rows: list[Meeting], other_party: Callable[[Meeting], dict]) 
         {
             "id": meeting.id,
             "scheduled_at": meeting_time(meeting),
+            "ends_at": timezone.localtime(meeting.ends_at),
             **other_party(meeting),
             "description": summarize(meeting.description),
         }

@@ -27,6 +27,7 @@ def create_meeting(client, author, **extra):
     body = {
         "date": "2099-12-31",
         "time": "14:30",
+        "end_time": "15:30",
         "description": "Revisar o capítulo 2 do TCC",
         **extra,
     }

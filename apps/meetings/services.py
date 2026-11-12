@@ -19,6 +19,7 @@ from config.errors import ConflictError, FieldValidationError
 from .models import Meeting, MeetingStatus
 
 PAST_SCHEDULE_MESSAGE = "A data e a hora devem ser posteriores ao momento atual."
+END_NOT_AFTER_START_MESSAGE = "A hora de término deve ser depois da hora de início."
 NO_ACTIVE_ADVISING_MESSAGE = "Você precisa ter um orientador ativo para solicitar uma reunião."
 STUDENT_ID_NOT_ALLOWED_MESSAGE = "O aluno não informa o aluno da reunião."
 STUDENT_ID_REQUIRED_MESSAGE = "Informe o aluno."
@@ -52,12 +53,24 @@ def _answer_payload(
     return payload
 
 
-def to_scheduled_at(day: datetime.date, at: datetime.time) -> datetime.datetime:
-    """The date and the time as given in the project time zone, strictly after now (RF17)."""
-    moment = datetime.datetime.combine(day, at, tzinfo=ZoneInfo(settings.TIME_ZONE))
-    if moment <= timezone.now():
+def _at(day: datetime.date, at: datetime.time) -> datetime.datetime:
+    return datetime.datetime.combine(day, at, tzinfo=ZoneInfo(settings.TIME_ZONE))
+
+
+def to_interval(
+    day: datetime.date, at: datetime.time, end_at: datetime.time
+) -> tuple[datetime.datetime, datetime.datetime]:
+    """The start and the end as given in the project time zone, on the same day (RF17, RN45).
+
+    The start must be strictly after now, and the end after the start. Both share the date, so a
+    meeting never ends on another day.
+    """
+    start = _at(day, at)
+    if start <= timezone.now():
         raise FieldValidationError({"date": PAST_SCHEDULE_MESSAGE})
-    return moment
+    if end_at <= at:
+        raise FieldValidationError({"end_time": END_NOT_AFTER_START_MESSAGE})
+    return start, _at(day, end_at)
 
 
 def _lock_active_advising_of_student(student: Student) -> Advising:
@@ -87,6 +100,7 @@ def create_meeting(
     author: User,
     day: datetime.date,
     at: datetime.time,
+    end_at: datetime.time,
     description: str,
     student_id: int | None = None,
 ) -> Meeting:
@@ -101,13 +115,17 @@ def create_meeting(
         raise FieldValidationError({"student_id": STUDENT_ID_NOT_ALLOWED_MESSAGE})
     if not is_student and student_id is None:
         raise FieldValidationError({"student_id": STUDENT_ID_REQUIRED_MESSAGE})
-    scheduled_at = to_scheduled_at(day, at)
+    scheduled_at, ends_at = to_interval(day, at, end_at)
     if is_student:
         advising = _lock_active_advising_of_student(author.student)
     else:
         advising = _lock_active_advising_with_student(author.teacher, student_id)
     meeting = Meeting.objects.create(
-        advising=advising, author=author, scheduled_at=scheduled_at, description=description
+        advising=advising,
+        author=author,
+        scheduled_at=scheduled_at,
+        ends_at=ends_at,
+        description=description,
     )
     recipient = advising.teacher.user if is_student else advising.student.user
     notify(
@@ -212,14 +230,16 @@ def edit_meeting(
     meeting_id: int,
     day: datetime.date | None = None,
     at: datetime.time | None = None,
+    end_at: datetime.time | None = None,
     description: str | None = None,
 ) -> MeetingEdit:
-    """The author changes the date, the time or the description of a meeting (RF21, RN09, RN39).
+    """The author changes the date, the times or the description of a meeting (RF21, RN09, RN39).
 
     Only the author edits, and only a meeting that has not happened and was not rejected or
-    cancelled. A new date or time must be in the future, and only when it changed. Changing the
-    date or the time of an accepted meeting sends it back to pending (RN39). An edit that
-    changes nothing writes nothing and reports no change.
+    cancelled. A new start must be in the future, and only when it changed, and the end must stay
+    after the start on the same day (RN45). Changing the date, the start or the end of an accepted
+    meeting sends it back to pending (RN39). An edit that changes nothing writes nothing and
+    reports no change.
     """
     meeting = _locked_meeting_of_party(user, meeting_id)
     if meeting.author_id != user.id:
@@ -228,21 +248,30 @@ def edit_meeting(
         raise ConflictError(NOT_EDITABLE_MESSAGE)
     _ensure_not_past(meeting)
     changes: dict[str, FieldChange] = {}
-    if day is not None or at is not None:
-        current = meeting.scheduled_at.astimezone(ZoneInfo(settings.TIME_ZONE))
-        moved = datetime.datetime.combine(
-            day or current.date(), at or current.time(), tzinfo=current.tzinfo
-        )
+    if day is not None or at is not None or end_at is not None:
+        zone = ZoneInfo(settings.TIME_ZONE)
+        current = meeting.scheduled_at.astimezone(zone)
+        current_end = meeting.ends_at.astimezone(zone)
+        new_day = day or current.date()
+        new_at = at or current.time()
+        new_end_at = end_at or current_end.time()
+        if new_end_at <= new_at:
+            raise FieldValidationError({"end_time": END_NOT_AFTER_START_MESSAGE})
+        moved, moved_end = _at(new_day, new_at), _at(new_day, new_end_at)
         if moved != meeting.scheduled_at:
             if moved <= timezone.now():
                 raise FieldValidationError({"date": PAST_SCHEDULE_MESSAGE})
             changes["scheduled_at"] = FieldChange(old=meeting.scheduled_at, new=moved)
+        if moved_end != meeting.ends_at:
+            changes["ends_at"] = FieldChange(old=meeting.ends_at, new=moved_end)
     if description is not None and description != meeting.description:
         changes["description"] = FieldChange(old=meeting.description, new=description)
     if changes:
         for field, change in changes.items():
             setattr(meeting, field, change.new)
-        if "scheduled_at" in changes and meeting.status == MeetingStatus.ACCEPTED:
+        if ("scheduled_at" in changes or "ends_at" in changes) and (
+            meeting.status == MeetingStatus.ACCEPTED
+        ):
             changes["status"] = FieldChange(old=meeting.status, new=MeetingStatus.PENDING)
             meeting.status = MeetingStatus.PENDING
         meeting.save(update_fields=list(changes))

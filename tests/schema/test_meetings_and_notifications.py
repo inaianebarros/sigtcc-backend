@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -15,6 +17,7 @@ def schedule_meeting(**extra):
         advising=advising,
         author=advising.student.user,
         scheduled_at=timezone.now(),
+        ends_at=timezone.now() + datetime.timedelta(hours=1),
         description="Alinhar o capítulo 2",
         **extra,
     )
