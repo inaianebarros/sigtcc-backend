@@ -208,3 +208,33 @@ class PublishedArticle(models.Model):
 
     def __str__(self) -> str:
         return self.title
+
+
+class ThesisProposal(models.Model):
+    """A title of work the teacher wants to supervise and looks for students for (RF55, RN41).
+
+    It is only informative: it is not tied to the advising request nor to the thesis topic, and it
+    has no status. The title key makes the uniqueness per teacher ignore case, accents and the ends.
+    """
+
+    teacher = models.ForeignKey(Teacher, on_delete=models.PROTECT, related_name="thesis_proposals")
+    title = models.CharField(max_length=150)
+    title_key = models.CharField(max_length=1000, editable=False, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["teacher", "title_key"], name="thesis_proposal_unique_per_teacher"
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.title_key = normalize_title(self.title)
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "title" in update_fields:
+            kwargs["update_fields"] = {*update_fields, "title_key"}
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return self.title
