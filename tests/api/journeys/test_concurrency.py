@@ -37,7 +37,12 @@ def advised_pair():
 
 def meeting_body():
     date, time = at(days=3)
-    return {"date": date, "time": time, "description": "Revisar o capítulo 2 do TCC"}
+    return {
+        "date": date,
+        "time": time,
+        "end_time": "23:59:59",
+        "description": "Revisar o capítulo 2 do TCC",
+    }
 
 
 def activity_body(student):
@@ -130,6 +135,7 @@ class TestTheEndingRacingWithAMeeting:
                 advising=locked,
                 author=student.user,
                 scheduled_at=timezone.now() + datetime.timedelta(days=3),
+                ends_at=timezone.now() + datetime.timedelta(days=3, hours=1),
                 description="Criada com a trava da orientação",
                 status=MeetingStatus.ACCEPTED,
             )

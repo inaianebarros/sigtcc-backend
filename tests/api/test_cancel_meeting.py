@@ -49,6 +49,7 @@ def test_the_author_cancels_a_pending_meeting_and_status_and_reason_are_stored_t
     assert set(body) == {
         "id",
         "scheduled_at",
+        "ends_at",
         "description",
         "status",
         "author",

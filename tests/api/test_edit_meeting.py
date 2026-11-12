@@ -56,7 +56,7 @@ def test_the_author_edits_the_description_and_the_response_has_the_creation_shap
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"id", "scheduled_at", "description", "status", "author"}
+    assert set(body) == {"id", "scheduled_at", "ends_at", "description", "status", "author"}
     assert body["id"] == meeting.id
     assert body["description"] == "Nova pauta"
     assert body["status"] == "pending"
@@ -81,11 +81,13 @@ def test_each_field_can_be_edited_alone_or_together_and_the_others_stay(client):
     target = when(days=5, hour=15, minute=30)
 
     only_date = edit(client, student.user, meeting.id, {"date": date_of(target)})
-    only_time = edit(client, student.user, meeting.id, {"time": "15:30"})
+    only_time = edit(client, student.user, meeting.id, {"time": "15:30", "end_time": "16:30"})
     description = edit(client, student.user, meeting.id, {"description": "Pauta final"})
 
     assert only_date.json()["scheduled_at"] == when(days=5, hour=10).isoformat()
+    assert only_date.json()["ends_at"] == when(days=5, hour=11).isoformat()
     assert only_time.json()["scheduled_at"] == target.isoformat()
+    assert only_time.json()["ends_at"] == when(days=5, hour=16, minute=30).isoformat()
     assert description.json()["scheduled_at"] == target.isoformat()
     meeting.refresh_from_db()
     assert (meeting.scheduled_at, meeting.description) == (target, "Pauta final")
@@ -203,7 +205,7 @@ def test_changing_the_date_or_the_time_of_an_accepted_meeting_sends_it_back_to_p
     )
 
     moved = edit(client, student.user, by_date.id, {"date": date_of(when(days=6))})
-    retimed = edit(client, student.user, by_time.id, {"time": "17:45"})
+    retimed = edit(client, student.user, by_time.id, {"time": "17:45", "end_time": "18:45"})
 
     assert moved.json()["status"] == "pending"
     assert retimed.json()["status"] == "pending"
@@ -243,7 +245,12 @@ def test_a_pending_meeting_stays_pending_when_it_moves(client):
     student, _, advising = advised_pair()
     meeting = make_meeting(advising, author=student.user, scheduled_at=when())
 
-    assert edit(client, student.user, meeting.id, {"time": "18:00"}).json()["status"] == "pending"
+    assert (
+        edit(client, student.user, meeting.id, {"time": "18:00", "end_time": "19:00"}).json()[
+            "status"
+        ]
+        == "pending"
+    )
 
 
 @pytest.mark.parametrize("status", [MeetingStatus.REJECTED, MeetingStatus.CANCELLED])
@@ -347,11 +354,13 @@ def test_the_service_reports_what_changed_so_that_a_no_op_edit_can_be_told_apart
     )
     new = when(days=4, hour=11)
 
-    changed = edit_meeting(student.user, meeting.id, new.date(), new.time(), "Nova pauta")
-    unchanged = edit_meeting(student.user, meeting.id, new.date(), new.time(), "Nova pauta")
+    end = datetime.time(12, 0)
+    changed = edit_meeting(student.user, meeting.id, new.date(), new.time(), end, "Nova pauta")
+    unchanged = edit_meeting(student.user, meeting.id, new.date(), new.time(), end, "Nova pauta")
 
     assert changed.changes == {
         "scheduled_at": FieldChange(old=when(hour=10), new=new),
+        "ends_at": FieldChange(old=when(hour=11), new=when(days=4, hour=12)),
         "description": FieldChange(old="Reunião de orientação", new="Nova pauta"),
         "status": FieldChange(old=MeetingStatus.ACCEPTED, new=MeetingStatus.PENDING),
     }
@@ -408,3 +417,54 @@ def test_the_openapi_documents_the_route_and_its_errors(client):
     ]
 
     assert {"200", "401", "403", "404", "409", "422"} <= set(operation["responses"])
+
+
+def test_the_end_may_be_edited_alone_and_it_must_stay_after_the_start(client):
+    student, _, advising = advised_pair()
+    meeting = make_meeting(advising, author=student.user, scheduled_at=when(hour=10))
+
+    longer = edit(client, student.user, meeting.id, {"end_time": "12:30"})
+    same_as_start = edit(client, student.user, meeting.id, {"end_time": "10:00"})
+    before_start = edit(client, student.user, meeting.id, {"end_time": "09:00"})
+
+    assert longer.status_code == 200
+    assert longer.json()["ends_at"] == when(hour=12, minute=30).isoformat()
+    assert longer.json()["scheduled_at"] == when(hour=10).isoformat()
+    for refused in (same_as_start, before_start):
+        assert refused.status_code == 422
+        assert "end_time" in [error["loc"][-1] for error in refused.json()["detail"]]
+    assert Meeting.objects.get(pk=meeting.pk).ends_at == when(hour=12, minute=30)
+
+
+def test_moving_the_start_past_the_current_end_needs_a_new_end(client):
+    student, _, advising = advised_pair()
+    meeting = make_meeting(advising, author=student.user, scheduled_at=when(hour=10))
+
+    refused = edit(client, student.user, meeting.id, {"time": "15:00"})
+
+    assert refused.status_code == 422
+    assert "end_time" in [error["loc"][-1] for error in refused.json()["detail"]]
+    assert Meeting.objects.get(pk=meeting.pk).scheduled_at == when(hour=10)
+
+
+def test_changing_only_the_end_of_an_accepted_meeting_sends_it_back_to_pending(client):
+    student, _, advising = advised_pair()
+    meeting = make_meeting(
+        advising, author=student.user, status=MeetingStatus.ACCEPTED, scheduled_at=when(hour=10)
+    )
+
+    response = edit(client, student.user, meeting.id, {"end_time": "11:30"})
+
+    assert response.json()["status"] == "pending"
+    assert Meeting.objects.get(pk=meeting.pk).status == MeetingStatus.PENDING
+
+
+def test_sending_the_same_end_keeps_an_accepted_meeting_accepted(client):
+    student, _, advising = advised_pair()
+    meeting = make_meeting(
+        advising, author=student.user, status=MeetingStatus.ACCEPTED, scheduled_at=when(hour=10)
+    )
+
+    response = edit(client, student.user, meeting.id, {"end_time": "11:00", "description": "Pauta"})
+
+    assert response.json()["status"] == "accepted"

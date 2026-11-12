@@ -48,11 +48,14 @@ def _open_the_activities(teacher: Teacher, student: Student) -> None:
 def _schedule_the_meetings(teacher: Teacher, student: Student) -> None:
     """A pending and an accepted meeting, both still to come: the ending cancels them (RN34)."""
     day = timezone.localdate() + timedelta(days=5)
-    create_meeting(teacher.user, day, time(10, 0), "Alinhar o escopo do trabalho", student.user_id)
+    create_meeting(
+        teacher.user, day, time(10, 0), time(11, 0), "Alinhar o escopo do trabalho", student.user_id
+    )
     accepted = create_meeting(
         teacher.user,
         day + timedelta(days=2),
         time(14, 0),
+        time(15, 0),
         "Revisar a prova de conceito",
         student.user_id,
     )

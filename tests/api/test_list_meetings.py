@@ -65,6 +65,7 @@ def test_the_student_lists_a_meeting_with_the_item_shape(client):
     assert set(item) == {
         "id",
         "scheduled_at",
+        "ends_at",
         "description",
         "status",
         "situation",

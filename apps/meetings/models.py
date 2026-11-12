@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.db import models
-from django.db.models import Q
+from django.db.models import F, Q
 
 from apps.advising.models import Advising
 
@@ -23,6 +23,7 @@ class Meeting(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="meetings"
     )
     scheduled_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
     description = models.TextField()
     status = models.CharField(
         max_length=10, choices=MeetingStatus.choices, default=MeetingStatus.PENDING
@@ -33,6 +34,10 @@ class Meeting(models.Model):
 
     class Meta:
         constraints = [
+            models.CheckConstraint(
+                condition=Q(ends_at__gt=F("scheduled_at")),
+                name="meeting_ends_after_it_starts",
+            ),
             models.CheckConstraint(
                 condition=~Q(status=MeetingStatus.REJECTED) | ~Q(rejection_reason=""),
                 name="meeting_rejection_requires_reason",

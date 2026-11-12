@@ -36,6 +36,7 @@ MeetingReason = Annotated[
 class MeetingIn(Schema):
     date: datetime.date
     time: datetime.time
+    end_time: datetime.time
     description: MeetingDescription
     student_id: int | None = None
 
@@ -49,6 +50,7 @@ class MeetingAuthorOut(Schema):
 class MeetingOut(Schema):
     id: int
     scheduled_at: datetime.datetime
+    ends_at: datetime.datetime
     description: str
     status: str
     author: MeetingAuthorOut
@@ -57,15 +59,20 @@ class MeetingOut(Schema):
     def resolve_scheduled_at(obj: Meeting) -> datetime.datetime:
         return timezone.localtime(obj.scheduled_at)
 
+    @staticmethod
+    def resolve_ends_at(obj: Meeting) -> datetime.datetime:
+        return timezone.localtime(obj.ends_at)
+
 
 class MeetingPatchIn(Schema):
     date: datetime.date | None = None
     time: datetime.time | None = None
+    end_time: datetime.time | None = None
     description: MeetingDescription | None = None
 
     @model_validator(mode="after")
     def at_least_one_field_and_no_nulls(self):
-        check_partial_update(self, ("date", "time", "description"))
+        check_partial_update(self, ("date", "time", "end_time", "description"))
         return self
 
 
@@ -142,8 +149,9 @@ class MeetingController:
         permissions=[IsStudent | IsTeacher],
         summary="O Aluno ou o Professor solicita uma reunião",
         description=(
-            "Data e hora no horário de Santarém, depois do momento atual, e uma descrição de 1 "
-            "a 500 caracteres. A reunião nasce pendente, com quem a criou como autor. O Aluno "
+            "Data, hora de início (time) e hora de término (end_time) no horário de Santarém: o "
+            "início depois do momento atual e o término depois do início, no mesmo dia (RN45). "
+            "A descrição tem de 1 a 500 caracteres. A reunião nasce pendente, com quem a criou como autor. O Aluno "
             "solicita ao seu orientador ativo e não informa student_id; sem orientação ativa, "
             "409 (RN08, RN29). O Professor informa o student_id (o id do usuário do Aluno) de "
             "um orientando ativo; qualquer outro Aluno, e a orientação encerrada durante a "
@@ -152,7 +160,12 @@ class MeetingController:
     )
     def create(self, request: HttpRequest, payload: MeetingIn):
         meeting = create_meeting(
-            request.user, payload.date, payload.time, payload.description, payload.student_id
+            request.user,
+            payload.date,
+            payload.time,
+            payload.end_time,
+            payload.description,
+            payload.student_id,
         )
         return Status(201, meeting)
 
@@ -192,16 +205,21 @@ class MeetingController:
         permissions=[IsStudent | IsTeacher],
         summary="O autor edita uma reunião",
         description=(
-            "Edição parcial de date, time e description, com ao menos um campo e os mesmos "
-            "limites da criação. Só o autor edita (RN09); a outra parte, outra orientação, "
+            "Edição parcial de date, time, end_time e description, com ao menos um campo e os "
+            "mesmos limites da criação (o término continua depois do início, no mesmo dia). Só o autor edita (RN09); a outra parte, outra orientação, "
             "orientação encerrada e reunião inexistente respondem o mesmo 404. Recusada, "
             "cancelada ou com horário já passado responde 409. Um date ou time novo precisa ser "
-            "futuro, e mudá-lo numa reunião aceita a devolve para pendente (RN39)."
+            "futuro, e mudar date, time ou end_time numa reunião aceita a devolve para pendente (RN39)."
         ),
     )
     def edit(self, request: HttpRequest, meeting_id: int, payload: MeetingPatchIn):
         return edit_meeting(
-            request.user, meeting_id, payload.date, payload.time, payload.description
+            request.user,
+            meeting_id,
+            payload.date,
+            payload.time,
+            payload.end_time,
+            payload.description,
         ).meeting
 
     @http_post(
