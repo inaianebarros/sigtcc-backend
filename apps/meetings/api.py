@@ -3,7 +3,7 @@ from typing import Annotated
 
 from django.http import HttpRequest
 from django.utils import timezone
-from ninja import Schema
+from ninja import Query, Schema
 from ninja.responses import Status
 from ninja_extra import api_controller, http_get, http_patch, http_post, paginate
 from ninja_jwt.authentication import JWTAuth
@@ -15,7 +15,7 @@ from config.pagination import BoundedLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page, check_partial_update
 
 from .models import Meeting
-from .queries import list_meetings
+from .queries import list_meetings, meetings_in_period
 from .services import answer_meeting, cancel_meeting, create_meeting, edit_meeting
 from .situations import MeetingSituation, can_answer, can_cancel, can_edit
 
@@ -132,6 +132,13 @@ class MeetingAnswerIn(Schema):
 
 class MeetingAnswerOut(MeetingOut):
     rejection_reason: str
+
+
+class CalendarFilters(Schema):
+    date_from: datetime.date
+    date_to: datetime.date
+    situation: list[MeetingSituation] | None = None
+    hidden_student_ids: list[int] | None = None
 
 
 @api_controller("/reunioes", tags=["Reuniões"], auth=JWTAuth())
@@ -255,6 +262,8 @@ class MeetingController:
         permissions=[IsStudent | IsTeacher],
         summary="Lista as reuniões do Aluno ou do Professor",
         description=(
+            "Não usada pela tela desde o calendário (GET /reunioes/calendario, ADR 0015); fica "
+            "até ser removida. "
             "As reuniões de todas as orientações do usuário, ativas ou encerradas (RF19). A "
             "situação é derivada do status e do horário: pending, accepted, rejected, cancelled, "
             "held (aceita com horário passado) e expired (pendente com horário passado). Filtros "
@@ -274,3 +283,38 @@ class MeetingController:
         student_id: int | None = None,
     ):
         return list_meetings(request.user, situation, date_from, date_to, student_id)
+
+    @http_get(
+        "/calendario",
+        response={
+            200: list[MeetingItemOut],
+            401: ErrorOut,
+            403: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsStudent | IsTeacher],
+        summary="Lê as reuniões do Aluno ou do Professor em um período, para o calendário",
+        description=(
+            "Todas as reuniões das orientações do usuário, ativas ou encerradas, entre date_from "
+            "e date_to (obrigatórias, inclusivas, no horário de Santarém), sem paginar e "
+            "ordenadas pelo início e pelo id (RF19, ADR 0015). O período tem no máximo 42 dias; "
+            "acima disso, ou com date_to antes de date_from, responde 422. situation aceita uma "
+            "ou várias situações: pending, accepted, rejected, cancelled, held e expired. O "
+            "Professor oculta orientandos com hidden_student_ids (ids do usuário do aluno); sem "
+            "ela todos aparecem, inclusive os novos. O Aluno não oculta alunos e recebe 422. "
+            "Cada item traz início, término, situação e o que o usuário pode fazer "
+            "(can_answer, can_edit, can_cancel)."
+        ),
+    )
+    def calendar(
+        self,
+        request: HttpRequest,
+        filters: Query[CalendarFilters],
+    ):
+        return meetings_in_period(
+            request.user,
+            filters.date_from,
+            filters.date_to,
+            filters.situation,
+            filters.hidden_student_ids,
+        )
