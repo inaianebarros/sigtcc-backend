@@ -24,8 +24,13 @@ User = get_user_model()
 SEARCH_URL = "/api/orientadores/busca"
 
 
-def search(client, user, **params):
+def search_default(client, user, **params):
     return client.get(SEARCH_URL, params, headers=bearer(user))
+
+
+def search(client, user, **params):
+    """Searches with show_all=true, so the tests that do not care about areas need no common one."""
+    return search_default(client, user, **{"show_all": "true", **params})
 
 
 def names(response):
@@ -112,7 +117,7 @@ def test_a_teacher_without_common_areas_still_appears_with_zero_compatibility(cl
     assert item["common_areas"] == []
 
 
-def test_each_item_carries_the_institute_and_the_availability_without_changing_the_order(client):
+def test_each_item_carries_the_institute_and_the_availability(client):
     course = make_course()
     area = make_area()
     student = make_student(course=course, areas=[area])
@@ -121,10 +126,10 @@ def test_each_item_carries_the_institute_and_the_availability_without_changing_t
     )
     available = make_teacher(courses=[course], areas=[], full_name="Ana Livre", is_available=True)
 
-    items = search(client, student.user, only_available="false").json()["items"]
+    items = search(client, student.user).json()["items"]
 
-    assert [item["id"] for item in items] == [unavailable.user_id, available.user_id]
-    assert [item["is_available"] for item in items] == [False, True]
+    assert [item["id"] for item in items] == [available.user_id, unavailable.user_id]
+    assert [item["is_available"] for item in items] == [True, False]
     institute = {"id": course.institute_id, "name": course.institute.name}
     assert [item["institute"] for item in items] == [institute, institute]
 
@@ -356,7 +361,7 @@ def test_the_openapi_documents_the_search_and_its_parameters(client):
     operation = schema["paths"]["/api/orientadores/busca"]["get"]
     assert {parameter["name"] for parameter in operation["parameters"]} == {
         "name",
-        "only_available",
+        "show_all",
         "limit",
         "offset",
     }
@@ -395,136 +400,168 @@ def test_the_alphabetical_tie_break_ignores_accents_and_case(client):
     ]
 
 
-def only_available_flag(client):
+def show_all_flag(client):
     schema = client.get("/api/openapi.json").json()
     operation = schema["paths"]["/api/orientadores/busca"]["get"]
-    return next(p for p in operation["parameters"] if p["name"] == "only_available")
+    return next(p for p in operation["parameters"] if p["name"] == "show_all")
 
 
-def teachers_with_availability(course, areas):
-    """Ana e Bruno disponíveis, Zilda indisponível e com a maior compatibilidade."""
-    return {
+def course_student_and_teachers():
+    """Aluno com as áreas a, b e c; Davi e Eva não têm área em comum e Zilda e Eva estão indisponíveis."""
+    course = make_course()
+    areas = [make_area() for _ in range(3)]
+    student = make_student(course=course, areas=areas)
+    return student, {
         "ana": make_teacher(courses=[course], areas=areas[:1], full_name="Ana Livre"),
         "zilda": make_teacher(
             courses=[course], areas=areas, full_name="Zilda Ocupada", is_available=False
         ),
         "bruno": make_teacher(courses=[course], areas=areas[:2], full_name="Bruno Livre"),
+        "davi": make_teacher(courses=[course], areas=[make_area()], full_name="Davi Sem Area"),
+        "eva": make_teacher(
+            courses=[course], areas=[make_area()], full_name="Eva Sem Area", is_available=False
+        ),
     }
 
 
-def course_student_and_teachers():
-    course = make_course()
-    areas = [make_area() for _ in range(3)]
-    student = make_student(course=course, areas=areas)
-    return student, teachers_with_availability(course, areas)
+def ids(response):
+    return [item["id"] for item in response.json()["items"]]
 
 
-def test_by_default_only_the_available_teachers_are_listed_and_counted(client):
-    student, teachers = course_student_and_teachers()
+def test_by_default_only_teachers_with_a_common_area_are_listed_available_or_not(client):
+    student, t = course_student_and_teachers()
 
-    body = search(client, student.user).json()
+    response = search_default(client, student.user)
 
-    assert body["count"] == 2
-    assert {item["id"] for item in body["items"]} == {
-        teachers["ana"].user_id,
-        teachers["bruno"].user_id,
-    }
-    assert all(item["is_available"] for item in body["items"])
+    assert response.json()["count"] == 3
+    assert ids(response) == [t["bruno"].user_id, t["ana"].user_id, t["zilda"].user_id]
+    assert all(item["compatibility"] >= 1 for item in response.json()["items"])
 
 
-def test_asking_for_everybody_also_lists_the_unavailable_teachers(client):
-    student, teachers = course_student_and_teachers()
+def test_show_all_lists_everybody_in_the_course_with_availability_first(client):
+    student, t = course_student_and_teachers()
 
-    body = search(client, student.user, only_available="false").json()
+    response = search_default(client, student.user, show_all="true")
 
-    assert body["count"] == 3
-    assert {item["id"]: item["is_available"] for item in body["items"]} == {
-        teachers["ana"].user_id: True,
-        teachers["zilda"].user_id: False,
-        teachers["bruno"].user_id: True,
-    }
-
-
-def test_the_order_is_the_same_in_both_modes_and_availability_never_moves_anybody(client):
-    student, teachers = course_student_and_teachers()
-    ana, zilda, bruno = (teachers[key].user_id for key in ("ana", "zilda", "bruno"))
-
-    everybody = [
-        i["id"] for i in search(client, student.user, only_available="false").json()["items"]
-    ]
-    available = [
-        i["id"] for i in search(client, student.user, only_available="true").json()["items"]
+    assert response.json()["count"] == 5
+    assert ids(response) == [
+        t["bruno"].user_id,
+        t["ana"].user_id,
+        t["davi"].user_id,
+        t["zilda"].user_id,
+        t["eva"].user_id,
     ]
 
-    assert everybody == [zilda, bruno, ana]
-    assert available == [bruno, ana]
 
-
-def test_a_teacher_who_becomes_unavailable_leaves_the_default_list(client):
-    student, teachers = course_student_and_teachers()
-    ana = teachers["ana"]
-    assert ana.user_id in [i["id"] for i in search(client, student.user).json()["items"]]
-
+def test_a_teacher_who_becomes_unavailable_moves_after_the_available_ones(client):
+    student, t = course_student_and_teachers()
+    ana = t["ana"]
     ana.is_available = False
     ana.save(update_fields=["is_available"])
 
-    assert ana.user_id not in [i["id"] for i in search(client, student.user).json()["items"]]
+    assert ids(search_default(client, student.user)) == [
+        t["bruno"].user_id,
+        t["zilda"].user_id,
+        ana.user_id,
+    ]
 
 
-def test_the_availability_filter_combines_with_the_name_filter(client):
-    student, course = student_and_course()
-    make_teacher(courses=[course], full_name="Maria Livre")
-    make_teacher(courses=[course], full_name="Maria Ocupada", is_available=False)
-    make_teacher(courses=[course], full_name="Pedro Livre")
+def test_the_name_filter_combines_with_the_area_cut(client):
+    course = make_course()
+    area = make_area()
+    student = make_student(course=course, areas=[area])
+    with_area = make_teacher(courses=[course], areas=[area], full_name="Maria Com Area")
+    make_teacher(courses=[course], areas=[], full_name="Maria Sem Area")
+    make_teacher(courses=[course], areas=[area], full_name="Pedro Com Area")
 
-    default = search(client, student.user, name="maria").json()
-    everybody = search(client, student.user, name="maria", only_available="false").json()
+    default = search_default(client, student.user, name="maria").json()
+    everybody = search_default(client, student.user, name="maria", show_all="true").json()
 
-    assert [item["full_name"] for item in default["items"]] == ["Maria Livre"]
+    assert [item["id"] for item in default["items"]] == [with_area.user_id]
     assert default["count"] == 1
-    assert [item["full_name"] for item in everybody["items"]] == ["Maria Livre", "Maria Ocupada"]
+    assert [item["full_name"] for item in everybody["items"]] == [
+        "Maria Com Area",
+        "Maria Sem Area",
+    ]
     assert everybody["count"] == 2
 
 
-def test_the_count_and_the_pages_follow_the_filter(client):
-    student, course = student_and_course()
+def test_the_count_and_the_pages_follow_the_area_cut_and_stay_stable(client):
+    course = make_course()
+    area = make_area()
+    student = make_student(course=course, areas=[area])
     for number in range(5):
-        make_teacher(courses=[course], full_name=f"Disponível {number}")
+        make_teacher(courses=[course], areas=[area], full_name=f"Compatível {number}")
     for number in range(3):
-        make_teacher(courses=[course], full_name=f"Indisponível {number}", is_available=False)
+        make_teacher(courses=[course], areas=[], full_name=f"Incompatível {number}")
 
-    first = search(client, student.user, limit=2).json()
-    last = search(client, student.user, limit=2, offset=4).json()
-    everybody = search(client, student.user, limit=2, only_available="false").json()
+    first = search_default(client, student.user, limit=3).json()
+    last = search_default(client, student.user, limit=3, offset=3).json()
+    everybody = search_default(client, student.user, limit=4, offset=4, show_all="true").json()
 
-    assert (first["count"], len(first["items"])) == (5, 2)
-    assert (last["count"], len(last["items"])) == (5, 1)
+    assert (first["count"], len(first["items"])) == (5, 3)
+    assert (last["count"], len(last["items"])) == (5, 2)
+    assert {i["full_name"] for i in first["items"] + last["items"]} == {
+        f"Compatível {n}" for n in range(5)
+    }
     assert everybody["count"] == 8
+    assert [i["full_name"] for i in everybody["items"]][1:] == [
+        f"Incompatível {n}" for n in range(3)
+    ]
 
 
 @pytest.mark.parametrize(
     ("spelling", "lists_everybody"),
-    [("true", False), ("1", False), ("false", True), ("0", True), ("FALSE", True)],
+    [("true", True), ("1", True), ("false", False), ("0", False), ("TRUE", True)],
 )
-def test_the_accepted_spellings_of_the_availability_filter(client, spelling, lists_everybody):
+def test_the_accepted_spellings_of_show_all(client, spelling, lists_everybody):
     student, course = student_and_course()
-    make_teacher(courses=[course], full_name="Livre")
-    make_teacher(courses=[course], full_name="Ocupado", is_available=False)
+    make_teacher(courses=[course], full_name="Sem Area")
 
-    count = search(client, student.user, only_available=spelling).json()["count"]
+    count = search_default(client, student.user, show_all=spelling).json()["count"]
 
-    assert count == (2 if lists_everybody else 1)
+    assert count == (1 if lists_everybody else 0)
 
 
-def test_an_invalid_value_for_the_availability_filter_is_rejected(client):
+def test_an_invalid_value_for_show_all_is_rejected(client):
     student, _ = student_and_course()
 
-    assert search(client, student.user, only_available="talvez").status_code == 422
+    assert search_default(client, student.user, show_all="talvez").status_code == 422
 
 
-def test_the_openapi_documents_the_availability_filter_and_its_default(client):
-    parameter = only_available_flag(client)
+def test_only_available_no_longer_exists_and_is_ignored(client):
+    student, t = course_student_and_teachers()
+
+    assert ids(search_default(client, student.user, only_available="false")) == ids(
+        search_default(client, student.user)
+    )
+
+
+def test_the_openapi_documents_show_all_and_its_default(client):
+    parameter = show_all_flag(client)
 
     assert parameter["schema"]["type"] == "boolean"
-    assert parameter["schema"]["default"] is True
+    assert parameter["schema"]["default"] is False
     assert parameter["description"]
+
+
+def test_the_profile_of_a_teacher_without_common_area_stays_accessible(client):
+    student, t = course_student_and_teachers()
+
+    response = client.get(
+        f"/api/professores/{t['davi'].user_id}/perfil", headers=bearer(student.user)
+    )
+
+    assert response.status_code == 200
+
+
+def test_other_courses_and_inactive_teachers_never_appear_in_either_mode(client):
+    course = make_course()
+    area = make_area()
+    student = make_student(course=course, areas=[area])
+    own = make_teacher(courses=[course], areas=[area], full_name="Ana Do Curso")
+    make_teacher(courses=[make_course()], areas=[area], full_name="Bruno De Fora")
+    make_teacher(courses=[course], areas=[area], full_name="Carla Inativa", is_active=False)
+
+    assert ids(search_default(client, student.user)) == [own.user_id]
+    assert ids(search_default(client, student.user, show_all="true")) == [own.user_id]

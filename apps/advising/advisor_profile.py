@@ -10,8 +10,8 @@ TEACHER_NOT_FOUND_MESSAGE = "Professor não encontrado."
 
 def advisor_profile(student: Student, teacher_id: int) -> Teacher:
     teacher = (
-        # RF10: o perfil de um professor indisponível continua visível.
-        search_advisors(student, only_available=False)
+        # RF10, RN28, RN32: o perfil de qualquer professor do curso continua visível.
+        search_advisors(student, show_all=True)
         .filter(user_id=teacher_id)
         .prefetch_related(
             Prefetch("courses", queryset=Course.objects.order_by("name", "id")),
