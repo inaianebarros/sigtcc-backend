@@ -16,8 +16,14 @@ from config.schemas import ErrorOut, FieldErrorsOut, Page, check_partial_update
 
 from .models import Meeting
 from .queries import list_meetings, meetings_in_period
-from .services import answer_meeting, cancel_meeting, create_meeting, edit_meeting
-from .situations import MeetingSituation, can_answer, can_cancel, can_edit
+from .services import (
+    answer_meeting,
+    cancel_meeting,
+    create_meeting,
+    edit_meeting,
+    mark_meeting_held,
+)
+from .situations import MeetingSituation, can_answer, can_cancel, can_edit, can_mark_held
 
 DESCRIPTION_MAX_LENGTH = 500
 
@@ -85,6 +91,14 @@ class MeetingCancelOut(MeetingOut):
     cancelled_by_system: bool
 
 
+class MeetingHeldOut(MeetingOut):
+    held_at: datetime.datetime
+
+    @staticmethod
+    def resolve_held_at(obj: Meeting) -> datetime.datetime:
+        return timezone.localtime(obj.held_at)
+
+
 class MeetingCounterpartOut(Schema):
     id: int
     full_name: str
@@ -99,6 +113,8 @@ class MeetingItemOut(MeetingOut):
     can_answer: bool
     can_edit: bool
     can_cancel: bool
+    marked_held: bool
+    can_mark_held: bool
 
     @staticmethod
     def resolve_counterpart(obj: Meeting, context) -> MeetingCounterpartOut:
@@ -118,6 +134,18 @@ class MeetingItemOut(MeetingOut):
     @staticmethod
     def resolve_can_cancel(obj: Meeting, context) -> bool:
         return can_cancel(*_action_inputs(obj, context))
+
+    @staticmethod
+    def resolve_marked_held(obj: Meeting) -> bool:
+        return obj.held_at is not None
+
+    @staticmethod
+    def resolve_can_mark_held(obj: Meeting, context) -> bool:
+        user = context["request"].user
+        is_advisor = obj.advising.teacher.user_id == user.id
+        return can_mark_held(
+            obj.situation, is_advisor, obj.advising.status == AdvisingStatus.ACTIVE
+        )
 
 
 def _action_inputs(obj: Meeting, context) -> tuple[str, bool, bool]:
@@ -230,6 +258,31 @@ class MeetingController:
         ).meeting
 
     @http_post(
+        "/{int:meeting_id}/realizada",
+        response={
+            200: MeetingHeldOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+        },
+        permissions=[IsTeacher],
+        summary="O Professor orientador marca uma reunião aceita como realizada",
+        description=(
+            "Só o Professor orientador, com a orientação ativa, marca uma reunião aceita cujo "
+            "horário ainda não passou (RF57, RN43, ADR 0014). A marcação grava o momento e o "
+            "autor e é irreversível. Reunião pendente, recusada, cancelada, já marcada ou com "
+            "horário passado responde 409 e não muda. O Aluno responde 403, e outro Professor, a "
+            "orientação encerrada e a reunião inexistente respondem o mesmo 404. Depois de "
+            "marcada, a reunião não pode ser editada nem cancelada, sai das próximas reuniões dos "
+            "dashboards e não é cancelada ao encerrar a orientação nem ao desativar o usuário. "
+            "Não envia notificação."
+        ),
+    )
+    def mark_held(self, request: HttpRequest, meeting_id: int):
+        return mark_meeting_held(request.user, meeting_id)
+
+    @http_post(
         "/{int:meeting_id}/cancelar",
         response={
             200: MeetingCancelOut,
@@ -266,7 +319,7 @@ class MeetingController:
             "até ser removida. "
             "As reuniões de todas as orientações do usuário, ativas ou encerradas (RF19). A "
             "situação é derivada do status e do horário: pending, accepted, rejected, cancelled, "
-            "held (aceita com horário passado) e expired (pendente com horário passado). Filtros "
+            "held (aceita com horário passado ou marcada como realizada, RN43) e expired (pendente com horário passado). Filtros "
             "por E: situation, date_from e date_to (datas inclusivas em Santarém) e, para o "
             "Professor, student_id. As futuras vêm primeiro, da mais próxima para a mais "
             "distante, e depois as passadas, da mais recente para a mais antiga. can_answer, "
@@ -299,7 +352,7 @@ class MeetingController:
             "e date_to (obrigatórias, inclusivas, no horário de Santarém), sem paginar e "
             "ordenadas pelo início e pelo id (RF19, ADR 0015). O período tem no máximo 42 dias; "
             "acima disso, ou com date_to antes de date_from, responde 422. situation aceita uma "
-            "ou várias situações: pending, accepted, rejected, cancelled, held e expired. O "
+            "ou várias situações: pending, accepted, rejected, cancelled, held (inclui a marcada como realizada, RN43) e expired. O "
             "Professor oculta orientandos com hidden_student_ids (ids do usuário do aluno); sem "
             "ela todos aparecem, inclusive os novos. O Aluno não oculta alunos e recebe 422. "
             "Cada item traz início, término, situação e o que o usuário pode fazer "

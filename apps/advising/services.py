@@ -229,7 +229,10 @@ def close_advising(advising: Advising, reason: str) -> EndingSummary:
         advising=advising, deleted_at__isnull=True, status__in=ARCHIVED_ON_END
     ).update(status=ActivityStatus.ARCHIVED)
     cancelled = Meeting.objects.filter(
-        advising=advising, status__in=CANCELLED_ON_END, scheduled_at__gt=now
+        advising=advising,
+        status__in=CANCELLED_ON_END,
+        scheduled_at__gt=now,
+        held_at__isnull=True,
     ).update(
         status=MeetingStatus.CANCELLED,
         cancelled_by_system=True,

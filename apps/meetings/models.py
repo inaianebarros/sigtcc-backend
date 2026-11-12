@@ -31,9 +31,26 @@ class Meeting(models.Model):
     rejection_reason = models.TextField(blank=True, default="")
     cancellation_reason = models.TextField(blank=True, default="")
     cancelled_by_system = models.BooleanField(default=False)
+    held_at = models.DateTimeField(null=True, blank=True)
+    held_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
 
     class Meta:
         constraints = [
+            models.CheckConstraint(
+                condition=Q(held_at__isnull=True, held_by__isnull=True)
+                | Q(held_at__isnull=False, held_by__isnull=False),
+                name="meeting_held_mark_has_moment_and_author",
+            ),
+            models.CheckConstraint(
+                condition=Q(held_at__isnull=True) | Q(status=MeetingStatus.ACCEPTED),
+                name="meeting_held_mark_requires_accepted",
+            ),
             models.CheckConstraint(
                 condition=Q(ends_at__gt=F("scheduled_at")),
                 name="meeting_ends_after_it_starts",
