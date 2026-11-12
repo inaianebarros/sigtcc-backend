@@ -17,6 +17,7 @@ from config.changes import FieldChange
 from config.errors import ConflictError, FieldValidationError
 
 from .models import Meeting, MeetingStatus
+from .situations import is_held
 
 PAST_SCHEDULE_MESSAGE = "A data e a hora devem ser posteriores ao momento atual."
 END_NOT_AFTER_START_MESSAGE = "A hora de término deve ser depois da hora de início."
@@ -33,6 +34,7 @@ NOT_EDITABLE_MESSAGE = "Esta reunião não pode mais ser editada."
 REJECTED_NOT_CANCELLABLE_MESSAGE = "Esta reunião foi recusada e não pode ser cancelada."
 ALREADY_CANCELLED_MESSAGE = "Esta reunião já foi cancelada."
 ALREADY_HELD_MESSAGE = "Esta reunião já foi marcada como realizada."
+NOT_HELD_MESSAGE = "Só uma reunião realizada pode ter apontamentos."
 NOT_ACCEPTED_MESSAGE = "Só uma reunião aceita pode ser marcada como realizada."
 
 
@@ -327,4 +329,23 @@ def mark_meeting_held(user: User, meeting_id: int) -> Meeting:
     meeting.held_at = timezone.now()
     meeting.held_by = user
     meeting.save(update_fields=["held_at", "held_by"])
+    return meeting
+
+
+@transaction.atomic
+def write_meeting_notes(user: User, meeting_id: int, notes: str) -> Meeting:
+    """The advising teacher adds, edits or removes the notes of a held meeting (RF58, RN44).
+
+    A meeting is held when the teacher marked it (RN43) or when it is accepted and its time has
+    passed. An empty text, once trimmed, removes the notes. Another teacher and an ended advising,
+    whose notes are frozen, get the same 404 as a meeting the user cannot reach (ADR 0004); a
+    meeting that is not held is refused with 409. It sends no notification.
+    """
+    meeting = _locked_meeting_of_party(user, meeting_id)
+    if meeting.advising.teacher.user_id != user.id:
+        raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
+    if not is_held(meeting, timezone.now()):
+        raise ConflictError(NOT_HELD_MESSAGE)
+    meeting.notes = notes
+    meeting.save(update_fields=["notes"])
     return meeting

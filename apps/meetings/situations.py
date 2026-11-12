@@ -33,6 +33,14 @@ def is_over(now: datetime) -> Q:
     return is_past(now) | is_marked_held()
 
 
+def is_held(meeting, now: datetime) -> bool:
+    """Whether one loaded meeting is held (RN43, RN44): accepted and either marked by the teacher or
+    with its time passed. The same rule `with_situation` computes in the database."""
+    return meeting.status == MeetingStatus.ACCEPTED and (
+        meeting.held_at is not None or meeting.scheduled_at <= now
+    )
+
+
 def accepted_and_future(now: datetime | None = None) -> Q:
     """The accepted meetings that have not happened yet, by the clock and by the mark.
 
@@ -62,6 +70,11 @@ def with_situation(meetings: QuerySet, now: datetime) -> QuerySet:
 def can_mark_held(situation: str, is_advisor: bool, advising_active: bool) -> bool:
     """The advising teacher marks an accepted meeting that has not happened yet (RN43)."""
     return advising_active and is_advisor and situation == MeetingSituation.ACCEPTED
+
+
+def can_edit_notes(situation: str, is_advisor: bool, advising_active: bool) -> bool:
+    """The advising teacher writes the notes of a held meeting while the advising is active (RN44)."""
+    return advising_active and is_advisor and situation == MeetingSituation.HELD
 
 
 def can_answer(situation: str, is_author: bool, advising_active: bool) -> bool:
