@@ -10,6 +10,7 @@ from apps.accounts.permissions import IsStudent, IsTeacher
 from config.pagination import BoundedLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page
 
+from .calendar_advisees import list_calendar_advisees
 from .models import AdvisingRequestStatus
 from .schemas import (
     AdviseeOut,
@@ -18,6 +19,7 @@ from .schemas import (
     AdvisingRequestIn,
     AdvisingRequestItemOut,
     AdvisingRequestOut,
+    CalendarAdviseeOut,
     EndAdvisingIn,
     EndedAdvisingItemOut,
     EndedAdvisingOut,
@@ -129,6 +131,31 @@ class AdvisingRequestController:
         search: Annotated[str | None, Query(max_length=100)] = None,
     ):
         return list_advisees(request.user.teacher, search)
+
+    @http_get(
+        "/orientandos/calendario",
+        response=Page[CalendarAdviseeOut],
+        permissions=[IsTeacher],
+        summary="Lista os orientandos do painel do calendário de reuniões",
+        description=(
+            "Os Alunos de todas as orientações do Professor, ativas ou encerradas (RF59): as "
+            "reuniões das encerradas continuam no histórico (RF19). O Aluno que teve mais de uma "
+            "orientação com o Professor aparece uma vez, e ended só é verdadeiro quando nenhuma "
+            "delas está ativa. Cada item traz o id do usuário do Aluno, o nome e ended; não traz "
+            "e-mail nem matrícula. Só Alunos vinculados ao Professor e com a conta ativa (RN32). "
+            "O parâmetro search filtra pelo nome, sem diferenciar maiúsculas e acentos, por "
+            "texto contido; os espaços das pontas são removidos, vazio equivale a sem filtro e o "
+            "máximo é de 100 caracteres. Ordenado por nome, sem acento, e id; o total reflete o "
+            "filtro. A listagem de /orientandos, só das orientações ativas, não muda."
+        ),
+    )
+    @paginate(BoundedLimitOffsetPagination)
+    def calendar_advisees(
+        self,
+        request: HttpRequest,
+        search: Annotated[str | None, Query(max_length=100)] = None,
+    ):
+        return list_calendar_advisees(request.user.teacher, search)
 
     @http_get(
         "/historico",
