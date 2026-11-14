@@ -21,6 +21,7 @@ from .models import (
     Comment,
     Review,
     ReviewDecision,
+    ReviewFile,
     Submission,
     SubmissionFile,
 )
@@ -29,8 +30,8 @@ from .queries import (
     FILE_NOT_FOUND_MESSAGE,
     submission_file_for_download,
 )
-from .storage import new_storage_key, submission_storage
-from .uploads import check_files
+from .storage import new_review_storage_key, new_storage_key, submission_storage
+from .uploads import REFUSAL_COUNT_MESSAGE, check_files
 
 PAST_DEADLINE_MESSAGE = "O prazo não pode ser anterior a hoje."
 COMPLETED_MESSAGE = "Esta atividade já foi concluída e não pode ser alterada."
@@ -347,35 +348,73 @@ def _lock_reviewable_activity(teacher: Teacher, activity_id: int) -> Activity:
     return activity
 
 
-@transaction.atomic
+def _save_review_file_to_storage(storage, activity_id: int, file) -> str:
+    try:
+        return storage.save(new_review_storage_key(activity_id), file)
+    except Exception as error:
+        logger.exception("The storage refused a file attached to a refusal")
+        raise HttpError(503, STORAGE_UNAVAILABLE_MESSAGE) from error
+
+
 def review_activity(
-    teacher: Teacher, activity_id: int, decision: ReviewDecision, justification: str = ""
+    teacher: Teacher,
+    activity_id: int,
+    decision: ReviewDecision,
+    justification: str = "",
+    files=(),
 ) -> Activity:
     """The active advisor accepts an activity in review (completed, final) or refuses it (back to
     pending, deliveries kept) and the student is notified (RF46, RF48, RN15, RN21, RN40).
 
-    The decision, the status change and the notification share one transaction.
+    A refusal may carry 0 to 5 files (RN48); an acceptance carries none, and its route takes none. The decision, the files and
+    the notification share one transaction, and the files are stored while the activity is locked:
+    if anything fails, even the commit, the stored files are removed and nothing is recorded, so
+    the activity stays in review.
     """
     _check_justification(decision, justification)
-    activity = _lock_reviewable_activity(teacher, activity_id)
-    accepted = decision == ReviewDecision.ACCEPTED
-    Review.objects.create(activity=activity, decision=decision, justification=justification)
-    activity.status = ActivityStatus.COMPLETED if accepted else ActivityStatus.PENDING
-    activity.save(update_fields=["status"])
-    payload = {
-        "activity_title": activity.title,
-        "decision": decision.value,
-        "teacher_name": teacher.user.full_name,
-    }
-    if not accepted:
-        payload["justification"] = justification
-    notify(
-        activity.advising.student.user,
-        NotificationType.ACTIVITY_REVIEW_RESULT,
-        reference_type=ACTIVITY_REFERENCE,
-        reference_id=activity.id,
-        payload=payload,
-    )
+    checked_files = check_files(files, minimum=0, count_message=REFUSAL_COUNT_MESSAGE)
+    storage = submission_storage()
+    stored_keys: list[str] = []
+    try:
+        with transaction.atomic():
+            activity = _lock_reviewable_activity(teacher, activity_id)
+            accepted = decision == ReviewDecision.ACCEPTED
+            review = Review.objects.create(
+                activity=activity, decision=decision, justification=justification
+            )
+            records = []
+            for file, checked in zip(files, checked_files, strict=True):
+                stored_keys.append(_save_review_file_to_storage(storage, activity.id, file))
+                records.append(
+                    ReviewFile(
+                        review=review,
+                        file_name=checked.file_name,
+                        size_bytes=file.size,
+                        content_type=checked.content_type,
+                        storage_key=stored_keys[-1],
+                    )
+                )
+            ReviewFile.objects.bulk_create(records)
+            activity.status = ActivityStatus.COMPLETED if accepted else ActivityStatus.PENDING
+            activity.save(update_fields=["status"])
+            payload = {
+                "activity_title": activity.title,
+                "decision": decision.value,
+                "teacher_name": teacher.user.full_name,
+            }
+            if not accepted:
+                payload["justification"] = justification
+            notify(
+                activity.advising.student.user,
+                NotificationType.ACTIVITY_REVIEW_RESULT,
+                reference_type=ACTIVITY_REFERENCE,
+                reference_id=activity.id,
+                payload=payload,
+            )
+    except BaseException:
+        # BaseException on purpose: whatever stops the review, the stored files must go.
+        _remove_stored(storage, stored_keys)
+        raise
     return activity
 
 

@@ -122,7 +122,7 @@ def test_the_detail_shows_the_justification_to_the_student_and_the_teacher(clien
             ("rejected", "Faltou a conclusão."),
             ("accepted", ""),
         ]
-        assert set(reviews[0]) == {"id", "decision", "justification", "decided_at"}
+        assert set(reviews[0]) == {"id", "decision", "justification", "decided_at", "files"}
 
 
 def test_accepting_a_late_activity_completes_it_without_the_lateness_flag(client):
