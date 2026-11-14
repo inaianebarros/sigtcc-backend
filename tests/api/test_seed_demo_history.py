@@ -85,12 +85,17 @@ def test_the_seventh_student_is_free_to_ask_again(client, seeded):
     assert body["blocked_reason"] is None
 
 
-def test_the_ending_archived_the_open_activities(seeded):
+def test_the_ending_archived_the_open_activities_and_kept_the_concluded_one(seeded):
     advising = Advising.objects.get(student__user=user_of(ENDED_STUDENT))
 
-    activities = Activity.objects.filter(advising=advising)
-    assert activities.count() == 2
-    assert set(activities.values_list("status", flat=True)) == {ActivityStatus.ARCHIVED}
+    statuses = list(
+        Activity.objects.filter(advising=advising).order_by("id").values_list("status", flat=True)
+    )
+    assert statuses == [
+        ActivityStatus.COMPLETED,
+        ActivityStatus.ARCHIVED,
+        ActivityStatus.ARCHIVED,
+    ]
 
 
 def test_the_student_was_told_what_the_ending_archived(seeded):
@@ -105,12 +110,40 @@ def test_the_student_was_told_what_the_ending_archived(seeded):
 def test_the_ending_cancelled_the_future_meetings_by_the_system(seeded):
     advising = Advising.objects.get(student__user=user_of(ENDED_STUDENT))
 
-    meetings = Meeting.objects.filter(advising=advising)
+    meetings = Meeting.objects.filter(advising=advising, held_at__isnull=True)
     assert meetings.count() == 2
     for meeting in meetings:
         assert meeting.status == MeetingStatus.CANCELLED
         assert meeting.cancelled_by_system is True
         assert meeting.cancellation_reason == SYSTEM_CANCELLATION_REASON
+
+
+def test_the_ending_kept_the_held_meeting_with_its_notes_in_the_past(seeded):
+    advising = Advising.objects.get(student__user=user_of(ENDED_STUDENT))
+
+    held = Meeting.objects.get(advising=advising, held_at__isnull=False)
+
+    assert held.status == MeetingStatus.ACCEPTED
+    assert held.notes
+    assert held.scheduled_at < advising.ended_at
+    assert held.scheduled_at > advising.started_at
+
+
+def test_the_report_of_the_ended_advising_has_records_of_both_types(client, seeded):
+    advising = Advising.objects.get(student__user=user_of(ENDED_STUDENT))
+    url = f"/api/orientacao/historico/{advising.id}"
+
+    header = get(client, ENDED_STUDENT, f"{url}/relatorio").json()
+    feed = get(client, ENDED_STUDENT, f"{url}/registros").json()
+
+    assert (header["meetings_count"], header["activities_count"]) == (1, 3)
+    assert header["records_count"] == 4
+    assert feed["count"] == 4
+    assert {item["type"] for item in feed["items"]} == {"meeting", "activity"}
+    assert {item["status"] for item in feed["items"] if item["type"] == "activity"} == {
+        "completed",
+        "archived",
+    }
 
 
 def test_the_whole_story_of_the_ended_advising_is_old_and_coherent(seeded):
