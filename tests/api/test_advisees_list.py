@@ -368,3 +368,178 @@ def test_the_openapi_documents_the_search_parameter(client):
     operation = client.get("/api/openapi.json").json()["paths"][ADVISEES_URL]["get"]
 
     assert "search" in {parameter["name"] for parameter in operation["parameters"]}
+
+
+# --- A busca por nome ou tema (parâmetro q), separada da busca por nome (search) ---
+
+
+def advisee_with_topic(teacher, course, name, topic=None, started_days_ago=0):
+    advising = advisee_named(teacher, course, name, started_days_ago=started_days_ago)
+    if topic is not None:
+        ThesisTopic.objects.create(advising=advising, description=topic)
+    return advising
+
+
+def test_q_filters_by_part_of_the_name_ignoring_case_and_accents(client):
+    teacher = teacher_with_named_advisees("José Álvares", "Maria Conceição", "Ana Souza")
+
+    assert names_of(list_advisees(client, teacher.user, q="jose")) == ["José Álvares"]
+    assert names_of(list_advisees(client, teacher.user, q="ALVARES")) == ["José Álvares"]
+    assert names_of(list_advisees(client, teacher.user, q="conceicao")) == ["Maria Conceição"]
+    assert names_of(list_advisees(client, teacher.user, q="xyz")) == []
+
+
+def test_q_filters_by_part_of_the_topic_ignoring_case_and_accents(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advisee_with_topic(teacher, course, "Ana Souza", "Gestão de Orquídeas", started_days_ago=1)
+    advisee_with_topic(teacher, course, "Bruno Lima", "Banco de dados", started_days_ago=2)
+
+    assert names_of(list_advisees(client, teacher.user, q="orquideas")) == ["Ana Souza"]
+    assert names_of(list_advisees(client, teacher.user, q="GESTÃO")) == ["Ana Souza"]
+    assert names_of(list_advisees(client, teacher.user, q="banco de")) == ["Bruno Lima"]
+
+
+def test_q_is_an_or_between_the_name_and_the_topic(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advisee_with_topic(teacher, course, "Ana Redes", "Banco de dados", started_days_ago=1)
+    advisee_with_topic(teacher, course, "Bruno Souza", "Segurança de redes", started_days_ago=2)
+    advisee_with_topic(teacher, course, "Carla Dias", "Compiladores", started_days_ago=3)
+
+    assert names_of(list_advisees(client, teacher.user, q="redes")) == ["Ana Redes", "Bruno Souza"]
+
+
+def test_q_finds_an_advisee_without_topic_by_the_name_and_never_by_a_missing_topic(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advisee_with_topic(teacher, course, "Ana Sem Tema", None)
+
+    assert names_of(list_advisees(client, teacher.user, q="sem tema")) == ["Ana Sem Tema"]
+    assert names_of(list_advisees(client, teacher.user, q="None")) == []
+
+
+def test_q_trims_the_ends_and_an_empty_q_means_no_filter(client):
+    teacher = teacher_with_named_advisees("José Álvares", "Ana Souza")
+
+    assert names_of(list_advisees(client, teacher.user, q="  jose  ")) == ["José Álvares"]
+    everyone = names_of(list_advisees(client, teacher.user))
+    assert names_of(list_advisees(client, teacher.user, q="")) == everyone
+    assert names_of(list_advisees(client, teacher.user, q="   ")) == everyone
+
+
+def test_q_does_not_match_the_registration_number_or_the_email(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advising = advisee_with_topic(teacher, course, "Ana Souza", "Redes")
+
+    assert (
+        names_of(list_advisees(client, teacher.user, q=advising.student.registration_number)) == []
+    )
+    assert names_of(list_advisees(client, teacher.user, q=advising.student.user.email)) == []
+
+
+def test_q_treats_percent_and_underscore_as_plain_characters(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advisee_with_topic(teacher, course, "Ana Souza", "Meta 100% de cobertura", started_days_ago=1)
+    advisee_with_topic(teacher, course, "Joao_Silva", "Redes", started_days_ago=2)
+
+    assert names_of(list_advisees(client, teacher.user, q="100%")) == ["Ana Souza"]
+    assert names_of(list_advisees(client, teacher.user, q="o_s")) == ["Joao_Silva"]
+    assert names_of(list_advisees(client, teacher.user, q="_____")) == []
+
+
+def test_q_keeps_the_order_the_pagination_and_the_total_that_reflects_the_filter(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    for number in range(25):
+        advisee_with_topic(teacher, course, f"Aluno {number:02d}", "Redes", number)
+    advisee_with_topic(teacher, course, "Pedro Lima", "Compiladores", started_days_ago=100)
+
+    first = list_advisees(client, teacher.user, q="redes", limit=10, offset=0)
+    last = list_advisees(client, teacher.user, q="redes", limit=10, offset=20)
+
+    assert first.json()["count"] == 25
+    assert names_of(first) == [f"Aluno {number:02d}" for number in range(10)]
+    assert names_of(last) == [f"Aluno {number:02d}" for number in range(20, 25)]
+    assert list_advisees(client, teacher.user).json()["count"] == 26
+
+
+def test_q_stays_inside_the_active_advisees_of_the_teacher(client):
+    course = make_course()
+    mine = make_teacher(courses=[course])
+    other = make_teacher(courses=[course])
+    advisee_with_topic(other, course, "Maria dos Outros", "Redes")
+    ended = advisee_with_topic(mine, course, "Maria Antiga", "Redes")
+    Advising.objects.filter(pk=ended.pk).update(
+        status=AdvisingStatus.ENDED, ended_at=timezone.now(), end_reason="Encerrada no teste."
+    )
+    advisee_with_topic(mine, course, "Maria Atual", "Redes")
+
+    assert names_of(list_advisees(client, mine.user, q="redes")) == ["Maria Atual"]
+
+
+def test_q_has_at_most_200_characters_and_a_null_byte_matches_nothing(client):
+    teacher = teacher_with_named_advisees("Ana Souza")
+
+    assert list_advisees(client, teacher.user, q="a" * 200).status_code == 200
+    assert list_advisees(client, teacher.user, q="a" * 201).status_code == 422
+    nul = list_advisees(client, teacher.user, q="Ana\x00")
+    assert nul.status_code == 200
+    assert nul.json() == {"items": [], "count": 0}
+
+
+def test_search_and_q_together_keep_only_the_advisees_that_match_both(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advisee_with_topic(teacher, course, "Ana Souza", "Redes", started_days_ago=1)
+    advisee_with_topic(teacher, course, "Ana Lima", "Compiladores", started_days_ago=2)
+    advisee_with_topic(teacher, course, "Bruno Souza", "Redes", started_days_ago=3)
+
+    assert names_of(list_advisees(client, teacher.user, search="ana", q="redes")) == ["Ana Souza"]
+
+
+def test_search_keeps_matching_only_the_name_and_not_the_topic(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advisee_with_topic(teacher, course, "Ana Souza", "Gestão de Orquídeas")
+
+    assert names_of(list_advisees(client, teacher.user, search="orquideas")) == []
+    assert names_of(list_advisees(client, teacher.user, q="orquideas")) == ["Ana Souza"]
+
+
+def test_q_does_not_change_the_shape_of_the_items(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advisee_with_topic(teacher, course, "Ana Souza", "Redes")
+
+    filtered = list_advisees(client, teacher.user, q="ana").json()["items"][0]
+    plain = list_advisees(client, teacher.user).json()["items"][0]
+
+    assert set(filtered) == set(plain)
+
+
+def test_the_number_of_queries_of_the_q_search_does_not_grow(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    advisee_with_topic(teacher, course, "Ana Souza", "Redes")
+    headers = bearer(teacher.user)
+
+    def queries():
+        with CaptureQueriesContext(connection) as captured:
+            assert client.get(ADVISEES_URL, {"q": "redes"}, headers=headers).status_code == 200
+        return len(captured)
+
+    few = queries()
+    for number in range(8):
+        advisee_with_topic(teacher, course, f"Ana {number}", "Redes")
+
+    assert queries() == few
+
+
+def test_the_openapi_documents_q_next_to_search(client):
+    operation = client.get("/api/openapi.json").json()["paths"][ADVISEES_URL]["get"]
+
+    assert {"search", "q"} <= {parameter["name"] for parameter in operation["parameters"]}
+    assert "tema" in operation["description"]

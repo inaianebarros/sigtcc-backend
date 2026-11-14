@@ -126,8 +126,12 @@ class AdvisingRequestController:
             "contagem das atividades por status, sem as excluídas. Não traz e-mail nem matrícula. O "
             "parâmetro search filtra só pelo nome do Aluno, sem diferenciar maiúsculas e acentos, "
             "por texto contido; os espaços das pontas são removidos, vazio equivale a sem filtro "
-            "e o máximo é de 100 caracteres. A ordem e a paginação não mudam, e o total reflete "
-            "o filtro."
+            "e o máximo é de 100 caracteres. O parâmetro q, da tela de orientandos, filtra pelo "
+            "nome do Aluno ou pelo tema do TCC, também sem diferenciar maiúsculas e acentos, por "
+            "texto contido, com os espaços das pontas removidos, vazio equivalente a sem filtro e "
+            "no máximo 200 caracteres; não olha matrícula nem e-mail. Dados os dois, o Orientando "
+            "precisa casar com ambos. A ordem e a paginação não mudam, e o total reflete o "
+            "filtro."
         ),
     )
     @paginate(BoundedLimitOffsetPagination)
@@ -135,8 +139,9 @@ class AdvisingRequestController:
         self,
         request: HttpRequest,
         search: Annotated[str | None, Query(max_length=100)] = None,
+        q: Annotated[str | None, Query(max_length=200)] = None,
     ):
-        return list_advisees(request.user.teacher, search)
+        return list_advisees(request.user.teacher, search, q)
 
     @http_get(
         "/orientandos/calendario",
