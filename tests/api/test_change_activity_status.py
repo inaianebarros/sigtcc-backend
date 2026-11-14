@@ -427,7 +427,8 @@ def test_the_number_of_queries_does_not_depend_on_the_number_of_submissions(clie
     one = add_activity(advising)
     Submission.objects.create(activity=one)
     five = add_activity(advising)
-    Submission.objects.bulk_create([Submission(activity=five) for _ in range(5)])
+    # bulk_create skips save(), which is what takes the index of the timeline, so it is given here
+    Submission.objects.bulk_create([Submission(activity=five, index=n) for n in range(2, 7)])
 
     assert count_queries(client, student.user, five.id) == count_queries(
         client, student.user, one.id

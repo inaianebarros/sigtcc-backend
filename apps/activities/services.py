@@ -22,6 +22,7 @@ from .models import (
     Review,
     ReviewDecision,
     ReviewFile,
+    StatusChange,
     Submission,
     SubmissionFile,
 )
@@ -329,6 +330,7 @@ def change_activity_status(student: Student, activity_id: int, status: ActivityS
         raise ConflictError(NO_SUBMISSION_MESSAGE)
     activity.status = status
     activity.save(update_fields=["status"])
+    StatusChange.objects.create(activity=activity, status=status, author=student.user)
     if status == ActivityStatus.IN_REVIEW:
         notify(
             activity.advising.teacher.user,
