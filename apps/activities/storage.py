@@ -11,3 +11,8 @@ def submission_storage() -> Storage:
 def new_storage_key(activity_id: int) -> str:
     """A random key: it never derives from the original name."""
     return f"entregas/{activity_id}/{uuid.uuid4().hex}"
+
+
+def new_review_storage_key(activity_id: int) -> str:
+    """A random key for a file attached to a refusal; like the deliveries, never from the name."""
+    return f"revisoes/{activity_id}/{uuid.uuid4().hex}"

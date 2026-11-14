@@ -119,6 +119,7 @@ def test_the_student_and_the_teacher_open_the_detail_of_an_activity(client):
                 "decision": "rejected",
                 "justification": "Refazer a introdução.",
                 "decided_at": body["reviews"][0]["decided_at"],
+                "files": [],
             }
         ]
         assert body["reviews"][0]["decided_at"] is not None

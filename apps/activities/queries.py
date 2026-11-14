@@ -10,7 +10,15 @@ from apps.advising.name_search import filter_by_name
 from config.errors import FieldValidationError
 
 from .lateness import overdue_condition, with_overdue
-from .models import Activity, ActivityStatus, Comment, Review, Submission, SubmissionFile
+from .models import (
+    Activity,
+    ActivityStatus,
+    Comment,
+    Review,
+    ReviewFile,
+    Submission,
+    SubmissionFile,
+)
 from .progress import ActivityCounts, count_activities
 
 SEARCH_MAX_LENGTH = 200
@@ -92,7 +100,9 @@ def activity_detail(user: User, activity_id: int, today: date | None = None) -> 
             ),
             Prefetch(
                 "reviews",
-                queryset=Review.objects.order_by("decided_at", "id"),
+                queryset=Review.objects.order_by("decided_at", "id").prefetch_related(
+                    Prefetch("files", queryset=ReviewFile.objects.order_by("id"))
+                ),
                 to_attr="ordered_reviews",
             ),
         )

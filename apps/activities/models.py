@@ -60,6 +60,24 @@ class Review(models.Model):
     decided_at = models.DateTimeField(auto_now_add=True)
 
 
+class ReviewFile(models.Model):
+    """A file the advisor attaches to a refusal (RN48): part of the decision, never changed after."""
+
+    review = models.ForeignKey(Review, on_delete=models.PROTECT, related_name="files")
+    file_name = models.CharField(max_length=255)
+    size_bytes = models.BigIntegerField()
+    content_type = models.CharField(max_length=100)
+    storage_key = models.CharField(max_length=500, unique=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(size_bytes__gte=1, size_bytes__lte=MAX_FILE_SIZE_BYTES),
+                name="review_file_size_within_limit",
+            ),
+        ]
+
+
 class Comment(models.Model):
     activity = models.ForeignKey(Activity, on_delete=models.PROTECT, related_name="comments")
     author = models.ForeignKey(

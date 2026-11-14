@@ -11,6 +11,7 @@ MAX_FILES = 5
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 COUNT_MESSAGE = f"Envie de 1 a {MAX_FILES} arquivos por entrega."
+REFUSAL_COUNT_MESSAGE = f"Anexe até {MAX_FILES} arquivos à recusa."
 NOT_ALLOWED_MESSAGE = "Tipo de arquivo não permitido. Envie PDF, DOC, DOCX, ZIP, PNG ou JPG."
 EMPTY_MESSAGE = "O arquivo está vazio."
 TOO_BIG_MESSAGE = f"O arquivo excede o limite de {MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB."
@@ -114,10 +115,14 @@ def _problem_with(file, file_name: str) -> str | None:
     return None if matches else MISMATCH_MESSAGE
 
 
-def check_files(files: Sequence) -> list[CheckedFile]:
-    """Validates the whole delivery before anything is stored: one bad file rejects all (RF31)."""
-    if not 1 <= len(files) <= MAX_FILES:
-        raise FieldValidationError({"files": COUNT_MESSAGE})
+def check_files(
+    files: Sequence, minimum: int = 1, count_message: str = COUNT_MESSAGE
+) -> list[CheckedFile]:
+    """Validates the whole upload before anything is stored: one bad file rejects all (RF31).
+
+    A delivery needs at least one file; a refusal takes none (RN48), so it passes `minimum=0`."""
+    if not minimum <= len(files) <= MAX_FILES:
+        raise FieldValidationError({"files": count_message})
     checked: list[CheckedFile] = []
     errors: dict[str, str] = {}
     for index, file in enumerate(files):

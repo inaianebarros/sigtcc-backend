@@ -4,7 +4,7 @@ from typing import Annotated
 
 from django.http import FileResponse, HttpRequest
 from django.utils import timezone
-from ninja import File, Schema
+from ninja import File, Form, Schema
 from ninja.files import UploadedFile
 from ninja.responses import Status
 from ninja_extra import api_controller, http_delete, http_get, http_patch, http_post, paginate
@@ -21,6 +21,7 @@ from .models import (
     ActivityStatus,
     Review,
     ReviewDecision,
+    ReviewFile,
     Submission,
     SubmissionFile,
 )
@@ -181,11 +182,23 @@ class SubmissionOut(Schema):
         return list(obj.files.all())
 
 
+class ReviewFileOut(Schema):
+    id: int
+    file_name: str
+    size_bytes: int
+    content_type: str
+
+
 class ReviewOut(Schema):
     id: int
     decision: str
     justification: str
     decided_at: datetime
+    files: list[ReviewFileOut]
+
+    @staticmethod
+    def resolve_files(obj: Review) -> list[ReviewFile]:
+        return list(obj.files.all())
 
 
 class ActivityDetailOut(ActivityItemOut):
@@ -472,6 +485,52 @@ class ActivityController:
     def review(self, request: HttpRequest, activity_id: int, payload: ReviewIn):
         activity = review_activity(
             request.user.teacher, activity_id, payload.decision, payload.justification
+        )
+        return activity_item(activity.id)
+
+    @http_post(
+        "/{int:activity_id}/recusar",
+        response={
+            200: ActivityItemOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+            422: FieldErrorsOut,
+            503: ErrorOut,
+        },
+        permissions=[IsTeacher],
+        summary="O Professor orientador recusa uma atividade em revisão, com arquivos",
+        description=(
+            "Recusa em multipart (RF46, RN48): justification, de 1 a 500 caracteres sem contar as "
+            "pontas (RN40), e, no campo files, de 0 a 5 arquivos de 1 byte a 10 MB, nos tipos "
+            "PDF, DOC, DOCX, ZIP, PNG e JPG (ou JPEG), conferidos pela extensão e pelo conteúdo, "
+            "como na entrega. Um arquivo inválido rejeita a recusa inteira, com um erro de "
+            "validação por arquivo (files.0, files.1...) e nada gravado. A atividade volta para "
+            "pending, com as entregas anteriores mantidas, e o Aluno recebe a notificação do "
+            "resultado (RF48), igual à da rota de revisar. A decisão, os anexos e a notificação "
+            "são gravados juntos: se o armazenamento falhar, responde 503, nada fica gravado e a "
+            "atividade continua em revisão; se o banco falhar, os arquivos já enviados são "
+            "removidos. Atividade que não está em revisão responde 409. Outro Professor, "
+            "atividade de outro Aluno, excluída, arquivada, inexistente ou de orientação "
+            "encerrada respondem o mesmo 404. Os anexos de cada decisão aparecem em reviews[].files "
+            "do detalhe da atividade. O aceite continua em /revisar, em JSON e sem arquivos. A "
+            "resposta é a atividade no formato da lista."
+        ),
+    )
+    def refuse(
+        self,
+        request: HttpRequest,
+        activity_id: int,
+        justification: Form[str],
+        files: File[list[UploadedFile]] = None,
+    ):
+        activity = review_activity(
+            request.user.teacher,
+            activity_id,
+            ReviewDecision.REJECTED,
+            justification.strip(),
+            files or [],
         )
         return activity_item(activity.id)
 
