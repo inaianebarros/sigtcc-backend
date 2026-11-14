@@ -14,6 +14,7 @@ from .calendar_advisees import list_calendar_advisees
 from .models import AdvisingRequestStatus
 from .schemas import (
     AdviseeOut,
+    AdvisingHistorySummaryOut,
     AdvisingRequestAnswerIn,
     AdvisingRequestAnswerOut,
     AdvisingRequestIn,
@@ -26,6 +27,7 @@ from .schemas import (
     RequestStatusOut,
 )
 from .services import (
+    advising_history_summary,
     answer_request,
     end_advising,
     list_advisees,
@@ -167,9 +169,33 @@ class AdvisingRequestController:
             "que terminou há menos tempo para a mais antiga (RF49). Cada item traz a outra parte "
             "(id e nome), o início, o encerramento, o motivo (RN33) e o tema do TCC congelado "
             "(RN12), ou nulo se a orientação não teve tema. Só as orientações do próprio usuário: "
-            "nada de outra pessoa é devolvido. A orientação ativa não aparece."
+            "nada de outra pessoa é devolvido. A orientação ativa não aparece. O parâmetro search "
+            "filtra pelo nome da outra parte ou pelo tema congelado, sem diferenciar maiúsculas e "
+            "acentos, por texto contido; não olha o motivo nem as datas. Os espaços das pontas "
+            "são removidos, vazio equivale a sem filtro e o máximo é de 200 caracteres. A ordem "
+            "e a paginação não mudam, e o total reflete o filtro."
         ),
     )
     @paginate(BoundedLimitOffsetPagination)
-    def history(self, request: HttpRequest):
-        return list_ended_advisings(request.user)
+    def history(
+        self,
+        request: HttpRequest,
+        search: Annotated[str | None, Query(max_length=200)] = None,
+    ):
+        return list_ended_advisings(request.user, search)
+
+    @http_get(
+        "/historico/resumo",
+        response=AdvisingHistorySummaryOut,
+        permissions=[IsStudent | IsTeacher],
+        summary="Os totais do topo do histórico de orientações",
+        description=(
+            "ended_count é o total de orientações encerradas do usuário, as mesmas do histórico, "
+            "inclusive as que o sistema encerrou ao desativar uma conta (RF49); active_count é o "
+            "total de orientações ativas do Professor e é nulo para o Aluno, que tem no máximo "
+            "uma. Os dois números são gerais: não recebem busca nem filtro e só contam as "
+            "orientações do próprio usuário."
+        ),
+    )
+    def history_summary(self, request: HttpRequest):
+        return advising_history_summary(request.user)

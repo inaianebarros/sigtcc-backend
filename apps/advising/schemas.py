@@ -131,6 +131,14 @@ class PartySummaryOut(Schema):
     full_name: str
 
 
+class AdvisingHistorySummaryOut(Schema):
+    """The numbers on top of the history of advisings (RF49)."""
+
+    ended_count: int
+    #: The teacher's active advisings; null for a student, who has at most one.
+    active_count: int | None
+
+
 class EndedAdvisingItemOut(Schema):
     """One ended advising in the history of a student or of a teacher (RF49)."""
 
