@@ -6,11 +6,15 @@ from ninja.errors import HttpError
 
 from apps.accounts.models import User, UserType
 from apps.advising.models import AdvisingStatus
+from apps.advising.name_search import filter_by_name
+from config.errors import FieldValidationError
 
 from .lateness import overdue_condition, with_overdue
 from .models import Activity, ActivityStatus, Comment, Review, Submission, SubmissionFile
 from .progress import ActivityCounts, count_activities
 
+SEARCH_MAX_LENGTH = 200
+SEARCH_TOO_LONG_MESSAGE = f"A busca deve ter no máximo {SEARCH_MAX_LENGTH} caracteres."
 ACTIVITY_NOT_FOUND_MESSAGE = "Atividade não encontrada."
 FILE_NOT_FOUND_MESSAGE = "Arquivo não encontrado."
 
@@ -41,9 +45,15 @@ def list_activities(
     status: str | None,
     overdue: bool | None,
     student_id: int | None,
+    *,
+    search: str | None = None,
     today: date | None = None,
 ) -> QuerySet[Activity]:
+    if search is not None and len(search.strip()) > SEARCH_MAX_LENGTH:
+        raise FieldValidationError({"search": SEARCH_TOO_LONG_MESSAGE})
     activities = visible_activities(user)
+    # The search looks only at the title, ignoring case and accents; it never touches the totals.
+    activities = filter_by_name(activities, "title", search)
     if status is not None:
         activities = activities.filter(status=status)
     if overdue is not None:

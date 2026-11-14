@@ -248,8 +248,10 @@ class ActivityController:
             "O Aluno vê as da própria orientação ativa e o Professor as de todos os orientandos "
             "ativos. Excluídas, arquivadas e de orientações encerradas não aparecem. Filtros "
             "combinados por E: status (pending, in_progress, in_review ou completed), overdue "
-            "(true só as atrasadas, false só as não atrasadas) e student_id, dentro do escopo de "
-            "quem consulta. As abertas vêm primeiro, pelo prazo mais próximo, e depois as "
+            "(true só as atrasadas, false só as não atrasadas), student_id, dentro do escopo de "
+            "quem consulta, e search, que filtra só pelo título, por texto contido, sem "
+            "diferenciar maiúsculas e acentos, com os espaços das pontas removidos e no máximo "
+            "200 caracteres. As abertas vêm primeiro, pelo prazo mais próximo, e depois as "
             "concluídas, do prazo mais recente para o mais antigo (RN24). Paginada com limit "
             "(padrão 20, máximo 100) e offset."
         ),
@@ -261,8 +263,9 @@ class ActivityController:
         status: ListedStatus | None = None,
         overdue: bool | None = None,
         student_id: int | None = None,
+        search: str | None = None,
     ):
-        return list_activities(request.user, status, overdue, student_id)
+        return list_activities(request.user, status, overdue, student_id, search=search)
 
     @http_get(
         "/resumo",
