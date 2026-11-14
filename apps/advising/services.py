@@ -272,11 +272,19 @@ def _activities_in(status: ActivityStatus) -> Count:
     )
 
 
-def list_advisees(teacher: Teacher, search: str | None = None):
+def list_advisees(teacher: Teacher, search: str | None = None, query: str | None = None):
+    """The teacher's active advisees (RF33).
+
+    `search` keeps the ones whose student name contains the text, as the student pickers need.
+    `query` keeps the ones whose student name or thesis topic contains it, for the advisees screen.
+    Both ignore case and accents and, given together, must both match."""
     advisings = filter_by_name(
         Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE),
         "student__user__full_name",
         search,
+    )
+    advisings = filter_by_any_text(
+        advisings, ["student__user__full_name", "thesis_topic__description"], query
     )
     return (
         advisings.select_related("student__user", "student__course", "thesis_topic")
