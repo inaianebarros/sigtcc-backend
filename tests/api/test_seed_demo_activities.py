@@ -25,6 +25,8 @@ from apps.activities.models import (
     Comment,
     Review,
     ReviewDecision,
+    ReviewFile,
+    StatusChange,
     Submission,
     SubmissionFile,
 )
@@ -286,3 +288,90 @@ def test_the_dashboard_shows_the_counts_the_progress_and_the_next_activities(cli
     assert body["activities"]["overdue"] == 1
     assert body["activities"]["progress_percent"] > 0
     assert len(body["next_activities"]["items"]) >= 1
+
+
+# --- A linha do tempo das atividades da demonstração (#231, RN49) ---
+
+
+def timeline_of(client, slug, title, **params):
+    target = activity(title)
+    response = client.get(
+        f"{LIST_URL}/{target.id}/linha-do-tempo",
+        {"limit": 100, **params},
+        headers=bearer(user_of(slug)),
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_the_refused_activity_has_a_long_story_with_every_kind_of_event(client, seeded):
+    body = timeline_of(client, COMPLETE_STUDENT, REFUSED_TITLE)
+
+    assert body["count"] > 10
+    assert len(body["items"]) == body["count"]
+    assert {item["type"] for item in body["items"]} == {
+        "created",
+        "delivery",
+        "status_change",
+        "sent_for_review",
+        "comment",
+        "review",
+    }
+    assert [item["index"] for item in body["items"]] == list(range(body["count"], 0, -1))
+
+
+def test_the_long_story_needs_more_than_one_page_of_ten(client, seeded):
+    first = timeline_of(client, COMPLETE_STUDENT, REFUSED_TITLE, limit=10)
+
+    assert len(first["items"]) == 10
+    assert first["has_more"] is True
+
+
+def test_the_refusal_carries_an_attachment_and_the_deliveries_have_two_versions(client, seeded):
+    items = timeline_of(client, TEACHER, REFUSED_TITLE)["items"]
+
+    refusal = next(item for item in items if item["type"] == "review")
+    assert refusal["decision"] == "rejected"
+    assert refusal["justification"]
+    assert len(refusal["files"]) >= 1
+    assert ReviewFile.objects.filter(review__activity=activity(REFUSED_TITLE)).count() >= 1
+    versions = [item["version"] for item in items if item["type"] == "delivery"]
+    assert sorted(versions) == [1, 2]
+
+
+def test_the_story_has_status_changes_of_both_kinds_and_comments_of_both_sides(client, seeded):
+    items = timeline_of(client, COMPLETE_STUDENT, REFUSED_TITLE)["items"]
+
+    statuses = {item["status"] for item in items if item["type"] == "status_change"}
+    assert statuses == {"in_progress", "pending"}
+    assert {item["author"]["type"] for item in items if item["type"] == "comment"} == {
+        "student",
+        "teacher",
+    }
+    assert StatusChange.objects.filter(activity=activity(REFUSED_TITLE)).count() >= 2
+
+
+def test_the_in_review_activity_has_a_delivery_awaiting_evaluation(client, seeded):
+    items = timeline_of(client, TEACHER, IN_REVIEW_TITLE)["items"]
+
+    deliveries = [item for item in items if item["type"] == "delivery"]
+    assert [item["awaiting_review"] for item in deliveries] == [True]
+    assert items[0]["type"] == "sent_for_review"
+
+
+def test_the_completed_activity_ends_with_an_acceptance(client, seeded):
+    items = timeline_of(client, COMPLETE_STUDENT, COMPLETED_TITLE)["items"]
+
+    assert items[0]["type"] == "review"
+    assert items[0]["decision"] == "accepted"
+    assert items[0]["files"] == []
+
+
+def test_every_activity_of_the_demonstration_has_a_readable_timeline(client, seeded):
+    for target in complete_student_activities():
+        for slug in (COMPLETE_STUDENT, TEACHER):
+            response = client.get(
+                f"{LIST_URL}/{target.id}/linha-do-tempo", headers=bearer(user_of(slug))
+            )
+            assert response.status_code == 200
+            assert response.json()["count"] == target.last_event_index

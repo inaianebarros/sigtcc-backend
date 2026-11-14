@@ -12,7 +12,7 @@ from django.utils import timezone
 from apps.accounts.demo_seed import DEMO_DOMAIN, DEMO_PASSWORD
 from apps.accounts.demo_volume import VOLUME_PREFIX
 from apps.accounts.models import AreaOfInterest, Course, Institute, Student, Teacher, User
-from apps.activities.models import Activity, SubmissionFile
+from apps.activities.models import Activity, ReviewFile, SubmissionFile
 from apps.activities.storage import submission_storage
 from apps.advising.models import Advising, AdvisingRequest
 from apps.meetings.models import Meeting
@@ -275,3 +275,13 @@ def test_the_refusal_comes_before_the_question(seeded):
         call_command("seed_demo_data", "--reset", stdout=StringIO())
 
     asked.assert_not_called()
+
+
+def test_the_attachments_of_the_refusals_are_removed_from_the_storage(seeded):
+    storage = submission_storage()
+    keys = list(ReviewFile.objects.values_list("storage_key", flat=True))
+    assert keys and all(storage.exists(key) for key in keys)
+
+    run("--reset", "--yes")
+
+    assert not any(storage.exists(key) for key in keys)

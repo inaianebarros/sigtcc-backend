@@ -111,8 +111,16 @@ def _completed(context: Context, activity: Activity) -> None:
     review_activity(context.teacher, activity.pk, ReviewDecision.ACCEPTED)
 
 
+def _back_to_pending(context: Context, activity: Activity) -> None:
+    change_activity_status(context.student, activity.pk, ActivityStatus.PENDING)
+
+
 def _refused(context: Context, activity: Activity) -> None:
+    """The long story of the demonstration (RN49): twelve events of every kind, so the timeline
+    needs more than one page, and an activity that ends pending after a refusal with a file."""
     _start(context, activity)
+    _comment(context.student.user, activity, "Comecei o cronograma; envio a primeira versão hoje.")
+    _comment(context.teacher.user, activity, "Combinado. Detalhe as etapas e as datas de cada uma.")
     _deliver(context, activity, _pdf("plano-v1.pdf", "Plano de trabalho, versão 1"))
     _send_for_review(context, activity)
     review_activity(
@@ -120,8 +128,15 @@ def _refused(context: Context, activity: Activity) -> None:
         activity.pk,
         ReviewDecision.REJECTED,
         "O cronograma não cobre a etapa de testes. Inclua as datas e reenvie.",
+        [_pdf("plano-com-observacoes.pdf", "Plano de trabalho, com as observações do professor")],
     )
     _comment(context.student.user, activity, "Entendido, vou incluir a etapa de testes.")
+    _start(context, activity)
+    _deliver(context, activity, _pdf("plano-v2.pdf", "Plano de trabalho, versão 2"))
+    _back_to_pending(context, activity)
+    _comment(
+        context.teacher.user, activity, "Quando terminar os ajustes, envie para revisão de novo."
+    )
 
 
 PLANS = (
