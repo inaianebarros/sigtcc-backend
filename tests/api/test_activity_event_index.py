@@ -4,7 +4,6 @@ The index is sequential inside the activity (the creation is 1), has no gaps or 
 changes, and the student's status changes are recorded as events of their own.
 """
 
-import datetime
 import threading
 from unittest.mock import patch
 
@@ -12,7 +11,6 @@ import pytest
 from django.core.files.storage import InMemoryStorage
 from django.db import connection
 from django.test import Client
-from django.utils import timezone
 
 from apps.activities.models import (
     Activity,
@@ -21,76 +19,20 @@ from apps.activities.models import (
     StatusChange,
     Submission,
 )
+from tests.api.activity_flow import (
+    BASE,
+    accept,
+    advised_pair,
+    change_status,
+    comment,
+    create_activity,
+    deliver,
+    refuse,
+)
 from tests.api.helpers import bearer, post_json
 from tests.api.uploads import PDF, upload
-from tests.factories import make_advising, make_course, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
-
-BASE = "/api/atividades"
-
-
-def advised_pair():
-    course = make_course()
-    teacher = make_teacher(courses=[course])
-    student = make_student(course=course)
-    return student, teacher, make_advising(student=student, teacher=teacher)
-
-
-def create_activity(client, teacher, student):
-    response = post_json(
-        client,
-        BASE,
-        {
-            "student_id": student.user_id,
-            "title": "Capítulo 2",
-            "description": "Entregar o capítulo 2",
-            "deadline": (timezone.localdate() + datetime.timedelta(days=7)).isoformat(),
-        },
-        headers=bearer(teacher.user),
-    )
-    assert response.status_code == 201
-    return Activity.objects.get(pk=response.json()["id"])
-
-
-def deliver(client, student, activity):
-    return client.post(
-        f"{BASE}/{activity.id}/entregas",
-        data={"files": [upload("a.pdf", PDF)]},
-        headers=bearer(student.user),
-    )
-
-
-def comment(client, user, activity, text="Um comentário."):
-    return post_json(
-        client, f"{BASE}/{activity.id}/comentarios", {"text": text}, headers=bearer(user)
-    )
-
-
-def change_status(client, student, activity, status):
-    return client.patch(
-        f"{BASE}/{activity.id}/status",
-        data={"status": status},
-        content_type="application/json",
-        headers=bearer(student.user),
-    )
-
-
-def accept(client, teacher, activity):
-    return post_json(
-        client,
-        f"{BASE}/{activity.id}/revisar",
-        {"decision": "accepted"},
-        headers=bearer(teacher.user),
-    )
-
-
-def refuse(client, teacher, activity, files=()):
-    return client.post(
-        f"{BASE}/{activity.id}/recusar",
-        data={"justification": "Refazer.", "files": list(files)},
-        headers=bearer(teacher.user),
-    )
 
 
 def last_index(activity):
