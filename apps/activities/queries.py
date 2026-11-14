@@ -1,6 +1,7 @@
 from datetime import date
 
 from django.db.models import Case, Count, F, Prefetch, Q, QuerySet, When
+from django.utils import timezone
 from ninja.errors import HttpError
 
 from apps.accounts.models import User, UserType
@@ -8,6 +9,7 @@ from apps.advising.models import AdvisingStatus
 
 from .lateness import overdue_condition, with_overdue
 from .models import Activity, ActivityStatus, Comment, Review, Submission, SubmissionFile
+from .progress import ActivityCounts, count_activities
 
 ACTIVITY_NOT_FOUND_MESSAGE = "Atividade não encontrada."
 FILE_NOT_FOUND_MESSAGE = "Arquivo não encontrado."
@@ -23,6 +25,15 @@ def visible_activities(user: User) -> QuerySet[Activity]:
     return Activity.objects.filter(
         advising__status=AdvisingStatus.ACTIVE, deleted_at__isnull=True, **scope
     ).exclude(status=ActivityStatus.ARCHIVED)
+
+
+def activities_summary(user: User, today: date | None = None) -> ActivityCounts:
+    """The general numbers of the activities screen: the same count and scope as the dashboards.
+
+    It counts the activities the user may see (RN35) and takes no filter, so the search and the
+    filters of the list never change it.
+    """
+    return count_activities(visible_activities(user), today or timezone.localdate())
 
 
 def list_activities(
