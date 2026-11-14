@@ -32,15 +32,29 @@ def report_activities(advising: Advising):
     )
 
 
+def _ended_of(user: User, advising_id: int):
+    """The ended advisings of the user with that id (none or one), and the path to the other party."""
+    advisings, counterpart = own_advisings(user)
+    return advisings.filter(pk=advising_id, status=AdvisingStatus.ENDED), counterpart
+
+
+def read_ended_advising(user: User, advising_id: int) -> Advising:
+    """The ended advising of the user, or the 404 that anyone else, an unknown id and an advising
+    that is still active get alike (RN47), so nothing reveals what exists."""
+    advising, _ = _ended_of(user, advising_id)
+    advising = advising.first()
+    if advising is None:
+        raise HttpError(404, ADVISING_NOT_FOUND_MESSAGE)
+    return advising
+
+
 def advising_report(user: User, advising_id: int) -> Advising:
     """The report of an ended advising of the user (RF61): the header and the general totals.
 
-    Only the student or the teacher of an ended advising read it (RN47). Anyone else, an unknown id
-    and an advising that is still active get the same 404, so nothing reveals what exists."""
-    advisings, counterpart = own_advisings(user)
+    Only the student or the teacher of an ended advising read it (RN47)."""
+    advisings, counterpart = _ended_of(user, advising_id)
     advising = (
-        advisings.filter(pk=advising_id, status=AdvisingStatus.ENDED)
-        .select_related("thesis_topic")
+        advisings.select_related("thesis_topic")
         .annotate(
             counterpart_id=F(f"{counterpart}__id"),
             counterpart_name=F(f"{counterpart}__full_name"),

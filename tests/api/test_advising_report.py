@@ -1,21 +1,17 @@
 """The report of an ended advising: the header and the totals (RF61, RN47, RN33, RN12)."""
 
-from datetime import date, timedelta
-
 import pytest
-from django.utils import timezone
 
 from apps.accounts.deactivation import deactivate_user
-from apps.activities.models import Activity, ActivityStatus
-from apps.advising.models import Advising, AdvisingStatus, ThesisTopic
+from apps.activities.models import ActivityStatus
 from apps.advising.services import SYSTEM_END_REASON
-from apps.meetings.models import Meeting, MeetingStatus
+from apps.meetings.models import MeetingStatus
 from tests.api.helpers import bearer
+from tests.api.report_builders import REASON, add_activity, add_meeting, ended_advising
 from tests.factories import make_admin, make_advising, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
 
-REASON = "Concluímos o ciclo de orientação do TCC."
 FIELDS = {
     "id",
     "counterpart",
@@ -35,44 +31,6 @@ def report_url(advising_id):
 
 def report(client, user, advising_id):
     return client.get(report_url(advising_id), headers=bearer(user))
-
-
-def ended_advising(student=None, teacher=None, topic=None, reason=REASON):
-    advising = make_advising(student=student, teacher=teacher)
-    if topic is not None:
-        ThesisTopic.objects.create(advising=advising, description=topic)
-    Advising.objects.filter(pk=advising.pk).update(
-        status=AdvisingStatus.ENDED, ended_at=timezone.now(), end_reason=reason
-    )
-    advising.refresh_from_db()
-    return advising
-
-
-def add_meeting(advising, status=MeetingStatus.ACCEPTED, days_from_now=-3, held=False):
-    start = timezone.now() + timedelta(days=days_from_now)
-    return Meeting.objects.create(
-        advising=advising,
-        author=advising.teacher.user,
-        scheduled_at=start,
-        ends_at=start + timedelta(hours=1),
-        description="Reunião de acompanhamento",
-        status=status,
-        rejection_reason="Sem horário." if status == MeetingStatus.REJECTED else "",
-        cancellation_reason="Imprevisto." if status == MeetingStatus.CANCELLED else "",
-        held_at=timezone.now() if held else None,
-        held_by=advising.teacher.user if held else None,
-    )
-
-
-def add_activity(advising, status=ActivityStatus.COMPLETED, deleted=False):
-    return Activity.objects.create(
-        advising=advising,
-        title="Revisar capítulo",
-        description="Entregar o capítulo",
-        deadline=date(2026, 11, 20),
-        status=status,
-        deleted_at=timezone.now() if deleted else None,
-    )
 
 
 def test_a_student_receives_the_header_and_the_totals_of_the_ended_advising(client):

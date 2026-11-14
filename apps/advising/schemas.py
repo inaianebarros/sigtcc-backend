@@ -1,5 +1,6 @@
+import datetime as dt
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from ninja import Field, Schema
 from pydantic import StringConstraints
@@ -165,6 +166,36 @@ class AdvisingReportOut(EndedAdvisingItemOut):
     records_count: int
     meetings_count: int
     activities_count: int
+
+
+class MeetingRecordOut(Schema):
+    """A meeting that took place, as a record of the report (RF61): its day and its content."""
+
+    type: Literal["meeting"]
+    id: int
+    #: The day the meeting started, in the institution's time zone.
+    date: dt.date
+    starts_at: datetime
+    ends_at: datetime
+    description: str
+    #: The teacher's notes (RF58); empty text when there are none.
+    notes: str
+
+
+class ActivityRecordOut(Schema):
+    """An activity that was concluded or archived, as a record of the report (RF61)."""
+
+    type: Literal["activity"]
+    id: int
+    #: The deadline, the day the record is ordered and shown by.
+    date: dt.date
+    deadline: dt.date
+    title: str
+    description: str
+    status: Literal["completed", "archived"]
+
+
+RecordOut = Annotated[MeetingRecordOut | ActivityRecordOut, Field(discriminator="type")]
 
 
 class AdvisingRequestAnswerOut(AdvisingRequestItemOut):
