@@ -11,7 +11,15 @@ import logging
 from django.db import transaction
 from django.db.models import Q, QuerySet
 
-from apps.activities.models import Activity, Comment, Review, Submission, SubmissionFile
+from apps.activities.models import (
+    Activity,
+    Comment,
+    Review,
+    ReviewFile,
+    StatusChange,
+    Submission,
+    SubmissionFile,
+)
 from apps.activities.storage import submission_storage
 from apps.advising.models import Advising, AdvisingRequest, ThesisTopic
 from apps.meetings.models import Meeting
@@ -46,8 +54,14 @@ def _foreign_links() -> int:
 def _delete_activities(advisings: QuerySet[Advising]) -> list[str]:
     activities = Activity.objects.filter(advising__in=advisings)
     files = SubmissionFile.objects.filter(submission__activity__in=activities)
-    keys = list(files.values_list("storage_key", flat=True))
+    review_files = ReviewFile.objects.filter(review__activity__in=activities)
+    keys = [
+        *files.values_list("storage_key", flat=True),
+        *review_files.values_list("storage_key", flat=True),
+    ]
     Comment.objects.filter(activity__in=activities).delete()
+    StatusChange.objects.filter(activity__in=activities).delete()
+    review_files.delete()
     Review.objects.filter(activity__in=activities).delete()
     files.delete()
     Submission.objects.filter(activity__in=activities).delete()
