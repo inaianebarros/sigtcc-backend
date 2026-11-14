@@ -25,12 +25,17 @@ def days_from_today(days):
 
 
 def add_activity(
-    advising, status=ActivityStatus.PENDING, deadline=None, title="Atividade", **extra
+    advising,
+    status=ActivityStatus.PENDING,
+    deadline=None,
+    title="Atividade",
+    description="Descrição da atividade",
+    **extra,
 ):
     return Activity.objects.create(
         advising=advising,
         title=title,
-        description="Descrição da atividade",
+        description=description,
         deadline=deadline or days_from_today(7),
         status=status,
         **extra,
@@ -339,5 +344,161 @@ def test_the_openapi_documents_the_list_with_its_filters_and_errors(client):
     operation = client.get("/api/openapi.json").json()["paths"]["/api/atividades"]["get"]
 
     parameters = {parameter["name"] for parameter in operation["parameters"]}
-    assert {"status", "overdue", "student_id", "limit", "offset"} <= parameters
+    assert {"status", "overdue", "student_id", "search", "limit", "offset"} <= parameters
     assert {"200", "401", "403", "422"} <= set(operation["responses"])
+
+
+def titles_of(response):
+    return [item["title"] for item in response.json()["items"]]
+
+
+def test_the_search_keeps_the_titles_that_contain_the_text_in_any_position(client):
+    student, _, advising = advised_pair()
+    add_activity(advising, title="Pesquisa de temas", deadline=days_from_today(1))
+    add_activity(advising, title="Revisão da pesquisa", deadline=days_from_today(2))
+    add_activity(advising, title="Capítulo 2", deadline=days_from_today(3))
+
+    response = list_activities(client, student.user, search="pesquisa")
+
+    assert response.status_code == 200
+    assert titles_of(response) == ["Pesquisa de temas", "Revisão da pesquisa"]
+    assert response.json()["count"] == 2
+
+
+def test_the_search_ignores_case_and_accents_in_both_directions(client):
+    student, _, advising = advised_pair()
+    add_activity(advising, title="Revisão Bibliográfica", deadline=days_from_today(1))
+    add_activity(advising, title="Conclusao do capitulo", deadline=days_from_today(2))
+
+    assert titles_of(list_activities(client, student.user, search="REVISAO")) == [
+        "Revisão Bibliográfica"
+    ]
+    assert titles_of(list_activities(client, student.user, search="bibliográfica")) == [
+        "Revisão Bibliográfica"
+    ]
+    assert titles_of(list_activities(client, student.user, search="conclusão")) == [
+        "Conclusao do capitulo"
+    ]
+
+
+def test_the_search_trims_the_ends_and_an_empty_text_means_no_search(client):
+    student, _, advising = advised_pair()
+    add_activity(advising, title="Capítulo 2", deadline=days_from_today(1))
+    add_activity(advising, title="Capítulo 3", deadline=days_from_today(2))
+
+    assert titles_of(list_activities(client, student.user, search="  capítulo 3  ")) == [
+        "Capítulo 3"
+    ]
+    for blank in ("", "   "):
+        assert list_activities(client, student.user, search=blank).json()["count"] == 2
+
+
+def test_wildcard_characters_in_the_search_are_treated_literally(client):
+    student, _, advising = advised_pair()
+    add_activity(advising, title="Meta 100% concluída", deadline=days_from_today(1))
+    add_activity(advising, title="Meta 100X concluída", deadline=days_from_today(2))
+    add_activity(advising, title="Plano_final", deadline=days_from_today(3))
+    add_activity(advising, title="Plano final", deadline=days_from_today(4))
+
+    assert titles_of(list_activities(client, student.user, search="100%")) == [
+        "Meta 100% concluída"
+    ]
+    assert titles_of(list_activities(client, student.user, search="o_f")) == ["Plano_final"]
+
+
+def test_the_search_limit_is_the_length_of_a_title(client):
+    student, _, advising = advised_pair()
+    add_activity(advising, title="Capítulo 2")
+
+    assert list_activities(client, student.user, search="a" * 200).status_code == 200
+    too_long = list_activities(client, student.user, search="a" * 201)
+    assert too_long.status_code == 422
+    assert too_long.json()["detail"][0]["loc"][-1] == "search"
+
+
+def test_the_search_limit_counts_the_text_without_the_spaces_of_the_ends(client):
+    student, _, advising = advised_pair()
+    add_activity(advising, title="Capítulo 2")
+
+    padded = list_activities(client, student.user, search="  " + "a" * 200 + "  ")
+
+    assert padded.status_code == 200
+    assert padded.json() == {"items": [], "count": 0}
+
+
+def test_a_null_character_in_the_search_is_not_a_server_error_and_matches_nothing(client):
+    student, _, advising = advised_pair()
+    add_activity(advising, title="Capítulo 2")
+
+    response = list_activities(client, student.user, search="a\x00b")
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "count": 0}
+
+
+def test_the_search_combines_with_the_other_filters(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    ana = make_student(course=course)
+    bruno = make_student(course=course)
+    first = make_advising(student=ana, teacher=teacher)
+    second = make_advising(student=bruno, teacher=teacher)
+    add_activity(
+        first, ActivityStatus.COMPLETED, title="Pesquisa da Ana", deadline=days_from_today(1)
+    )
+    add_activity(
+        first, ActivityStatus.PENDING, title="Pesquisa pendente da Ana", deadline=days_from_today(2)
+    )
+    add_activity(
+        second, ActivityStatus.COMPLETED, title="Pesquisa do Bruno", deadline=days_from_today(3)
+    )
+    add_activity(
+        second, ActivityStatus.COMPLETED, title="Outro assunto", deadline=days_from_today(4)
+    )
+
+    only_ana_completed = list_activities(
+        client, teacher.user, search="pesquisa", status="completed", student_id=ana.user_id
+    )
+    overdue_none = list_activities(client, teacher.user, search="pesquisa", overdue="true")
+
+    assert titles_of(only_ana_completed) == ["Pesquisa da Ana"]
+    assert overdue_none.json() == {"items": [], "count": 0}
+
+
+def test_the_search_count_and_the_pages_follow_the_filter(client):
+    student, _, advising = advised_pair()
+    for number in range(25):
+        add_activity(advising, title=f"Pesquisa {number:02d}", deadline=days_from_today(number))
+    for number in range(5):
+        add_activity(advising, title=f"Outra coisa {number}", deadline=days_from_today(40 + number))
+
+    first = list_activities(client, student.user, search="pesquisa", limit=20).json()
+    second = list_activities(client, student.user, search="pesquisa", limit=20, offset=20).json()
+
+    assert (first["count"], len(first["items"])) == (25, 20)
+    assert (second["count"], len(second["items"])) == (25, 5)
+    assert all("Pesquisa" in item["title"] for item in first["items"] + second["items"])
+
+
+def test_the_search_does_not_change_the_order_or_the_scope(client):
+    student, _, advising = advised_pair()
+    other_student, _, other_advising = advised_pair()
+    late = add_activity(advising, title="Pesquisa B", deadline=days_from_today(9))
+    soon = add_activity(advising, title="Pesquisa A", deadline=days_from_today(2))
+    done = add_activity(
+        advising, ActivityStatus.COMPLETED, title="Pesquisa C", deadline=days_from_today(1)
+    )
+    add_activity(other_advising, title="Pesquisa de outro aluno")
+    add_activity(advising, ActivityStatus.ARCHIVED, title="Pesquisa arquivada")
+    add_activity(advising, title="Pesquisa excluída", deleted_at=timezone.now())
+
+    response = list_activities(client, student.user, search="pesquisa")
+
+    assert ids_of(response) == [soon.id, late.id, done.id]
+
+
+def test_the_search_does_not_look_at_the_description(client):
+    student, _, advising = advised_pair()
+    add_activity(advising, title="Capítulo 2", description="Falar de pesquisa de campo")
+
+    assert list_activities(client, student.user, search="pesquisa").json()["count"] == 0
