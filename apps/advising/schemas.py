@@ -159,6 +159,14 @@ class EndedAdvisingItemOut(Schema):
         return topic.description if topic else None
 
 
+class AdvisingReportOut(EndedAdvisingItemOut):
+    """The header and the general totals of the report of an ended advising (RF61)."""
+
+    records_count: int
+    meetings_count: int
+    activities_count: int
+
+
 class AdvisingRequestAnswerOut(AdvisingRequestItemOut):
     advising: AdvisingOut | None
 

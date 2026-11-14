@@ -12,9 +12,11 @@ from config.schemas import ErrorOut, FieldErrorsOut, Page
 
 from .calendar_advisees import list_calendar_advisees
 from .models import AdvisingRequestStatus
+from .report import advising_report
 from .schemas import (
     AdviseeOut,
     AdvisingHistorySummaryOut,
+    AdvisingReportOut,
     AdvisingRequestAnswerIn,
     AdvisingRequestAnswerOut,
     AdvisingRequestIn,
@@ -199,3 +201,22 @@ class AdvisingRequestController:
     )
     def history_summary(self, request: HttpRequest):
         return advising_history_summary(request.user)
+
+    @http_get(
+        "/historico/{int:advising_id}/relatorio",
+        response={200: AdvisingReportOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut},
+        permissions=[IsStudent | IsTeacher],
+        summary="O cabeçalho e os totais do relatório de uma orientação encerrada",
+        description=(
+            "O Aluno e o Professor da orientação encerrada leem o relatório (RF61, RN47): a outra "
+            "parte (id e nome), o início, o encerramento, o motivo do encerramento (RN33), o "
+            "tema do TCC congelado (ou nulo) e os totais gerais. Registros é a soma de "
+            "reuniões, só as realizadas (RN43), e atividades, as concluídas e as arquivadas, sem "
+            "as excluídas; os totais não recebem filtro. Quem não é parte da orientação, um id "
+            "desconhecido e uma orientação ainda ativa respondem o mesmo 404, para não revelar o "
+            "que existe. Vale também para as orientações que o sistema encerrou ao desativar "
+            "uma conta."
+        ),
+    )
+    def history_report(self, request: HttpRequest, advising_id: int):
+        return advising_report(request.user, advising_id)

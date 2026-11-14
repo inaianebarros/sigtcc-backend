@@ -290,7 +290,7 @@ def list_advisees(teacher: Teacher, search: str | None = None):
     )
 
 
-def _own_advisings(user: User) -> tuple[QuerySet, str]:
+def own_advisings(user: User) -> tuple[QuerySet, str]:
     """The advisings of a student or of a teacher, and the path to the other party's user."""
     if user.type == UserType.STUDENT:
         return Advising.objects.filter(student=user.student), "teacher__user"
@@ -303,7 +303,7 @@ def list_ended_advisings(user: User, search: str | None = None):
 
     The search keeps the advisings whose other party's name or frozen topic contains the text,
     ignoring case and accents. It looks at nothing else: neither the reason nor the dates."""
-    advisings, counterpart = _own_advisings(user)
+    advisings, counterpart = own_advisings(user)
     ended = filter_by_any_text(
         advisings.filter(status=AdvisingStatus.ENDED),
         [f"{counterpart}__full_name", "thesis_topic__description"],
@@ -323,7 +323,7 @@ def advising_history_summary(user: User) -> dict[str, int | None]:
     """The numbers on top of the history (RF49): the user's ended advisings, with no filter, and,
     for a teacher, the active ones. A student has at most one active advising, so for them the
     active total is not offered."""
-    advisings, _ = _own_advisings(user)
+    advisings, _ = own_advisings(user)
     ended_count = advisings.filter(status=AdvisingStatus.ENDED).count()
     if user.type == UserType.STUDENT:
         return {"ended_count": ended_count, "active_count": None}
