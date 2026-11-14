@@ -24,7 +24,13 @@ from .models import (
     Submission,
     SubmissionFile,
 )
-from .queries import activity_detail, activity_item, list_activities, list_comments
+from .queries import (
+    activities_summary,
+    activity_detail,
+    activity_item,
+    list_activities,
+    list_comments,
+)
 from .services import (
     EDITABLE_FIELDS,
     MAX_JUSTIFICATION_LENGTH,
@@ -136,6 +142,12 @@ ListedStatus = StrEnum(
 class ActivityStudentOut(Schema):
     id: int
     full_name: str
+
+
+class ActivitySummaryOut(Schema):
+    total: int
+    pending: int
+    completed: int
 
 
 class ActivityItemOut(Schema):
@@ -251,6 +263,22 @@ class ActivityController:
         student_id: int | None = None,
     ):
         return list_activities(request.user, status, overdue, student_id)
+
+    @http_get(
+        "/resumo",
+        response={200: ActivitySummaryOut, 401: ErrorOut, 403: ErrorOut},
+        permissions=[IsStudent | IsTeacher],
+        summary="Os totais de atividades do Aluno ou dos orientandos do Professor",
+        description=(
+            "O total, as pendentes (só o status pending) e as concluídas, com a mesma contagem e o "
+            "mesmo escopo do Dashboard (RN35): atividades não excluídas nem arquivadas, de "
+            "orientações ativas, do próprio Aluno ou de todos os orientandos ativos do "
+            "Professor. Em andamento e em revisão entram só no total. Não recebe filtros: a "
+            "busca e os filtros da listagem nunca alteram estes números."
+        ),
+    )
+    def summary(self, request: HttpRequest):
+        return activities_summary(request.user)
 
     @http_get(
         "/{int:activity_id}",
