@@ -7,12 +7,13 @@ from ninja_extra import api_controller, http_get, http_post, paginate
 from ninja_jwt.authentication import JWTAuth
 
 from apps.accounts.permissions import IsStudent, IsTeacher
-from config.pagination import BoundedLimitOffsetPagination
+from config.pagination import BoundedLimitOffsetPagination, TenPerPageLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page
 
 from .calendar_advisees import list_calendar_advisees
 from .models import AdvisingRequestStatus
-from .report import advising_report
+from .records import RecordFeed, RecordType
+from .report import advising_report, read_ended_advising
 from .schemas import (
     AdviseeOut,
     AdvisingHistorySummaryOut,
@@ -26,6 +27,7 @@ from .schemas import (
     EndAdvisingIn,
     EndedAdvisingItemOut,
     EndedAdvisingOut,
+    RecordOut,
     RequestStatusOut,
 )
 from .services import (
@@ -220,3 +222,36 @@ class AdvisingRequestController:
     )
     def history_report(self, request: HttpRequest, advising_id: int):
         return advising_report(request.user, advising_id)
+
+    @http_get(
+        "/historico/{int:advising_id}/registros",
+        response={
+            200: Page[RecordOut],
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsStudent | IsTeacher],
+        summary="Os registros do relatório de uma orientação encerrada",
+        description=(
+            "Um feed único e paginado (RF61): as reuniões realizadas (RN43) e as atividades "
+            "concluídas ou arquivadas, sem as excluídas. O parâmetro type filtra: meeting, só "
+            "reuniões; activity, só atividades; ausente, todos; outro valor responde 422. Do "
+            "mais recente para o mais antigo por date (o dia do início da reunião, no fuso da "
+            "instituição, ou o prazo da atividade); no mesmo dia, as atividades antes das "
+            "reuniões e, dentro do tipo, o id maior primeiro. Cada item traz o conteúdo "
+            "completo do seu tipo, e a chave dele é type mais id. Paginada com limit (padrão 10, "
+            "máximo 100) e offset; o count é o total do filtro. Só o Aluno e o Professor da "
+            "orientação encerrada leem (RN47): quem não é parte, um id desconhecido e uma "
+            "orientação ativa respondem o mesmo 404."
+        ),
+    )
+    @paginate(TenPerPageLimitOffsetPagination)
+    def history_records(
+        self,
+        request: HttpRequest,
+        advising_id: int,
+        record_type: Annotated[RecordType | None, Query(alias="type")] = None,
+    ):
+        return RecordFeed(read_ended_advising(request.user, advising_id), record_type)
