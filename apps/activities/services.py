@@ -28,6 +28,7 @@ from .models import (
 from .queries import (
     ACTIVITY_NOT_FOUND_MESSAGE,
     FILE_NOT_FOUND_MESSAGE,
+    review_file_for_download,
     submission_file_for_download,
 )
 from .storage import new_review_storage_key, new_storage_key, submission_storage
@@ -285,20 +286,30 @@ def deliver_submission(student, activity_id: int, files) -> Submission:
     return submission
 
 
-def open_submission_file(user, activity_id: int, file_id: int) -> tuple[SubmissionFile, IO[bytes]]:
-    """The file of an activity the user may see, opened for reading (RF31).
-
-    A file missing from the storage answers the same 404 as one the user may not see, and a
-    storage that cannot be reached answers a 503, like the delivery does.
-    """
-    submission_file = submission_file_for_download(user, activity_id, file_id)
+def _open_stored(stored_file: SubmissionFile | ReviewFile) -> IO[bytes]:
+    """A stored file opened for reading. One missing from the storage answers the same 404 as one
+    the user may not see, and a storage that cannot be reached answers a 503."""
     try:
-        return submission_file, submission_storage().open(submission_file.storage_key, "rb")
+        return submission_storage().open(stored_file.storage_key, "rb")
     except FileNotFoundError as error:
         raise HttpError(404, FILE_NOT_FOUND_MESSAGE) from error
     except Exception as error:
-        logger.exception("The storage could not open the file %s", submission_file.storage_key)
+        logger.exception("The storage could not open the file %s", stored_file.storage_key)
         raise HttpError(503, DOWNLOAD_UNAVAILABLE_MESSAGE) from error
+
+
+def open_submission_file(user, activity_id: int, file_id: int) -> tuple[SubmissionFile, IO[bytes]]:
+    """The file of an activity the user may see, opened for reading (RF31)."""
+    submission_file = submission_file_for_download(user, activity_id, file_id)
+    return submission_file, _open_stored(submission_file)
+
+
+def open_review_file(
+    user, activity_id: int, review_id: int, file_id: int
+) -> tuple[ReviewFile, IO[bytes]]:
+    """The file attached to a refusal of an activity the user may see, opened for reading (RN48)."""
+    review_file = review_file_for_download(user, activity_id, review_id, file_id)
+    return review_file, _open_stored(review_file)
 
 
 @transaction.atomic
