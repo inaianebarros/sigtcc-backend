@@ -4,7 +4,8 @@ from typing import Annotated
 
 from django.http import FileResponse, HttpRequest
 from django.utils import timezone
-from ninja import File, Form, Schema
+from ninja import File, Form, Query, Schema
+from ninja.conf import settings as ninja_settings
 from ninja.files import UploadedFile
 from ninja.responses import Status
 from ninja_extra import api_controller, http_delete, http_get, http_patch, http_post, paginate
@@ -46,6 +47,8 @@ from .services import (
     open_submission_file,
     review_activity,
 )
+from .timeline import DEFAULT_PAGE_SIZE, activity_timeline
+from .timeline_schemas import TimelineOut
 
 TITLE_MAX_LENGTH = 200
 DESCRIPTION_MAX_LENGTH = 2000
@@ -574,6 +577,44 @@ class ActivityController:
             files or [],
         )
         return activity_item(activity.id)
+
+    @http_get(
+        "/{int:activity_id}/linha-do-tempo",
+        response={
+            200: TimelineOut,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            422: FieldErrorsOut,
+        },
+        permissions=[IsStudent | IsTeacher],
+        summary="Lê a linha do tempo de uma atividade, do evento mais recente para o mais antigo",
+        description=(
+            "Os eventos da atividade (RN49), numerados pelo índice que cada ação grava na hora em "
+            "que acontece: a criação é o 1. O parâmetro before é o índice do último evento já "
+            "carregado e devolve só os de índice menor; sem ele, devolve os mais recentes. limit "
+            "vai de 1 a 100, padrão 10. count é o total de eventos, que é o índice mais alto, e "
+            "has_more diz se ainda há eventos de índice menor que o último devolvido. Cada item "
+            "traz index, type, id (o do registro de origem), occurred_at e author, mais o "
+            "conteúdo do tipo: created (a criação), delivery (version, files e awaiting_review), "
+            "status_change (status: pending ou in_progress), sent_for_review, comment (text) e "
+            "review (decision, justification, version da entrega avaliada e files, os anexos do "
+            "professor). Baixam os arquivos os mesmos endpoints de download das entregas e dos "
+            "anexos. Só o Aluno da atividade e o seu Professor orientador ativo leem; qualquer "
+            "outra pessoa, atividade excluída, arquivada, inexistente ou de orientação encerrada "
+            "responde o mesmo 404."
+        ),
+    )
+    def timeline(
+        self,
+        request: HttpRequest,
+        activity_id: int,
+        before: Annotated[int | None, Query(ge=1)] = None,
+        limit: Annotated[
+            int, Query(ge=1, le=ninja_settings.PAGINATION_MAX_LIMIT)
+        ] = DEFAULT_PAGE_SIZE,
+    ):
+        return activity_timeline(request.user, activity_id, before, limit)
 
     @http_post(
         "/{int:activity_id}/comentarios",
