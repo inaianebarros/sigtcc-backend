@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Q, QuerySet
 from django.utils import timezone
 from ninja.errors import HttpError
 
@@ -28,7 +28,7 @@ from .models import (
     AnswerAction,
     BlockedReason,
 )
-from .name_search import filter_by_name
+from .name_search import filter_by_any_text, filter_by_name
 
 ARCHIVED_ON_END = (ActivityStatus.PENDING, ActivityStatus.IN_PROGRESS, ActivityStatus.IN_REVIEW)
 CANCELLED_ON_END = (MeetingStatus.PENDING, MeetingStatus.ACCEPTED)
@@ -290,19 +290,44 @@ def list_advisees(teacher: Teacher, search: str | None = None):
     )
 
 
-def list_ended_advisings(user: User):
-    """The ended advisings of a student or of a teacher, with the other party and the frozen
-    topic (RF49, RN12). Includes the ones the system ended when an account was deactivated."""
+def _own_advisings(user: User) -> tuple[QuerySet, str]:
+    """The advisings of a student or of a teacher, and the path to the other party's user."""
     if user.type == UserType.STUDENT:
-        advisings, counterpart = Advising.objects.filter(student=user.student), "teacher__user"
-    else:
-        advisings, counterpart = Advising.objects.filter(teacher=user.teacher), "student__user"
+        return Advising.objects.filter(student=user.student), "teacher__user"
+    return Advising.objects.filter(teacher=user.teacher), "student__user"
+
+
+def list_ended_advisings(user: User, search: str | None = None):
+    """The ended advisings of a student or of a teacher, with the other party and the frozen
+    topic (RF49, RN12). Includes the ones the system ended when an account was deactivated.
+
+    The search keeps the advisings whose other party's name or frozen topic contains the text,
+    ignoring case and accents. It looks at nothing else: neither the reason nor the dates."""
+    advisings, counterpart = _own_advisings(user)
+    ended = filter_by_any_text(
+        advisings.filter(status=AdvisingStatus.ENDED),
+        [f"{counterpart}__full_name", "thesis_topic__description"],
+        search,
+    )
     return (
-        advisings.filter(status=AdvisingStatus.ENDED)
-        .select_related("thesis_topic")
+        ended.select_related("thesis_topic")
         .annotate(
             counterpart_id=F(f"{counterpart}__id"),
             counterpart_name=F(f"{counterpart}__full_name"),
         )
         .order_by("-ended_at", "-id")
     )
+
+
+def advising_history_summary(user: User) -> dict[str, int | None]:
+    """The numbers on top of the history (RF49): the user's ended advisings, with no filter, and,
+    for a teacher, the active ones. A student has at most one active advising, so for them the
+    active total is not offered."""
+    advisings, _ = _own_advisings(user)
+    ended_count = advisings.filter(status=AdvisingStatus.ENDED).count()
+    if user.type == UserType.STUDENT:
+        return {"ended_count": ended_count, "active_count": None}
+    return {
+        "ended_count": ended_count,
+        "active_count": advisings.filter(status=AdvisingStatus.ACTIVE).count(),
+    }

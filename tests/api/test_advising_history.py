@@ -231,3 +231,212 @@ def test_an_advising_ended_by_the_system_is_in_the_history_of_the_other_party(cl
 
     assert [item["id"] for item in items] == [advising.id]
     assert items[0]["reason"] == SYSTEM_END_REASON
+
+
+# --- A busca do histórico (RF49): nome da outra parte ou tema, sem filtro de motivo ---
+
+
+def ended_with_topic(student, teacher, topic=None, days_ago=0, reason=REASON):
+    advising = make_advising(student=student, teacher=teacher)
+    if topic is not None:
+        ThesisTopic.objects.create(advising=advising, description=topic)
+    return mark_ended(advising, days_ago=days_ago, reason=reason)
+
+
+def ids(response):
+    return [item["id"] for item in response.json()["items"]]
+
+
+def test_the_search_keeps_the_advisings_whose_other_party_name_matches_ignoring_case_and_accents(
+    client,
+):
+    student = make_student()
+    maria = ended_with_topic(student, make_teacher(full_name="Maria José Álvares"), days_ago=2)
+    ended_with_topic(student, make_teacher(full_name="Carlos Lima"), days_ago=1)
+
+    assert ids(history(client, student.user, search="jose alv")) == [maria.id]
+    assert ids(history(client, student.user, search="ÁLVARES")) == [maria.id]
+
+
+def test_the_search_keeps_the_advisings_whose_frozen_topic_matches_ignoring_case_and_accents(
+    client,
+):
+    teacher = make_teacher()
+    learning = ended_with_topic(make_student(), teacher, "Aprendizado de Máquina", days_ago=2)
+    ended_with_topic(make_student(), teacher, "Banco de dados", days_ago=1)
+
+    assert ids(history(client, teacher.user, search="maquina")) == [learning.id]
+
+
+def test_the_search_is_an_or_between_the_name_and_the_topic(client):
+    teacher = make_teacher()
+    by_name = ended_with_topic(
+        make_student(full_name="Ana Redes"), teacher, "Banco de dados", days_ago=3
+    )
+    by_topic = ended_with_topic(
+        make_student(full_name="Bruno Souza"), teacher, "Segurança de redes", days_ago=2
+    )
+    ended_with_topic(make_student(full_name="Carla Dias"), teacher, "Compiladores", days_ago=1)
+
+    assert ids(history(client, teacher.user, search="redes")) == [by_topic.id, by_name.id]
+
+
+def test_an_advising_without_topic_is_found_by_the_name_and_never_by_the_topic(client):
+    teacher = make_teacher()
+    no_topic = ended_with_topic(make_student(full_name="Ana Sem Tema"), teacher)
+
+    assert ids(history(client, teacher.user, search="sem tema")) == [no_topic.id]
+    assert ids(history(client, teacher.user, search="None")) == []
+
+
+def test_the_search_ignores_the_reason_and_the_dates(client):
+    teacher = make_teacher()
+    ended_with_topic(make_student(), teacher, reason="Prazo vencido sem entrega")
+
+    assert history(client, teacher.user, search="vencido").json() == EMPTY
+    assert history(client, teacher.user, search=str(timezone.now().year)).json() == EMPTY
+
+
+def test_the_search_trims_the_ends_and_an_empty_search_means_no_filter(client):
+    teacher = make_teacher()
+    first = ended_with_topic(make_student(full_name="Ana Aluna"), teacher, days_ago=2)
+    second = ended_with_topic(make_student(full_name="Bruno"), teacher, days_ago=1)
+
+    assert ids(history(client, teacher.user, search="  ana  ")) == [first.id]
+    assert ids(history(client, teacher.user, search="")) == [second.id, first.id]
+    assert ids(history(client, teacher.user, search="   ")) == [second.id, first.id]
+    assert ids(history(client, teacher.user)) == [second.id, first.id]
+
+
+def test_the_search_treats_percent_and_underscore_as_plain_characters(client):
+    teacher = make_teacher()
+    ended_with_topic(make_student(), teacher, "Meta 100% de cobertura")
+
+    assert len(ids(history(client, teacher.user, search="100%"))) == 1
+    assert ids(history(client, teacher.user, search="%")) != []
+    assert history(client, teacher.user, search="_____").json() == EMPTY
+
+
+def test_the_count_and_the_pagination_reflect_the_search_and_the_order_does_not_change(client):
+    teacher = make_teacher()
+    matching = [
+        ended_with_topic(make_student(), teacher, f"Redes {number}", days_ago=number)
+        for number in range(1, 6)
+    ]
+    ended_with_topic(make_student(), teacher, "Compiladores", days_ago=0)
+
+    first = history(client, teacher.user, search="redes", limit=2, offset=0).json()
+    last = history(client, teacher.user, search="redes", limit=2, offset=4).json()
+
+    assert first["count"] == 5
+    assert [item["id"] for item in first["items"]] == [matching[0].id, matching[1].id]
+    assert [item["id"] for item in last["items"]] == [matching[4].id]
+
+
+def test_the_search_stays_inside_the_history_of_the_user(client):
+    mine, other = make_teacher(), make_teacher()
+    ended_with_topic(make_student(), other, "Segredo de outro professor")
+    ended_with_topic(make_student(full_name="Segredo Aluno"), other)
+
+    assert history(client, mine.user, search="segredo").json() == EMPTY
+
+
+def test_the_search_has_at_most_200_characters_and_a_null_byte_matches_nothing(client):
+    teacher = make_teacher()
+    ended_with_topic(make_student(), teacher, "Qualquer tema")
+
+    assert history(client, teacher.user, search="a" * 200).status_code == 200
+    assert history(client, teacher.user, search="a" * 201).status_code == 422
+    assert history(client, teacher.user, search="a\x00b").json() == EMPTY
+
+
+def test_the_search_does_not_change_the_shape_of_the_items(client):
+    teacher = make_teacher()
+    ended_with_topic(make_student(full_name="Ana Aluna"), teacher, "Redes")
+
+    item = history(client, teacher.user, search="ana").json()["items"][0]
+
+    assert set(item) == ITEM_FIELDS
+
+
+# --- Os totais do histórico: GET /orientacao/historico/resumo ---
+
+SUMMARY_URL = "/api/orientacao/historico/resumo"
+
+
+def summary(client, user):
+    return client.get(SUMMARY_URL, headers=bearer(user))
+
+
+def test_a_student_receives_the_ended_total_and_no_active_total(client):
+    student = make_student()
+    mark_ended(make_advising(student=student), days_ago=9)
+    mark_ended(make_advising(student=student), days_ago=5)
+    make_advising(student=student)
+
+    response = summary(client, student.user)
+
+    assert response.status_code == 200
+    assert response.json() == {"ended_count": 2, "active_count": None}
+
+
+def test_a_teacher_receives_the_ended_total_and_the_active_advisings(client):
+    teacher = make_teacher()
+    mark_ended(make_advising(teacher=teacher), days_ago=9)
+    mark_ended(make_advising(teacher=teacher), days_ago=5)
+    mark_ended(make_advising(teacher=teacher), days_ago=1)
+    make_advising(teacher=teacher)
+    make_advising(teacher=teacher)
+
+    assert summary(client, teacher.user).json() == {"ended_count": 3, "active_count": 2}
+
+
+def test_the_totals_are_zero_for_a_user_without_advisings(client):
+    assert summary(client, make_student().user).json() == {"ended_count": 0, "active_count": None}
+    assert summary(client, make_teacher().user).json() == {"ended_count": 0, "active_count": 0}
+
+
+def test_the_totals_count_only_the_advisings_of_the_user(client):
+    teacher, other = make_teacher(), make_teacher()
+    mark_ended(make_advising(teacher=teacher))
+    mark_ended(make_advising(teacher=other))
+    make_advising(teacher=other)
+
+    assert summary(client, teacher.user).json() == {"ended_count": 1, "active_count": 0}
+
+
+def test_the_ended_total_is_the_size_of_the_history_and_ignores_any_search(client):
+    teacher = make_teacher()
+    ended_with_topic(make_student(full_name="Ana"), teacher, "Redes")
+    ended_with_topic(make_student(full_name="Bruno"), teacher, "Banco de dados")
+
+    response = client.get(SUMMARY_URL, {"search": "ana"}, headers=bearer(teacher.user))
+
+    assert response.json()["ended_count"] == history(client, teacher.user).json()["count"] == 2
+
+
+@pytest.mark.parametrize("deactivated", ["student", "teacher"])
+def test_the_ended_total_counts_the_advisings_the_system_ended(client, deactivated):
+    student, teacher = make_student(), make_teacher()
+    make_advising(student=student, teacher=teacher)
+    deactivate_user(student.user if deactivated == "student" else teacher.user)
+    remaining = teacher.user if deactivated == "student" else student.user
+
+    assert summary(client, remaining).json()["ended_count"] == 1
+
+
+def test_the_summary_of_a_visitor_is_unauthorized_and_of_the_administrator_is_forbidden(client):
+    assert client.get(SUMMARY_URL).status_code == 401
+    assert summary(client, make_admin()).status_code == 403
+
+
+def test_the_openapi_documents_the_search_and_the_summary(client):
+    schema = client.get("/api/openapi.json").json()
+
+    history_operation = schema["paths"][HISTORY_URL]["get"]
+    assert "search" in {parameter["name"] for parameter in history_operation["parameters"]}
+    assert "search" in history_operation["description"]
+    operation = schema["paths"][SUMMARY_URL]["get"]
+    assert operation["description"]
+    fields = schema["components"]["schemas"]["AdvisingHistorySummaryOut"]["properties"]
+    assert set(fields) == {"ended_count", "active_count"}
