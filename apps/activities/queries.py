@@ -132,6 +132,29 @@ def submission_file_for_download(user: User, activity_id: int, file_id: int) -> 
     return submission_file
 
 
+def review_file_for_download(
+    user: User, activity_id: int, review_id: int, file_id: int
+) -> ReviewFile:
+    """The file attached to a refusal of an activity the user may see: its student and the active
+    advisor (RF46, RN48).
+
+    Anyone else, a deleted, archived or ended-advising activity, a missing file, a file of another
+    decision and a file of another activity all answer the same 404.
+    """
+    review_file = (
+        ReviewFile.objects.filter(
+            pk=file_id,
+            review_id=review_id,
+            review__activity__in=visible_activities(user).filter(pk=activity_id),
+        )
+        .select_related("review")
+        .first()
+    )
+    if review_file is None:
+        raise HttpError(404, FILE_NOT_FOUND_MESSAGE)
+    return review_file
+
+
 def activity_item(activity_id: int) -> Activity:
     """One activity in the shape of a list item: with `overdue` and the student loaded."""
     return (

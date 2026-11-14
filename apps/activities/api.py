@@ -42,6 +42,7 @@ from .services import (
     delete_activity,
     deliver_submission,
     edit_activity,
+    open_review_file,
     open_submission_file,
     review_activity,
 )
@@ -220,6 +221,19 @@ class ActivityDetailOut(ActivityItemOut):
     @staticmethod
     def resolve_reviews(obj: Activity) -> list[Review]:
         return obj.ordered_reviews
+
+
+def attachment_response(stored_file: SubmissionFile | ReviewFile, content) -> FileResponse:
+    """A stored file as a download: an attachment under its original name, with the stored type and
+    nosniff set by the route itself, whatever the global setting says."""
+    response = FileResponse(
+        content,
+        as_attachment=True,
+        filename=stored_file.file_name,
+        content_type=stored_file.content_type,
+    )
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @api_controller("/atividades", tags=["Atividades"], auth=JWTAuth())
@@ -416,14 +430,41 @@ class ActivityController:
     )
     def download(self, request: HttpRequest, activity_id: int, file_id: int):
         submission_file, content = open_submission_file(request.user, activity_id, file_id)
-        response = FileResponse(
-            content,
-            as_attachment=True,
-            filename=submission_file.file_name,
-            content_type=submission_file.content_type,
-        )
-        response["X-Content-Type-Options"] = "nosniff"
-        return response
+        return attachment_response(submission_file, content)
+
+    @http_get(
+        "/{int:activity_id}/revisoes/{int:review_id}/arquivos/{int:file_id}",
+        response={401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 503: ErrorOut},
+        permissions=[IsStudent | IsTeacher],
+        summary="Baixa um anexo de uma recusa de revisão",
+        description=(
+            "Devolve o anexo em streaming, como anexo (Content-Disposition: attachment, com o "
+            "nome original codificado), com X-Content-Type-Options: nosniff e o tipo guardado, "
+            "como o download dos arquivos de entrega (RN48). Baixam o Aluno da atividade e o seu "
+            "Professor orientador ativo, em qualquer status da atividade. Qualquer outra pessoa, "
+            "atividade excluída, arquivada ou de orientação encerrada, anexo inexistente (ou "
+            "ausente do armazenamento), de outra decisão ou de outra atividade respondem o "
+            "mesmo 404. Se o armazenamento não responder, 503. Os ids vêm de reviews[].id e "
+            "reviews[].files[].id do detalhe da atividade."
+        ),
+        openapi_extra={
+            "responses": {
+                "200": {
+                    "description": "O conteúdo do arquivo.",
+                    "content": {
+                        "application/octet-stream": {
+                            "schema": {"type": "string", "format": "binary"}
+                        }
+                    },
+                }
+            }
+        },
+    )
+    def download_review_file(
+        self, request: HttpRequest, activity_id: int, review_id: int, file_id: int
+    ):
+        review_file, content = open_review_file(request.user, activity_id, review_id, file_id)
+        return attachment_response(review_file, content)
 
     @http_patch(
         "/{int:activity_id}/status",
