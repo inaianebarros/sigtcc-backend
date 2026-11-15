@@ -34,8 +34,37 @@ class AdvisorBaseOut(Schema):
         return InstituteOut(id=institute.id, name=institute.name)
 
 
+class ProposalPreviewOut(Schema):
+    id: int
+    title: str
+
+
+class ProposalsPreviewOut(Schema):
+    """The latest proposals of an advisor, for his card in the list, and how many he has (RF09)."""
+
+    items: list[ProposalPreviewOut]
+    total: int
+
+
 class AdvisorOut(AdvisorBaseOut):
     common_areas: list[AreaOfInterestOut]
+    #: Every area of the advisor, the ones in common with the student first, then by name.
+    areas: list[ProfileAreaOut]
+    thesis_proposals: ProposalsPreviewOut
+
+    @staticmethod
+    def resolve_areas(obj) -> list[ProfileAreaOut]:
+        common_ids = {area.id for area in obj.common_areas}
+        in_common = [area for area in obj.all_areas if area.id in common_ids]
+        others = [area for area in obj.all_areas if area.id not in common_ids]
+        return ProfileAreaOut.mark_common([*in_common, *others], common_ids)
+
+    @staticmethod
+    def resolve_thesis_proposals(obj) -> ProposalsPreviewOut:
+        return ProposalsPreviewOut(
+            items=[ProposalPreviewOut(id=p.id, title=p.title) for p in obj.latest_proposals],
+            total=obj.proposals_total,
+        )
 
 
 @api_controller("/orientadores", tags=["Orientadores"], auth=JWTAuth())
@@ -51,7 +80,11 @@ class AdvisorSearchController:
             "os sem Área em comum. A ordem é: disponíveis primeiro, mais Áreas em comum, nome "
             "sem acento e id. O parâmetro name filtra por parte do nome, sem diferenciar "
             "maiúsculas e acentos. Professores indisponíveis não recebem solicitações (RN26). "
-            "Paginada com limit (padrão 20, máximo 100) e offset."
+            "Cada professor traz todas as suas áreas em areas, com is_common nas que o Aluno também "
+            "tem (as em comum primeiro, depois as demais, cada grupo por nome), e, em "
+            "thesis_proposals, os 3 temas propostos mais recentes (da proposta mais recente para a "
+            "mais antiga) e o total de propostas dele; common_areas e compatibility continuam como "
+            "eram. Paginada com limit (padrão 20, máximo 100) e offset."
         ),
     )
     @paginate(BoundedLimitOffsetPagination)

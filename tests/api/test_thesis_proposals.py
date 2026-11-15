@@ -325,18 +325,40 @@ def test_the_profile_patch_neither_accepts_nor_returns_the_proposals(client):
     assert list(ThesisProposal.objects.values_list("title", flat=True)) == ["Proposta já existente"]
 
 
-def test_the_proposals_do_not_appear_in_the_advisor_search_or_profile(client):
+def test_the_proposals_are_shown_on_the_search_card_but_never_filter_or_order_the_search(client):
+    course = make_course()
+    student = make_student(course=course)
+    with_proposal = make_teacher(courses=[course], full_name="Ana Com Proposta")
+    without = make_teacher(courses=[course], full_name="Bruno Sem Proposta")
+    make_proposal(with_proposal, "Proposta que só aparece no cartão")
+
+    everyone = client.get(
+        "/api/orientadores/busca", {"show_all": "true"}, headers=bearer(student.user)
+    ).json()
+    default = client.get("/api/orientadores/busca", headers=bearer(student.user)).json()
+    by_proposal = client.get(
+        "/api/orientadores/busca",
+        {"show_all": "true", "name": "cartão"},
+        headers=bearer(student.user),
+    ).json()
+
+    # Shown on the card (RF09, RF56), as a preview...
+    assert everyone["items"][0]["thesis_proposals"]["total"] == 1
+    # ...but the search does not look at them: no common area, no default listing; the name filter
+    # does not match a title; the order is the one of the names (RN41, RN23).
+    assert default == {"items": [], "count": 0}
+    assert by_proposal == {"items": [], "count": 0}
+    assert [item["id"] for item in everyone["items"]] == [with_proposal.user_id, without.user_id]
+
+
+def test_the_profile_does_not_embed_the_proposals_it_lists_them_on_their_own_endpoint(client):
     course = make_course()
     student = make_student(course=course)
     teacher = make_teacher(courses=[course])
-    make_proposal(teacher, "Proposta fora da busca")
+    make_proposal(teacher, "Proposta fora do perfil embutido")
 
-    search = client.get(
-        "/api/orientadores/busca", {"show_all": "true"}, headers=bearer(student.user)
-    )
     profile = client.get(f"/api/professores/{teacher.user_id}/perfil", headers=bearer(student.user))
 
-    assert "thesis_proposals" not in search.json()["items"][0]
     assert "thesis_proposals" not in profile.json()
 
 
