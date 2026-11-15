@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from apps.accounts.models import Teacher, UserType
+from apps.accounts.models import Teacher, ThesisProposal, UserType
 from tests.api.helpers import bearer
 from tests.factories import (
     make_advising,
@@ -565,3 +565,185 @@ def test_other_courses_and_inactive_teachers_never_appear_in_either_mode(client)
 
     assert ids(search_default(client, student.user)) == [own.user_id]
     assert ids(search_default(client, student.user, show_all="true")) == [own.user_id]
+
+
+# --- Todas as áreas do professor e os 3 temas propostos mais recentes no cartão (#240) ---
+
+
+def propose(teacher, title, days_ago=0):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    proposal = ThesisProposal.objects.create(teacher=teacher, title=title)
+    ThesisProposal.objects.filter(pk=proposal.pk).update(
+        created_at=timezone.now() - timedelta(days=days_ago)
+    )
+    return proposal
+
+
+def test_each_item_lists_every_area_of_the_teacher_with_the_common_ones_first(client):
+    course = make_course()
+    shared_b = make_area()
+    shared_a = make_area()
+    only_teacher_b = make_area()
+    only_teacher_a = make_area()
+    only_student = make_area()
+    student = make_student(course=course, areas=[shared_a, shared_b, only_student])
+    make_teacher(courses=[course], areas=[only_teacher_b, shared_b, shared_a, only_teacher_a])
+
+    item = search(client, student.user).json()["items"][0]
+
+    common = sorted([shared_a, shared_b], key=lambda area: area.name)
+    others = sorted([only_teacher_a, only_teacher_b], key=lambda area: area.name)
+    assert item["areas"] == [
+        *({"id": area.id, "name": area.name, "is_common": True} for area in common),
+        *({"id": area.id, "name": area.name, "is_common": False} for area in others),
+    ]
+
+
+def test_the_common_areas_field_stays_the_subset_of_areas_marked_as_common(client):
+    course = make_course()
+    shared = make_area()
+    student = make_student(course=course, areas=[shared])
+    make_teacher(courses=[course], areas=[shared, make_area()])
+
+    item = search(client, student.user).json()["items"][0]
+
+    assert item["common_areas"] == [
+        {"id": area["id"], "name": area["name"]} for area in item["areas"] if area["is_common"]
+    ]
+    assert item["compatibility"] == len(item["common_areas"]) == 1
+
+
+def test_a_teacher_without_common_areas_lists_all_of_them_as_not_common(client):
+    course = make_course()
+    student = make_student(course=course, areas=[make_area()])
+    own = [make_area(), make_area()]
+    make_teacher(courses=[course], areas=own)
+
+    item = search(client, student.user).json()["items"][0]
+
+    assert {area["id"] for area in item["areas"]} == {area.id for area in own}
+    assert {area["is_common"] for area in item["areas"]} == {False}
+    assert item["common_areas"] == []
+
+
+def test_a_teacher_without_areas_has_an_empty_areas_list(client):
+    course = make_course()
+    student = make_student(course=course, areas=[make_area()])
+    make_teacher(courses=[course], areas=[])
+
+    assert search(client, student.user).json()["items"][0]["areas"] == []
+
+
+def test_each_item_carries_the_three_latest_proposals_and_the_total(client):
+    course = make_course()
+    student = make_student(course=course, areas=[])
+    teacher = make_teacher(courses=[course])
+    oldest = propose(teacher, "Mais antiga", days_ago=40)
+    middle = propose(teacher, "Do meio", days_ago=20)
+    recent = propose(teacher, "Recente", days_ago=5)
+    newest = propose(teacher, "Mais nova", days_ago=1)
+    propose(teacher, "Antiga demais", days_ago=60)
+
+    item = search(client, student.user).json()["items"][0]
+
+    assert item["thesis_proposals"] == {
+        "items": [
+            {"id": newest.id, "title": "Mais nova"},
+            {"id": recent.id, "title": "Recente"},
+            {"id": middle.id, "title": "Do meio"},
+        ],
+        "total": 5,
+    }
+    assert oldest.id not in {p["id"] for p in item["thesis_proposals"]["items"]}
+
+
+def test_proposals_made_at_the_same_moment_are_ordered_by_the_higher_id_first(client):
+    course = make_course()
+    student = make_student(course=course, areas=[])
+    teacher = make_teacher(courses=[course])
+    same = [propose(teacher, f"Mesmo instante {n}", days_ago=3) for n in range(3)]
+
+    item = search(client, student.user).json()["items"][0]
+
+    assert [p["id"] for p in item["thesis_proposals"]["items"]] == [p.id for p in reversed(same)]
+
+
+@pytest.mark.parametrize(("how_many", "shown"), [(0, 0), (1, 1), (3, 3), (4, 3)])
+def test_the_proposals_shown_are_at_most_three_and_the_total_counts_them_all(
+    client, how_many, shown
+):
+    course = make_course()
+    student = make_student(course=course, areas=[])
+    teacher = make_teacher(courses=[course])
+    for number in range(how_many):
+        propose(teacher, f"Proposta {number}", days_ago=number)
+
+    block = search(client, student.user).json()["items"][0]["thesis_proposals"]
+
+    assert (len(block["items"]), block["total"]) == (shown, how_many)
+    assert set(block["items"][0]) == {"id", "title"} if shown else block["items"] == []
+
+
+def test_the_proposals_of_one_teacher_never_show_on_another(client):
+    course = make_course()
+    student = make_student(course=course, areas=[])
+    first = make_teacher(courses=[course], full_name="Ana Primeira")
+    second = make_teacher(courses=[course], full_name="Bruno Segundo")
+    propose(first, "Só da Ana")
+    propose(second, "Só do Bruno")
+    propose(second, "Outra do Bruno")
+
+    items = {item["full_name"]: item for item in search(client, student.user).json()["items"]}
+
+    assert [p["title"] for p in items["Ana Primeira"]["thesis_proposals"]["items"]] == ["Só da Ana"]
+    assert items["Ana Primeira"]["thesis_proposals"]["total"] == 1
+    assert items["Bruno Segundo"]["thesis_proposals"]["total"] == 2
+
+
+def test_the_name_filter_the_order_and_the_default_cut_do_not_change_with_the_new_fields(client):
+    course = make_course()
+    shared = make_area()
+    student = make_student(course=course, areas=[shared])
+    with_area = make_teacher(courses=[course], areas=[shared], full_name="Ana Comum")
+    make_teacher(courses=[course], areas=[make_area()], full_name="Zilda Sem")
+    propose(with_area, "Um tema")
+
+    default = search_default(client, student.user)
+    everyone = search(client, student.user)
+    filtered = search(client, student.user, name="zilda")
+
+    assert names(default) == ["Ana Comum"]
+    assert names(everyone) == ["Ana Comum", "Zilda Sem"]
+    assert names(filtered) == ["Zilda Sem"]
+    assert default.json()["count"] == 1
+
+
+def test_the_queries_do_not_grow_with_the_teachers_the_areas_and_the_proposals(client):
+    student, course = student_and_course()
+    areas = [make_area() for _ in range(3)]
+    student.areas_of_interest.set(areas)
+    for number in range(3):
+        teacher = make_teacher(courses=[course], areas=areas, full_name=f"Professor {number:02d}")
+        for index in range(4):
+            propose(teacher, f"Tema {number}-{index}", days_ago=index)
+    few = count_queries(client, student.user, name="professor")
+
+    for number in range(3, 20):
+        teacher = make_teacher(courses=[course], areas=areas, full_name=f"Professor {number:02d}")
+        for index in range(5):
+            propose(teacher, f"Tema {number}-{index}", days_ago=index)
+    many = count_queries(client, student.user, name="professor")
+
+    assert many == few
+
+
+def test_the_openapi_documents_the_new_fields_of_each_advisor(client):
+    schema = client.get("/api/openapi.json").json()
+
+    advisor = schema["components"]["schemas"]["AdvisorOut"]["properties"]
+    assert {"areas", "thesis_proposals", "common_areas", "compatibility"} <= set(advisor)
+    operation = schema["paths"][SEARCH_URL]["get"]
+    assert "temas propostos" in operation["description"]
