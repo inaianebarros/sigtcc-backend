@@ -192,3 +192,84 @@ def test_the_number_of_queries_does_not_grow_with_the_requests(client, student):
         )
 
     assert count_queries(client, student.user) == few
+
+
+def test_it_filters_by_the_effective_status(client, student):
+    now = timezone.now()
+    send(
+        student,
+        teacher_for(student),
+        AdvisingRequestStatus.REJECTED,
+        requested_at=now - datetime.timedelta(days=30),
+    )
+    send(
+        student,
+        teacher_for(student),
+        AdvisingRequestStatus.ACCEPTED,
+        requested_at=now - datetime.timedelta(days=20),
+    )
+    send(
+        student,
+        teacher_for(student),
+        AdvisingRequestStatus.UNANSWERED,
+        requested_at=now - datetime.timedelta(days=10),
+    )
+    send(
+        student,
+        teacher_for(student),
+        AdvisingRequestStatus.PENDING,
+        requested_at=now - datetime.timedelta(days=1),
+    )
+
+    def statuses(**params):
+        return [item["status"] for item in read(client, student.user, **params).json()["items"]]
+
+    assert statuses(status="rejected") == ["rejected"]
+    assert statuses(status="accepted") == ["accepted"]
+    assert statuses(status="pending") == ["pending"]
+    assert statuses(status="unanswered") == ["unanswered"]
+    assert len(statuses()) == 4
+
+
+def test_a_pending_request_past_the_deadline_is_not_in_the_pending_filter(client, student):
+    requested_at = timezone.now() - datetime.timedelta(days=8)
+    send(student, teacher_for(student), AdvisingRequestStatus.PENDING, requested_at=requested_at)
+
+    assert read(client, student.user, status="pending").json()["count"] == 0
+    assert read(client, student.user, status="unanswered").json()["count"] == 1
+
+
+def test_the_status_and_the_name_filters_combine_and_the_total_follows(client, student):
+    carlos = teacher_for(student, full_name="Carlos Lima")
+    marta = teacher_for(student, full_name="Marta Rocha")
+    send(
+        student,
+        carlos,
+        AdvisingRequestStatus.REJECTED,
+        requested_at=timezone.now() - datetime.timedelta(days=9),
+    )
+    send(
+        student,
+        marta,
+        AdvisingRequestStatus.REJECTED,
+        requested_at=timezone.now() - datetime.timedelta(days=8),
+    )
+    send(
+        student,
+        carlos,
+        AdvisingRequestStatus.ACCEPTED,
+        requested_at=timezone.now() - datetime.timedelta(days=7),
+    )
+
+    body = read(client, student.user, status="rejected", name="carlos").json()
+
+    assert body["count"] == 1
+    assert body["items"][0]["teacher"]["full_name"] == "Carlos Lima"
+
+
+def test_an_unknown_status_is_rejected(client, student):
+    assert read(client, student.user, status="em_analise").status_code == 422
+
+
+def test_an_empty_status_is_a_client_error_like_in_the_teacher_list(client, student):
+    assert read(client, student.user, status="").status_code == 422

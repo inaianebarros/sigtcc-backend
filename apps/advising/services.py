@@ -127,8 +127,10 @@ def list_received_requests(teacher: Teacher, status: AdvisingRequestStatus | Non
     return received.filter(effective_status=status) if status else received
 
 
-def list_own_requests(student: Student, name: str | None = None):
-    """Every request the student sent, newest first, optionally by part of the teacher's name."""
+def list_own_requests(
+    student: Student, name: str | None = None, status: AdvisingRequestStatus | None = None
+):
+    """Every request the student sent, newest first, optionally by teacher name and status."""
     requests = (
         AdvisingRequest.objects.filter(student=student)
         .with_effective_status()
@@ -138,6 +140,8 @@ def list_own_requests(student: Student, name: str | None = None):
         )
         .order_by("-requested_at", "-id")
     )
+    if status:
+        requests = requests.filter(effective_status=status)
     return filter_by_name(requests, "teacher__user__full_name", name)
 
 

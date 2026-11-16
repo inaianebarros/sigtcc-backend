@@ -105,8 +105,9 @@ class AdvisingRequestController:
             "de resposta (expires_at) vem nas pendentes e nas não respondidas. Cada item traz o Professor (com o instituto) e a orientação que a "
             "solicitação criou, ativa ou encerrada, ou nulo. O parâmetro name filtra por parte do "
             "nome do Professor, sem diferenciar maiúsculas e acentos, com os espaços das pontas "
-            "removidos; vazio equivale a sem filtro e o máximo é de 150 caracteres. O total "
-            "reflete o filtro."
+            "removidos; vazio equivale a sem filtro e o máximo é de 150 caracteres. O parâmetro "
+            "status filtra pela situação efetiva (pending, accepted, rejected ou unanswered) e "
+            "combina com name. O total reflete os filtros."
         ),
     )
     @paginate(TenPerPageLimitOffsetPagination)
@@ -114,8 +115,9 @@ class AdvisingRequestController:
         self,
         request: HttpRequest,
         name: Annotated[str | None, Query(max_length=150)] = None,
+        status: AdvisingRequestStatus | None = None,
     ):
-        return list_own_requests(request.user.student, name)
+        return list_own_requests(request.user.student, name, status)
 
     @http_post(
         "/{int:advising_id}/encerrar",
