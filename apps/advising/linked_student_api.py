@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from django.http import HttpRequest
 from ninja import Schema
 from ninja_extra import api_controller, http_get
@@ -9,23 +7,8 @@ from apps.accounts.permissions import IsTeacher
 from apps.accounts.schemas import ArticleOut, InstituteOut
 from config.schemas import ErrorOut
 
-from .linked_student_bond import Bond, BondKind
 from .linked_student_profile import linked_student_profile
 from .schemas import CourseSummaryOut, ProfileAreaOut
-
-
-class BondOut(Schema):
-    """The tie with the teacher. `since` and `until` depend on `kind`: the start of an advising and
-    its end, when ended; the day a request was sent and the last day to answer it; the day a
-    request was rejected, or the day an unanswered one was sent."""
-
-    kind: BondKind
-    since: datetime
-    until: datetime | None
-
-    @classmethod
-    def of(cls, bond: Bond) -> "BondOut":
-        return cls(kind=bond.kind, since=bond.since, until=bond.until)
 
 
 class LinkedStudentProfileOut(Schema):
@@ -36,7 +19,6 @@ class LinkedStudentProfileOut(Schema):
     areas: list[ProfileAreaOut]
     compatibility: int
     articles: list[ArticleOut]
-    bond: BondOut | None
 
     @staticmethod
     def resolve_id(obj) -> int:
@@ -63,10 +45,6 @@ class LinkedStudentProfileOut(Schema):
     def resolve_articles(obj) -> list[ArticleOut]:
         return [ArticleOut.from_article(article) for article in obj.ordered_articles]
 
-    @staticmethod
-    def resolve_bond(obj) -> BondOut | None:
-        return BondOut.of(obj.bond) if obj.bond is not None else None
-
 
 @api_controller("/alunos", tags=["Orientandos"], auth=JWTAuth())
 class LinkedStudentProfileController:
@@ -79,10 +57,7 @@ class LinkedStudentProfileController:
             "Só Alunos que enviaram uma solicitação ao Professor, em qualquer status, ou que "
             "têm ou tiveram orientação com ele (RN32). Qualquer outro Aluno, Aluno inativo e id "
             "desconhecido respondem o mesmo 404, para não revelar quem existe. Não traz e-mail "
-            "nem matrícula. As Áreas vêm com is_common, e a compatibilidade é a da busca. O vínculo "
-            "(bond) é o mais relevante com este Professor: orientação ativa, solicitação pendente, "
-            "orientação encerrada, solicitação recusada ou não respondida, nessa ordem; é nulo só "
-            "quando há apenas uma solicitação aceita sem orientação."
+            "nem matrícula. As Áreas vêm com is_common, e a compatibilidade é a da busca."
         ),
     )
     def read_profile(self, request: HttpRequest, student_id: int):

@@ -3,7 +3,6 @@ from ninja.errors import HttpError
 
 from apps.accounts.models import AreaOfInterest, PublishedArticle, Student, Teacher
 
-from .linked_student_bond import bond_of
 from .models import Advising, AdvisingRequest
 
 STUDENT_NOT_FOUND_MESSAGE = "Aluno não encontrado."
@@ -34,5 +33,4 @@ def linked_student_profile(teacher: Teacher, student_id: int) -> Student:
         raise HttpError(404, STUDENT_NOT_FOUND_MESSAGE)
     teacher_areas = set(teacher.areas_of_interest.values_list("id", flat=True))
     student.common_area_ids = {area.id for area in student.all_areas} & teacher_areas
-    student.bond = bond_of(student.pk, teacher)
     return student
