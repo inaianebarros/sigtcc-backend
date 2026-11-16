@@ -2,11 +2,11 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Q, QuerySet
+from django.db.models import Count, F, Prefetch, Q, QuerySet
 from django.utils import timezone
 from ninja.errors import HttpError
 
-from apps.accounts.models import Student, Teacher, User, UserType
+from apps.accounts.models import Course, Student, Teacher, User, UserType
 from apps.activities.models import Activity, ActivityStatus
 from apps.meetings.models import SYSTEM_CANCELLATION_REASON, Meeting, MeetingStatus
 from apps.notifications.models import (
@@ -125,6 +125,20 @@ def list_received_requests(teacher: Teacher, status: AdvisingRequestStatus | Non
         .order_by("-requested_at", "-id")
     )
     return received.filter(effective_status=status) if status else received
+
+
+def list_own_requests(student: Student, name: str | None = None):
+    """Every request the student sent, newest first, optionally by part of the teacher's name."""
+    requests = (
+        AdvisingRequest.objects.filter(student=student)
+        .with_effective_status()
+        .select_related("teacher__user", "advising")
+        .prefetch_related(
+            Prefetch("teacher__courses", queryset=Course.objects.select_related("institute"))
+        )
+        .order_by("-requested_at", "-id")
+    )
+    return filter_by_name(requests, "teacher__user__full_name", name)
 
 
 def _ensure_can_be_answered(advising_request: AdvisingRequest, student: Student) -> None:
