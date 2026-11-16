@@ -6,7 +6,7 @@ from ninja import Field, Schema
 from pydantic import StringConstraints
 
 from apps.accounts.models import Student, Teacher
-from apps.accounts.schemas import AreaOfInterestOut
+from apps.accounts.schemas import AreaOfInterestOut, InstituteOut
 
 from .deadlines import answer_deadline_of
 from .models import ANSWERED_STATUSES, Advising, AdvisingRequest, AnswerAction, BlockedReason
@@ -223,6 +223,44 @@ class StudentRequestOut(AdvisingRequestTimingOut):
     @staticmethod
     def resolve_teacher(obj: AdvisingRequest) -> TeacherSummaryOut:
         return TeacherSummaryOut.from_teacher(obj.teacher)
+
+
+class RequestTeacherOut(TeacherSummaryOut):
+    institute: InstituteOut | None
+
+    @staticmethod
+    def resolve_institute(obj: Teacher) -> InstituteOut | None:
+        courses = sorted(obj.courses.all(), key=lambda course: course.id)
+        if not courses:
+            return None
+        institute = courses[0].institute
+        return InstituteOut(id=institute.id, name=institute.name)
+
+    @staticmethod
+    def resolve_id(obj: Teacher) -> int:
+        return obj.user_id
+
+    @staticmethod
+    def resolve_full_name(obj: Teacher) -> str:
+        return obj.user.full_name
+
+
+class RequestAdvisingOut(Schema):
+    id: int
+    status: str
+    started_at: datetime
+    ended_at: datetime | None
+
+
+class StudentRequestItemOut(AdvisingRequestTimingOut):
+    """One request in the student's own list. `advising` is the one the request created, if any."""
+
+    teacher: RequestTeacherOut
+    advising: RequestAdvisingOut | None
+
+    @staticmethod
+    def resolve_advising(obj: AdvisingRequest) -> Advising | None:
+        return getattr(obj, "advising", None)
 
 
 class RequestStatusOut(Schema):

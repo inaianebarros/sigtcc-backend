@@ -29,6 +29,7 @@ from .schemas import (
     EndedAdvisingOut,
     RecordOut,
     RequestStatusOut,
+    StudentRequestItemOut,
 )
 from .services import (
     advising_history_summary,
@@ -36,6 +37,7 @@ from .services import (
     end_advising,
     list_advisees,
     list_ended_advisings,
+    list_own_requests,
     list_received_requests,
     request_advising,
     student_request_status,
@@ -91,6 +93,29 @@ class AdvisingRequestController:
     )
     def my_request(self, request: HttpRequest):
         return student_request_status(request.user.student)
+
+    @http_get(
+        "/minhas-solicitacoes",
+        response=Page[StudentRequestItemOut],
+        permissions=[IsStudent],
+        summary="Lista as solicitações enviadas pelo Aluno",
+        description=(
+            "Todas as solicitações do próprio Aluno, da mais recente para a mais antiga, de 10 em "
+            "10. A pendente com mais de 7 dias aparece como não respondida (RN20), e o prazo "
+            "de resposta (expires_at) vem nas pendentes e nas não respondidas. Cada item traz o Professor (com o instituto) e a orientação que a "
+            "solicitação criou, ativa ou encerrada, ou nulo. O parâmetro name filtra por parte do "
+            "nome do Professor, sem diferenciar maiúsculas e acentos, com os espaços das pontas "
+            "removidos; vazio equivale a sem filtro e o máximo é de 150 caracteres. O total "
+            "reflete o filtro."
+        ),
+    )
+    @paginate(TenPerPageLimitOffsetPagination)
+    def my_requests(
+        self,
+        request: HttpRequest,
+        name: Annotated[str | None, Query(max_length=150)] = None,
+    ):
+        return list_own_requests(request.user.student, name)
 
     @http_post(
         "/{int:advising_id}/encerrar",
