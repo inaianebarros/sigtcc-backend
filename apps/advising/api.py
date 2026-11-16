@@ -66,7 +66,8 @@ class AdvisingRequestController:
             "não respondida (ADR 0003). O parâmetro name filtra por parte do nome do Aluno, sem "
             "diferenciar maiúsculas e acentos, com os espaços das pontas removidos; vazio "
             "equivale a sem filtro e o máximo é de 150 caracteres. Combina com status, e o total "
-            "reflete os filtros."
+            "reflete os filtros. As áreas do Aluno vêm com is_common nas que o Professor também "
+            "tem, as em comum primeiro."
         ),
     )
     @paginate(BoundedLimitOffsetPagination)

@@ -6,7 +6,7 @@ from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from apps.accounts.models import UserType
+from apps.accounts.models import AreaOfInterest, UserType
 from apps.advising.models import AdvisingRequest, AdvisingRequestStatus
 from tests.api.helpers import bearer
 from tests.factories import (
@@ -54,9 +54,13 @@ def test_a_teacher_lists_only_their_own_requests_newest_first_with_basic_student
             "id": newer_student.user_id,
             "full_name": newer_student.user.full_name,
             "course": {"id": course.id, "name": course.name},
-            "areas": [{"id": area.id, "name": area.name}],
+            "areas": [{"id": area.id, "name": area.name, "is_common": False}],
         },
     }
+
+
+def named_area(name):
+    return AreaOfInterest.objects.create(name=name)
 
 
 def make_received(teacher, status=AdvisingRequestStatus.PENDING, days_ago=0):
@@ -359,3 +363,53 @@ def test_an_empty_name_is_the_same_as_no_filter_and_a_long_one_is_rejected(clien
 
     assert list_requests(client, teacher.user, name="").json()["count"] == 1
     assert list_requests(client, teacher.user, name="a" * 151).status_code == 422
+
+
+def test_the_students_areas_mark_the_ones_in_common_with_the_teacher_first(client):
+    course = make_course()
+    shared_late = named_area("Redes")
+    shared_early = named_area("Banco de Dados")
+    only_student = named_area("Algoritmos")
+    teacher = make_teacher(courses=[course], areas=[shared_late, shared_early])
+    student = make_student(course=course, areas=[only_student, shared_late, shared_early])
+    make_advising_request(student=student, teacher=teacher)
+
+    areas = list_requests(client, teacher.user).json()["items"][0]["student"]["areas"]
+
+    assert [(area["name"], area["is_common"]) for area in areas] == [
+        ("Banco de Dados", True),
+        ("Redes", True),
+        ("Algoritmos", False),
+    ]
+
+
+def test_a_student_without_areas_in_common_has_none_marked(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course], areas=[named_area("Redes")])
+    student = make_student(course=course, areas=[named_area("Algoritmos")])
+    make_advising_request(student=student, teacher=teacher)
+
+    areas = list_requests(client, teacher.user).json()["items"][0]["student"]["areas"]
+
+    assert [area["is_common"] for area in areas] == [False]
+
+
+def test_the_answer_also_marks_the_areas_in_common(client):
+    course = make_course()
+    shared = named_area("Redes")
+    teacher = make_teacher(courses=[course], areas=[shared])
+    student = make_student(course=course, areas=[named_area("Algoritmos"), shared])
+    received = make_advising_request(student=student, teacher=teacher)
+
+    response = client.post(
+        f"{REQUESTS_URL}/{received.id}/responder",
+        {"action": "reject"},
+        content_type="application/json",
+        headers=bearer(teacher.user),
+    )
+
+    areas = response.json()["student"]["areas"]
+    assert [(area["name"], area["is_common"]) for area in areas] == [
+        ("Redes", True),
+        ("Algoritmos", False),
+    ]
