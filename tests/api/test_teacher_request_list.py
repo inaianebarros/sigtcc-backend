@@ -230,7 +230,7 @@ def test_the_openapi_documents_the_filters_and_the_page_parameters(client):
     schema = client.get("/api/openapi.json").json()
 
     operation = schema["paths"]["/api/orientacao/solicitacoes"]["get"]
-    assert {"status", "limit", "offset"} <= {p["name"] for p in operation["parameters"]}
+    assert {"status", "name", "limit", "offset"} <= {p["name"] for p in operation["parameters"]}
     assert "200" in operation["responses"]
 
 
@@ -309,3 +309,53 @@ def test_the_deadline_is_null_only_for_answered_requests(client, status, days_ag
     item = list_requests(client, teacher.user).json()["items"][0]
 
     assert (item["expires_at"] is not None) is has_deadline
+
+
+def test_the_name_filter_ignores_case_accents_and_edge_spaces(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    jose = make_advising_request(
+        student=make_student(course=course, full_name="José Antônio Lima"), teacher=teacher
+    )
+    make_advising_request(
+        student=make_student(course=course, full_name="Marta Rocha"), teacher=teacher
+    )
+
+    response = list_requests(client, teacher.user, name="  JOSE antonio ")
+
+    assert response.status_code == 200
+    assert ids(response) == [jose.id]
+    assert response.json()["count"] == 1
+
+
+def test_the_name_filter_combines_with_the_status_and_the_count_follows(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    carlos = make_student(course=course, full_name="Carlos Lima")
+    answered = AdvisingRequest.objects.create(
+        student=carlos, teacher=teacher, status=AdvisingRequestStatus.REJECTED
+    )
+    make_advising_request(student=carlos, teacher=teacher)
+    make_advising_request(
+        student=make_student(course=course, full_name="Marta Rocha"), teacher=teacher
+    )
+
+    body = list_requests(client, teacher.user, name="carlos", status="rejected").json()
+
+    assert body["count"] == 1
+    assert [item["id"] for item in body["items"]] == [answered.id]
+
+
+def test_a_name_never_reaches_the_requests_of_another_teacher(client):
+    teacher = make_teacher()
+    make_advising_request(student=make_student(full_name="Carlos Lima"), teacher=make_teacher())
+
+    assert list_requests(client, teacher.user, name="carlos").json()["count"] == 0
+
+
+def test_an_empty_name_is_the_same_as_no_filter_and_a_long_one_is_rejected(client):
+    teacher = make_teacher()
+    make_received(teacher)
+
+    assert list_requests(client, teacher.user, name="").json()["count"] == 1
+    assert list_requests(client, teacher.user, name="a" * 151).status_code == 422

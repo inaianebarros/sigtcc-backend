@@ -63,12 +63,20 @@ class AdvisingRequestController:
         summary="Lista as solicitações recebidas pelo Professor",
         description=(
             "Da mais recente para a mais antiga. A pendente com mais de 7 dias aparece como "
-            "não respondida (ADR 0003)."
+            "não respondida (ADR 0003). O parâmetro name filtra por parte do nome do Aluno, sem "
+            "diferenciar maiúsculas e acentos, com os espaços das pontas removidos; vazio "
+            "equivale a sem filtro e o máximo é de 150 caracteres. Combina com status, e o total "
+            "reflete os filtros."
         ),
     )
     @paginate(BoundedLimitOffsetPagination)
-    def list_requests(self, request: HttpRequest, status: AdvisingRequestStatus | None = None):
-        return list_received_requests(request.user.teacher, status)
+    def list_requests(
+        self,
+        request: HttpRequest,
+        status: AdvisingRequestStatus | None = None,
+        name: Annotated[str | None, Query(max_length=150)] = None,
+    ):
+        return list_received_requests(request.user.teacher, status, name)
 
     @http_post(
         "/solicitacoes/{request_id}/responder",

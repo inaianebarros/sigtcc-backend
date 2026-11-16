@@ -116,7 +116,9 @@ def request_advising(student: Student, teacher_id: int) -> AdvisingRequest:
     return advising_request
 
 
-def list_received_requests(teacher: Teacher, status: AdvisingRequestStatus | None = None):
+def list_received_requests(
+    teacher: Teacher, status: AdvisingRequestStatus | None = None, name: str | None = None
+):
     received = (
         AdvisingRequest.objects.filter(teacher=teacher)
         .with_effective_status()
@@ -124,7 +126,9 @@ def list_received_requests(teacher: Teacher, status: AdvisingRequestStatus | Non
         .prefetch_related("student__areas_of_interest")
         .order_by("-requested_at", "-id")
     )
-    return received.filter(effective_status=status) if status else received
+    if status:
+        received = received.filter(effective_status=status)
+    return filter_by_name(received, "student__user__full_name", name)
 
 
 def list_own_requests(
