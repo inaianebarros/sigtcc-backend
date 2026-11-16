@@ -123,7 +123,7 @@ def list_received_requests(
         AdvisingRequest.objects.filter(teacher=teacher)
         .with_effective_status()
         .select_related("student__user", "student__course")
-        .prefetch_related("student__areas_of_interest")
+        .prefetch_related("student__areas_of_interest", "teacher__areas_of_interest")
         .order_by("-requested_at", "-id")
     )
     if status:

@@ -74,7 +74,7 @@ class StudentSummaryOut(Schema):
     id: int
     full_name: str
     course: CourseSummaryOut
-    areas: list[AreaOfInterestOut]
+    areas: list[ProfileAreaOut]
 
 
 class AdvisingRequestTimingOut(Schema):
@@ -101,12 +101,16 @@ class AdvisingRequestItemOut(AdvisingRequestTimingOut):
     @staticmethod
     def resolve_student(obj: AdvisingRequest) -> StudentSummaryOut:
         student = obj.student
-        areas = sorted(student.areas_of_interest.all(), key=lambda area: area.name)
+        teacher_area_ids = {area.id for area in obj.teacher.areas_of_interest.all()}
+        areas = sorted(
+            student.areas_of_interest.all(),
+            key=lambda area: (area.id not in teacher_area_ids, area.name),
+        )
         return StudentSummaryOut(
             id=student.user_id,
             full_name=student.user.full_name,
             course=CourseSummaryOut(id=student.course_id, name=student.course.name),
-            areas=[AreaOfInterestOut(id=area.id, name=area.name) for area in areas],
+            areas=ProfileAreaOut.mark_common(areas, teacher_area_ids),
         )
 
 
