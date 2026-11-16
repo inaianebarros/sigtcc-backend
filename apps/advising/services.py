@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Prefetch, Q, QuerySet
+from django.db.models import Case, Count, F, IntegerField, Prefetch, Q, QuerySet, Value, When
 from django.utils import timezone
 from ninja.errors import HttpError
 
@@ -294,12 +294,19 @@ def _activities_in(status: ActivityStatus) -> Count:
     )
 
 
-def list_advisees(teacher: Teacher, search: str | None = None, query: str | None = None):
+def list_advisees(
+    teacher: Teacher,
+    search: str | None = None,
+    query: str | None = None,
+    review_first: bool = False,
+):
     """The teacher's active advisees (RF33).
 
     `search` keeps the ones whose student name contains the text, as the student pickers need.
     `query` keeps the ones whose student name or thesis topic contains it, for the advisees screen.
-    Both ignore case and accents and, given together, must both match."""
+    Both ignore case and accents and, given together, must both match.
+    `review_first` puts the advisees with an activity in review on top (RN21), the most recent
+    start first inside each group; without it the order is only the most recent start."""
     advisings = filter_by_name(
         Advising.objects.filter(teacher=teacher, status=AdvisingStatus.ACTIVE),
         "student__user__full_name",
@@ -308,16 +315,22 @@ def list_advisees(teacher: Teacher, search: str | None = None, query: str | None
     advisings = filter_by_any_text(
         advisings, ["student__user__full_name", "thesis_topic__description"], query
     )
-    return (
-        advisings.select_related("student__user", "student__course", "thesis_topic")
-        .annotate(
-            pending_count=_activities_in(ActivityStatus.PENDING),
-            in_progress_count=_activities_in(ActivityStatus.IN_PROGRESS),
-            in_review_count=_activities_in(ActivityStatus.IN_REVIEW),
-            completed_count=_activities_in(ActivityStatus.COMPLETED),
-        )
-        .order_by("-started_at", "-id")
+    advisings = advisings.select_related(
+        "student__user", "student__course", "thesis_topic"
+    ).annotate(
+        pending_count=_activities_in(ActivityStatus.PENDING),
+        in_progress_count=_activities_in(ActivityStatus.IN_PROGRESS),
+        in_review_count=_activities_in(ActivityStatus.IN_REVIEW),
+        completed_count=_activities_in(ActivityStatus.COMPLETED),
     )
+    if not review_first:
+        return advisings.order_by("-started_at", "-id")
+    waiting_first = Case(
+        When(in_review_count__gt=0, then=Value(0)),
+        default=Value(1),
+        output_field=IntegerField(),
+    )
+    return advisings.order_by(waiting_first, "-started_at", "-id")
 
 
 def own_advisings(user: User) -> tuple[QuerySet, str]:

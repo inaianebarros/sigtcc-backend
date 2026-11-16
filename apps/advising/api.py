@@ -166,8 +166,10 @@ class AdvisingRequestController:
             "nome do Aluno ou pelo tema do TCC, também sem diferenciar maiúsculas e acentos, por "
             "texto contido, com os espaços das pontas removidos, vazio equivalente a sem filtro e "
             "no máximo 200 caracteres; não olha matrícula nem e-mail. Dados os dois, o Orientando "
-            "precisa casar com ambos. A ordem e a paginação não mudam, e o total reflete o "
-            "filtro."
+            "precisa casar com ambos. A paginação não muda, e o total reflete o "
+            "filtro. O parâmetro review_first, da tela de orientandos, põe no topo os Orientandos "
+            "com atividade em revisão (RN21), do início mais recente para o mais antigo dentro de "
+            "cada grupo; sem ele a ordem é só a do início mais recente."
         ),
     )
     @paginate(BoundedLimitOffsetPagination)
@@ -176,8 +178,9 @@ class AdvisingRequestController:
         request: HttpRequest,
         search: Annotated[str | None, Query(max_length=100)] = None,
         q: Annotated[str | None, Query(max_length=200)] = None,
+        review_first: bool = False,
     ):
-        return list_advisees(request.user.teacher, search, q)
+        return list_advisees(request.user.teacher, search, q, review_first)
 
     @http_get(
         "/orientandos/calendario",

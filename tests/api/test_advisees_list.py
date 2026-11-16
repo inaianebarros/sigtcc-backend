@@ -543,3 +543,60 @@ def test_the_openapi_documents_q_next_to_search(client):
 
     assert {"search", "q"} <= {parameter["name"] for parameter in operation["parameters"]}
     assert "tema" in operation["description"]
+
+
+def teacher_with_review_queue():
+    """Four advisees, oldest to newest: only `old_waiting` and `new_waiting` have a review."""
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    old_waiting = advise(teacher, course, started_days_ago=30)
+    quiet = advise(teacher, course, started_days_ago=20)
+    new_waiting = advise(teacher, course, started_days_ago=10)
+    newest = advise(teacher, course, started_days_ago=1)
+    add_activities(old_waiting, ActivityStatus.IN_REVIEW, 1)
+    add_activities(new_waiting, ActivityStatus.IN_REVIEW, 2)
+    add_activities(quiet, ActivityStatus.COMPLETED, 3)
+    return teacher, old_waiting, quiet, new_waiting, newest
+
+
+def ids_of(response):
+    return [item["advising_id"] for item in response.json()["items"]]
+
+
+def test_without_review_first_the_order_ignores_the_reviews(client):
+    teacher, old_waiting, quiet, new_waiting, newest = teacher_with_review_queue()
+
+    ordered = ids_of(list_advisees(client, teacher.user))
+
+    assert ordered == [newest.id, new_waiting.id, quiet.id, old_waiting.id]
+
+
+def test_review_first_puts_the_advisees_waiting_for_review_on_top_then_the_most_recent(client):
+    teacher, old_waiting, quiet, new_waiting, newest = teacher_with_review_queue()
+
+    ordered = ids_of(list_advisees(client, teacher.user, review_first=True))
+
+    assert ordered == [new_waiting.id, old_waiting.id, newest.id, quiet.id]
+
+
+def test_a_deleted_review_does_not_put_the_advisee_on_top(client):
+    course = make_course()
+    teacher = make_teacher(courses=[course])
+    older = advise(teacher, course, started_days_ago=5)
+    newer = advise(teacher, course, started_days_ago=1)
+    add_activities(older, ActivityStatus.IN_REVIEW, 1, deleted=True)
+
+    ordered = ids_of(list_advisees(client, teacher.user, review_first=True))
+
+    assert ordered == [newer.id, older.id]
+
+
+def test_review_first_keeps_the_search_the_total_and_the_pages(client):
+    teacher, old_waiting, quiet, new_waiting, newest = teacher_with_review_queue()
+
+    first_page = list_advisees(client, teacher.user, review_first=True, limit=2).json()
+    second_page = list_advisees(client, teacher.user, review_first=True, limit=2, offset=2).json()
+
+    assert first_page["count"] == second_page["count"] == 4
+    assert [item["advising_id"] for item in first_page["items"]] == [new_waiting.id, old_waiting.id]
+    assert [item["advising_id"] for item in second_page["items"]] == [newest.id, quiet.id]
