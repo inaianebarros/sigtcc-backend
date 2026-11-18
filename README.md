@@ -93,6 +93,14 @@ No Compose, o serviço `email-cron` (mesma imagem do backend, sem portas) o exec
 - as notificações que já existiam quando o recurso foi criado foram marcadas como enviadas pela migration, para ninguém receber o histórico;
 - a seed de demonstração também gera e-mails, como qualquer ação. O Mailpit local guarda um número limitado de mensagens, então as mais antigas saem quando a seed em volume as empurra.
 
+### E-mail de redefinição de senha
+
+O pedido de link de redefinição de senha (RF07, ADR 0020) não envia o e-mail na requisição: grava um pedido numa fila e responde, igual para qualquer e-mail, para o tempo da resposta não revelar quais contas existem. O comando `send_password_reset_emails` (à mão ou, no Compose, no mesmo laço de 30 segundos do `email-cron`) cria o link no momento do envio, com validade de 1 hora a partir do e-mail, e o manda. **Sem o `email-cron`, o e-mail de redefinição não sai** (antes saía na hora). O e-mail pode levar até cerca de 30 segundos. Os pedidos sem conta ativa são descartados sem e-mail. Uma falha do SMTP deixa o pedido pendente e conta uma tentativa; no quinto fracasso o comando desiste dele e registra em log, e segue com os outros. Um pedido que não saiu em 15 minutos é descartado, uma conta desativada depois do pedido não recebe e-mail (e isso não conta como falha), e os pedidos já resolvidos há mais de 1 dia são apagados. Cada pedido é travado enquanto é enviado, então dois laços ao mesmo tempo não duplicam o e-mail. O pedido também é limitado por e-mail: 3 por hora, por e-mail normalizado (sem diferenciar maiúsculas nem espaços), sem olhar o IP e contando qualquer texto, exista a conta ou não (`AUTH_FORGOT_ACCOUNT_LIMIT` e `AUTH_FORGOT_ACCOUNT_WINDOW_SECONDS`). Acima do limite a resposta é o mesmo 200 de sempre, sem 429, e nada é gravado nem enviado. Se o cache falhar, o pedido segue.
+
+```bash
+uv run python manage.py send_password_reset_emails
+```
+
 Em `EMAIL_HOST` e nas demais variáveis `EMAIL_*` do `.env` fica o SMTP; `EMAIL_TIMEOUT` (padrão 10 s) evita que um servidor sem resposta trave o envio.
 
 ## Dados de demonstração

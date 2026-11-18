@@ -195,7 +195,7 @@ services:
   # variáveis do backend, sem portas, executando o comando a cada 30 segundos num laço (o mesmo
   # intervalo do polling). O comando é idempotente e trava cada notificação enquanto a envia, então
   # uma falha é tentada de novo na rodada seguinte (até 5 vezes) e rodar o comando à mão ao mesmo
-  # tempo não duplica o e-mail. Sem este serviço nenhum e-mail de notificação é enviado. Espera o
+  # tempo não duplica o e-mail. Sem este serviço nenhum e-mail de notificação nem de redefinição de senha é enviado. Espera o
   # backend ficar saudável porque é ele quem aplica as migrations, e o Mailpit para ter onde entregar.
   email-cron:
     build:
@@ -204,7 +204,7 @@ services:
     command:
       - sh
       - -c
-      - "while true; do python manage.py send_notification_emails || true; sleep 30; done"
+      - "while true; do python manage.py send_notification_emails || true; python manage.py send_password_reset_emails || true; sleep 30; done"
     environment: *backend-environment
     volumes:
       - .:/app

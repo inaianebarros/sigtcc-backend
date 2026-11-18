@@ -238,3 +238,16 @@ class ThesisProposal(models.Model):
 
     def __str__(self) -> str:
         return self.title
+
+
+class PasswordResetRequest(models.Model):
+    """A request for a password reset link (ADR 0020), kept in a queue the `email-cron` empties.
+
+    It is written for every request, so that asking costs the same whether or not the e-mail has
+    an account: `user` is null when there is none, or when it is deactivated. The typed e-mail is
+    never stored. The link is created when the e-mail is sent, not when it is asked for."""
+
+    user = models.ForeignKey(User, null=True, on_delete=models.CASCADE, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
