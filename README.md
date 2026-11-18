@@ -93,6 +93,14 @@ No Compose, o serviço `email-cron` (mesma imagem do backend, sem portas) o exec
 - as notificações que já existiam quando o recurso foi criado foram marcadas como enviadas pela migration, para ninguém receber o histórico;
 - a seed de demonstração também gera e-mails, como qualquer ação. O Mailpit local guarda um número limitado de mensagens, então as mais antigas saem quando a seed em volume as empurra.
 
+### E-mail de redefinição de senha
+
+O pedido de link de redefinição de senha (RF07, ADR 0020) não envia o e-mail na requisição: grava um pedido numa fila e responde, igual para qualquer e-mail, para o tempo da resposta não revelar quais contas existem. O comando `send_password_reset_emails` (à mão ou, no Compose, no mesmo laço de 30 segundos do `email-cron`) cria o link no momento do envio, com validade de 1 hora a partir do e-mail, e o manda. **Sem o `email-cron`, o e-mail de redefinição não sai** (antes saía na hora). O e-mail pode levar até cerca de 30 segundos. Os pedidos sem conta ativa são descartados sem e-mail, e uma falha do SMTP deixa o pedido pendente para a rodada seguinte.
+
+```bash
+uv run python manage.py send_password_reset_emails
+```
+
 Em `EMAIL_HOST` e nas demais variáveis `EMAIL_*` do `.env` fica o SMTP; `EMAIL_TIMEOUT` (padrão 10 s) evita que um servidor sem resposta trave o envio.
 
 ## Dados de demonstração

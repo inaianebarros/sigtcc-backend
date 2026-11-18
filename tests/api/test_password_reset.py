@@ -5,9 +5,13 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.db import connection
 from django.test import Client, override_settings
+from django.test.utils import CaptureQueriesContext
 
-from apps.accounts.models import User
+from apps.accounts.models import PasswordResetRequest, User
 from tests.api.conftest import TRUSTED_ORIGIN
 from tests.api.helpers import LOGIN_URL, REFRESH_COOKIE, REFRESH_URL, errors_by_field, post_json
 from tests.factories import DEFAULT_PASSWORD, make_user
@@ -30,8 +34,16 @@ def minutes_from_now(minutes):
         yield
 
 
+COMMAND = "send_password_reset_emails"
+
+
 def request_reset(client, email):
     return post_json(client, FORGOT_URL, {"email": email})
+
+
+def send_emails():
+    """The tick of the `email-cron` that e-mails the pending reset links."""
+    call_command(COMMAND)
 
 
 def link_parts(mailoutbox):
@@ -61,6 +73,7 @@ def log_in(password):
 def issued_link(client, mailoutbox, email="ana@example.com"):
     make_user(email=email)
     request_reset(client, email)
+    send_emails()
     return link_parts(mailoutbox)
 
 
@@ -68,6 +81,8 @@ def test_a_registered_email_receives_a_reset_link_to_the_frontend(client, mailou
     make_user(email="ana@example.com")
 
     response = request_reset(client, "ana@example.com")
+    assert mailoutbox == []
+    send_emails()
 
     assert response.status_code == 200
     assert response.json() == GENERIC_RESPONSE
@@ -81,6 +96,7 @@ def test_the_email_lookup_ignores_case(client, mailoutbox):
     make_user(email="ana.souza@example.com")
 
     request_reset(client, "ANA.Souza@Example.com")
+    send_emails()
 
     assert len(mailoutbox) == 1
 
@@ -92,6 +108,7 @@ def test_unknown_and_inactive_accounts_get_the_same_response_and_no_email(client
 
     unknown = request_reset(client, "ninguem@example.com")
     deactivated = request_reset(client, "inativo@example.com")
+    send_emails()
 
     assert unknown.json() == deactivated.json() == GENERIC_RESPONSE
     assert unknown.status_code == deactivated.status_code == 200
@@ -107,6 +124,86 @@ def test_a_failing_mail_server_does_not_reveal_which_accounts_exist(client):
 
     assert existing.status_code == unknown.status_code == 200
     assert existing.json() == unknown.json() == GENERIC_RESPONSE
+
+
+def test_a_failing_mail_server_leaves_the_request_pending_and_the_next_run_sends_it(
+    client, mailoutbox
+):
+    make_user(email="ana@example.com")
+    request_reset(client, "ana@example.com")
+
+    with override_settings(EMAIL_BACKEND="tests.api.failing_email_backend.FailingEmailBackend"):
+        with pytest.raises(CommandError):
+            send_emails()
+    assert mailoutbox == []
+    send_emails()
+
+    assert len(mailoutbox) == 1
+
+
+def test_running_the_command_again_does_not_send_the_same_link_twice(client, mailoutbox):
+    make_user(email="ana@example.com")
+    request_reset(client, "ana@example.com")
+
+    send_emails()
+    send_emails()
+
+    assert len(mailoutbox) == 1
+
+
+def test_the_link_is_created_when_the_e_mail_is_sent_and_lasts_an_hour_from_then(
+    client, mailoutbox
+):
+    make_user(email="ana@example.com")
+    request_reset(client, "ana@example.com")
+    with minutes_from_now(30):
+        send_emails()
+    uid, token = link_parts(mailoutbox)
+
+    with minutes_from_now(30 + 91):
+        assert reset(client, uid, token).status_code == 400
+    with minutes_from_now(30 + 59):
+        assert reset(client, uid, token).status_code == 200
+
+
+def test_an_account_deactivated_after_the_request_gets_no_e_mail(client, mailoutbox):
+    make_user(email="ana@example.com")
+    request_reset(client, "ana@example.com")
+    User.objects.filter(email="ana@example.com").update(is_active=False)
+
+    send_emails()
+
+    assert mailoutbox == []
+
+
+def test_the_request_does_the_same_work_whether_or_not_the_account_exists(client):
+    make_user(email="ana@example.com")
+    inactive = make_user(email="inativo@example.com")
+    inactive.is_active = False
+    inactive.save()
+
+    def queries_of(email):
+        with CaptureQueriesContext(connection) as captured:
+            request_reset(client, email)
+        return len(captured)
+
+    existing = queries_of("ana@example.com")
+    unknown = queries_of("ninguem@example.com")
+    deactivated = queries_of("inativo@example.com")
+
+    assert existing == unknown == deactivated
+
+
+def test_the_queue_never_keeps_the_typed_e_mail(client):
+    make_user(email="ana@example.com")
+
+    request_reset(client, "ana@example.com")
+    request_reset(client, "ninguem@example.com")
+
+    rows = list(PasswordResetRequest.objects.values())
+    assert len(rows) == 2
+    assert all("ninguem@example.com" not in str(row) for row in rows)
+    assert sorted(row["user_id"] is None for row in rows) == [False, True]
 
 
 def test_reset_requests_are_rate_limited_per_client(client, mailoutbox):
