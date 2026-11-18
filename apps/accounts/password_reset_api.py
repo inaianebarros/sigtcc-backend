@@ -5,7 +5,7 @@ from ninja_extra import api_controller, http_post
 from config.rate_limit import enforce_ip_limit
 from config.schemas import ErrorOut
 
-from .password_reset import request_reset_link, reset_password
+from .password_reset import request_reset_link, reset_password, within_account_limit
 from .schemas import ForgotPasswordIn, MessageOut, ResetPasswordIn
 
 FORGOT_PASSWORD_RESPONSE = (
@@ -23,12 +23,14 @@ class PasswordResetController:
         description=(
             "A resposta é sempre a mesma, exista ou não uma conta ativa com o e-mail, e o trabalho "
             "da requisição também: o pedido só entra numa fila, e o e-mail sai depois, por um "
-            "serviço agendado (ADR 0020), em até cerca de 1 minuto."
+            "serviço agendado (ADR 0020), em até cerca de 1 minuto. Cada e-mail aceita 3 pedidos por "
+            "hora; acima disso a resposta continua a mesma, sem 429, e nenhum e-mail é enviado."
         ),
     )
     def request_reset_link(self, request: HttpRequest, payload: ForgotPasswordIn):
         enforce_ip_limit("forgot_ip", request)
-        request_reset_link(payload.email)
+        if within_account_limit(payload.email):
+            request_reset_link(payload.email)
         return Status(200, MessageOut(detail=FORGOT_PASSWORD_RESPONSE))
 
     @http_post(

@@ -187,6 +187,7 @@ AUTH_RATE_LIMITS = {
     "logout_ip": _auth_rate("LOGOUT_IP", 30, 60),
     "reset_ip": _auth_rate("RESET_IP", 10, 60 * 60),
     "forgot_ip": _auth_rate("FORGOT_IP", 5, 60 * 60),
+    "forgot_account": _auth_rate("FORGOT_ACCOUNT", 3, 60 * 60),
 }
 
 PASSWORD_RESET_TIMEOUT = 60 * 60

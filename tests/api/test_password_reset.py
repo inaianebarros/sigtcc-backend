@@ -1,9 +1,11 @@
+import logging
 import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -36,6 +38,12 @@ def minutes_from_now(minutes):
 
 
 COMMAND = "send_password_reset_emails"
+PER_EMAIL_LIMIT = 3
+
+# Only the per-e-mail limit is under test where this is used: the per-address one would hide it.
+without_ip_limit = override_settings(
+    AUTH_RATE_LIMITS={**settings.AUTH_RATE_LIMITS, "forgot_ip": (1000, 3600)}
+)
 
 
 def request_reset(client, email):
@@ -271,6 +279,123 @@ def test_the_queue_never_keeps_the_typed_e_mail(client):
     assert len(rows) == 2
     assert all("ninguem@example.com" not in str(row) for row in rows)
     assert sorted(row["user_id"] is None for row in rows) == [False, True]
+
+
+@without_ip_limit
+def test_the_fourth_request_for_the_same_e_mail_in_an_hour_gets_the_same_answer_and_no_e_mail(
+    client, mailoutbox
+):
+    make_user(email="ana@example.com")
+
+    responses = [request_reset(client, "ana@example.com") for _ in range(PER_EMAIL_LIMIT + 1)]
+    send_emails()
+
+    assert [response.status_code for response in responses] == [200] * (PER_EMAIL_LIMIT + 1)
+    assert all(response.json() == GENERIC_RESPONSE for response in responses)
+    assert len(mailoutbox) == PER_EMAIL_LIMIT
+
+
+@without_ip_limit
+def test_above_the_limit_the_work_is_the_same_for_any_e_mail(client):
+    make_user(email="ana@example.com")
+    inactive = make_user(email="inativo@example.com")
+    inactive.is_active = False
+    inactive.save()
+
+    def queries_of(email):
+        with CaptureQueriesContext(connection) as captured:
+            request_reset(client, email)
+        return len(captured)
+
+    emails = ["ana@example.com", "ninguem@example.com", "inativo@example.com"]
+    within_limit = queries_of("novo@example.com")
+    for email in emails:
+        for _ in range(PER_EMAIL_LIMIT - 1):
+            request_reset(client, email)
+        assert queries_of(email) == within_limit
+
+    above_limit = {email: queries_of(email) for email in emails}
+
+    assert len(set(above_limit.values())) == 1
+    assert above_limit["ninguem@example.com"] < within_limit
+
+
+@without_ip_limit
+def test_the_limit_counts_one_e_mail_across_addresses_and_spellings(client, mailoutbox):
+    make_user(email="ana.souza@example.com")
+    spellings = ["ana.souza@example.com", "ANA.Souza@Example.com", "ana.souza@example.com"]
+
+    for number, email in enumerate(spellings):
+        post_json(client, FORGOT_URL, {"email": email}, REMOTE_ADDR=f"10.0.0.{number + 1}")
+    send_emails()
+    assert len(mailoutbox) == PER_EMAIL_LIMIT
+
+    for number, email in enumerate(["ana.souza@example.com", "  ANA.Souza@example.com  "]):
+        with CaptureQueriesContext(connection) as captured:
+            post_json(client, FORGOT_URL, {"email": email}, REMOTE_ADDR=f"10.0.1.{number + 1}")
+        assert len(captured) == 0
+
+
+@without_ip_limit
+def test_the_limit_of_one_e_mail_does_not_affect_another(client, mailoutbox):
+    make_user(email="ana@example.com")
+    make_user(email="bia@example.com")
+    for _ in range(PER_EMAIL_LIMIT + 1):
+        request_reset(client, "ana@example.com")
+
+    request_reset(client, "bia@example.com")
+    send_emails()
+
+    assert [message.to for message in mailoutbox].count(["bia@example.com"]) == 1
+
+
+def test_a_broken_cache_does_not_stop_the_request_and_the_failure_is_logged(
+    client, mailoutbox, caplog
+):
+    make_user(email="ana@example.com")
+
+    with patch("django.core.cache.cache.add", side_effect=ConnectionError("cache fora do ar")):
+        response = request_reset(client, "ana@example.com")
+    send_emails()
+
+    assert response.status_code == 200
+    assert response.json() == GENERIC_RESPONSE
+    assert len(mailoutbox) == 1
+    assert any(
+        record.levelno >= logging.ERROR and getattr(record, "scope", "") == "forgot_account"
+        for record in caplog.records
+    )
+
+
+@without_ip_limit
+def test_the_limit_is_logged_without_the_e_mail_the_token_or_a_password(client, caplog):
+    make_user(email="ana@example.com")
+
+    with caplog.at_level(logging.WARNING, logger="sigtcc.auth"):
+        for _ in range(PER_EMAIL_LIMIT + 1):
+            request_reset(client, "ana@example.com")
+
+    limited = [
+        record for record in caplog.records if getattr(record, "scope", "") == "forgot_account"
+    ]
+    assert len(limited) == 1
+    logged = " ".join(f"{record.getMessage()} {vars(record)}" for record in limited)
+    assert "ana@example.com" not in logged
+    assert "senha" not in logged.lower()
+    assert "token" not in logged.lower()
+
+
+@without_ip_limit
+def test_the_limit_window_is_configurable(client, mailoutbox):
+    make_user(email="ana@example.com")
+    custom = {**settings.AUTH_RATE_LIMITS, "forgot_account": (1, 3600)}
+
+    with override_settings(AUTH_RATE_LIMITS=custom):
+        request_reset(client, "ana@example.com")
+        request_reset(client, "ana@example.com")
+    send_emails()
+
+    assert len(mailoutbox) == 1
 
 
 def test_reset_requests_are_rate_limited_per_client(client, mailoutbox):

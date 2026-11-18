@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from datetime import timedelta
 
@@ -11,8 +12,10 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from ninja_extra.exceptions import APIException
 
+from config import rate_limit
 from config.errors import FieldValidationError
 
+from .failure_limit import normalize_email
 from .models import PasswordResetRequest, User
 from .passwords import validate_new_password
 from .sessions import revoke_user_sessions
@@ -41,6 +44,28 @@ Se você não fez esse pedido, ignore este e-mail: a sua senha continua a mesma.
 class InvalidResetLink(APIException):
     status_code = 400
     default_detail = "Link de redefinição inválido ou expirado."
+
+
+def within_account_limit(email: str) -> bool:
+    """Counts a request against the e-mail, whatever the address and whether or not it has an
+    account, and says whether it is still within the limit (RNF25, ADR 0020).
+
+    The key has no client address on purpose: the limit protects the owner of the e-mail from
+    requests made from many addresses. A broken cache lets the request through."""
+    limit, window = settings.AUTH_RATE_LIMITS["forgot_account"]
+    digest = hashlib.sha256(normalize_email(email).encode()).hexdigest()
+    try:
+        count, retry_after = rate_limit.hit(f"rl:forgot_account:{digest}", window)
+    except Exception:
+        rate_limit.fail_open("forgot_account")
+        return True
+    if count > limit:
+        logger.warning(
+            "reset request limited",
+            extra={"event": "rate_limited", "scope": "forgot_account", "retry_after": retry_after},
+        )
+        return False
+    return True
 
 
 def request_reset_link(email: str) -> None:
