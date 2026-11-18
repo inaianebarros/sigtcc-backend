@@ -250,3 +250,4 @@ class PasswordResetRequest(models.Model):
     user = models.ForeignKey(User, null=True, on_delete=models.CASCADE, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True)
+    attempts = models.PositiveSmallIntegerField(default=0)

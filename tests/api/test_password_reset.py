@@ -10,6 +10,7 @@ from django.core.management.base import CommandError
 from django.db import connection
 from django.test import Client, override_settings
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 
 from apps.accounts.models import PasswordResetRequest, User
 from tests.api.conftest import TRUSTED_ORIGIN
@@ -139,6 +140,72 @@ def test_a_failing_mail_server_leaves_the_request_pending_and_the_next_run_sends
     send_emails()
 
     assert len(mailoutbox) == 1
+
+
+@pytest.mark.parametrize(("failed_runs", "e_mails_after"), [(4, 1), (5, 0)])
+def test_the_command_gives_up_on_a_request_after_five_failed_attempts(
+    client, mailoutbox, caplog, failed_runs, e_mails_after
+):
+    make_user(email="ana@example.com")
+    request_reset(client, "ana@example.com")
+
+    with override_settings(EMAIL_BACKEND="tests.api.failing_email_backend.FailingEmailBackend"):
+        for _ in range(failed_runs):
+            with pytest.raises(CommandError):
+                send_emails()
+    send_emails()
+
+    assert len(mailoutbox) == e_mails_after
+    assert ("gave up" in caplog.text) == (failed_runs == 5)
+
+
+@override_settings(EMAIL_BACKEND="tests.api.failing_email_backend.FailingForOneAddressEmailBackend")
+def test_a_failing_request_does_not_stop_the_others(client, mailoutbox):
+    make_user(email="falha@example.com")
+    make_user(email="ana@example.com")
+    request_reset(client, "falha@example.com")
+    request_reset(client, "ana@example.com")
+
+    with pytest.raises(CommandError):
+        send_emails()
+
+    assert [message.to for message in mailoutbox] == [["ana@example.com"]]
+
+
+@pytest.mark.parametrize(("minutes_waited", "e_mails"), [(14, 1), (16, 0)])
+def test_a_request_not_sent_within_fifteen_minutes_is_discarded(
+    client, mailoutbox, minutes_waited, e_mails
+):
+    make_user(email="ana@example.com")
+    request_reset(client, "ana@example.com")
+
+    later = timezone.now() + timedelta(minutes=minutes_waited)
+    with patch("django.utils.timezone.now", return_value=later):
+        send_emails()
+        send_emails()
+
+    assert len(mailoutbox) == e_mails
+
+
+def test_settled_requests_are_deleted_after_a_day(client):
+    make_user(email="ana@example.com")
+    request_reset(client, "ana@example.com")
+    request_reset(client, "ninguem@example.com")
+    send_emails()
+    settled_ids = list(PasswordResetRequest.objects.values_list("id", flat=True))
+    request_reset(client, "ana@example.com")
+
+    PasswordResetRequest.objects.filter(pk=settled_ids[0]).update(
+        processed_at=timezone.now() - timedelta(hours=25)
+    )
+    PasswordResetRequest.objects.filter(pk=settled_ids[1]).update(
+        processed_at=timezone.now() - timedelta(hours=23)
+    )
+    send_emails()
+
+    remaining = set(PasswordResetRequest.objects.values_list("id", flat=True))
+    assert settled_ids[0] not in remaining
+    assert settled_ids[1] in remaining
 
 
 def test_running_the_command_again_does_not_send_the_same_link_twice(client, mailoutbox):

@@ -1,7 +1,11 @@
+import logging
+from datetime import timedelta
+
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -12,6 +16,16 @@ from config.errors import FieldValidationError
 from .models import PasswordResetRequest, User
 from .passwords import validate_new_password
 from .sessions import revoke_user_sessions
+
+logger = logging.getLogger("sigtcc.auth")
+
+#: After this many failed attempts the request is given up (ADR 0020, as ADR 0011 does).
+MAX_SEND_ATTEMPTS = 5
+
+#: A request not sent in this time is discarded: the person has asked again or given up by then.
+REQUEST_VALID_FOR = timedelta(minutes=15)
+#: A settled request is kept this long, only so the queue does not grow without limit.
+KEEP_SETTLED_FOR = timedelta(days=1)
 
 EMAIL_SUBJECT = "Redefinição de senha - SIGTCC"
 EMAIL_BODY = """Olá, {name}.
@@ -38,10 +52,27 @@ def request_reset_link(email: str) -> None:
     PasswordResetRequest.objects.create(user=user)
 
 
+def discard_stale_requests() -> int:
+    """Also settles the requests given up after too many failed attempts, once they get this old."""
+    return PasswordResetRequest.objects.filter(
+        processed_at__isnull=True, created_at__lt=timezone.now() - REQUEST_VALID_FOR
+    ).update(processed_at=timezone.now())
+
+
+def delete_old_settled_requests() -> int:
+    """Keeps the queue from growing: see `KEEP_SETTLED_FOR`."""
+    deleted, _ = PasswordResetRequest.objects.filter(
+        processed_at__lt=timezone.now() - KEEP_SETTLED_FOR
+    ).delete()
+    return deleted
+
+
 def pending_request_ids() -> list[int]:
     """The ids of the requests still to be settled, oldest first."""
     return list(
-        PasswordResetRequest.objects.filter(processed_at__isnull=True)
+        PasswordResetRequest.objects.filter(
+            processed_at__isnull=True, attempts__lt=MAX_SEND_ATTEMPTS
+        )
         .order_by("id")
         .values_list("id", flat=True)
     )
@@ -53,9 +84,24 @@ def lock_pending_request(request_id: int) -> PasswordResetRequest | None:
     return (
         PasswordResetRequest.objects.select_for_update(skip_locked=True, of=("self",))
         .select_related("user")
-        .filter(pk=request_id, processed_at__isnull=True)
+        .filter(pk=request_id, processed_at__isnull=True, attempts__lt=MAX_SEND_ATTEMPTS)
         .first()
     )
+
+
+def record_failed_attempt(request_id: int) -> None:
+    """Counts a failed attempt; at the last one the request is given up and it is logged."""
+    # Only a request still pending counts: another run may have settled it after this one failed.
+    counted = PasswordResetRequest.objects.filter(pk=request_id, processed_at__isnull=True).update(
+        attempts=F("attempts") + 1
+    )
+    if not counted:
+        return
+    attempts = PasswordResetRequest.objects.values_list("attempts", flat=True).get(pk=request_id)
+    if attempts >= MAX_SEND_ATTEMPTS:
+        logger.error(
+            "gave up e-mailing password reset request %s after %s attempts", request_id, attempts
+        )
 
 
 def send_reset_link(user: User) -> None:
