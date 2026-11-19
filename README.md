@@ -122,6 +122,25 @@ uv run python manage.py send_password_reset_emails
 
 Em `EMAIL_HOST` e nas demais variáveis `EMAIL_*` do `.env` fica o SMTP; `EMAIL_TIMEOUT` (padrão 10 s) evita que um servidor sem resposta trave o envio.
 
+### E-mail pela API do Brevo (homologação)
+
+O plano Trial do Railway bloqueia o SMTP de saída, então na homologação o e-mail das notificações e da redefinição de senha sai pela API HTTPS de e-mail transacional do Brevo (`config/brevo_email.py`, só biblioteca padrão). Os comandos e a fila (ADR 0011) não mudam: a escolha é só por configuração. Sem `EMAIL_PROVIDER`, o padrão é `smtp`, o Mailpit do desenvolvimento local.
+
+| Variável | Uso |
+|---|---|
+| `EMAIL_PROVIDER` | `smtp` (padrão) ou `brevo` |
+| `BREVO_API_KEY` | chave da API do Brevo (segredo, sem padrão; obrigatória com `brevo`) |
+| `DEFAULT_FROM_EMAIL` | endereço do remetente, que deve estar verificado no Brevo (obrigatório com `brevo`) |
+| `EMAIL_FROM_NAME` | nome exibido do remetente (padrão `SIGTCC`) |
+| `BREVO_API_TIMEOUT_SECONDS` | prazo de cada chamada (padrão 10) |
+| `BREVO_API_URL` | opcional, só para testes; precisa ser `https://` |
+
+Com `EMAIL_PROVIDER=brevo`, a inicialização falha com `ImproperlyConfigured` se faltar a chave ou o remetente. Passo a passo: crie a conta no Brevo, verifique o remetente (ou o domínio) em Senders, crie uma chave de API e defina as variáveis no ambiente da homologação, nunca no repositório. Uma falha da API (indisponibilidade, prazo esgotado, cota diária excedida, remetente não verificado ou chave inválida) conta como tentativa e deixa o item pendente, como uma falha de SMTP, e o log traz só o status HTTP e o código do erro, nunca a chave.
+
+Um remetente sem domínio próprio verificado pode cair na caixa de spam.
+
+**Limite diário do plano gratuito:** cerca de 300 e-mails por dia (valor a confirmar na página do fornecedor). Ao ultrapassá-lo, a API responde 429 e o envio falha: a notificação interna continua existindo e visível no sistema, e a fila conta a tentativa (ADR 0011: até 5 tentativas e depois desiste). Portanto, acima do limite alguns e-mails podem não ser enviados no dia. Essa falha só vai para o log (aviso `email_daily_quota_exceeded`, sem a chave nem o endereço do destinatário) e nunca chega ao usuário: o envio acontece nos comandos agendados, fora da requisição, então nenhuma ação, nem o pedido de redefinição de senha, muda de resposta ou de tempo por causa do e-mail.
+
 ## Dados de demonstração
 
 Para testar todas as telas com Aluno, Professor e Administrador, o comando `seed_demo_data` cria os usuários de demonstração. **Só para uso local**: eles têm uma senha conhecida, e o comando recusa rodar com `DJANGO_DEBUG` falso (ADR 0005). Ele usa o cadastro real da aplicação, é idempotente (cria só o que falta) e precisa do catálogo carregado (`loaddata fixtures/seed.json`, que o Compose já faz na subida se o arquivo existir):

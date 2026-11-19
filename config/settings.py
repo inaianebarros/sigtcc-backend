@@ -17,6 +17,11 @@ env = environ.Env(
     EMAIL_USE_TLS=(bool, False),
     EMAIL_TIMEOUT=(int, 10),
     DEFAULT_FROM_EMAIL=(str, "SIGTCC <nao-responder@sigtcc.local>"),
+    EMAIL_PROVIDER=(str, "smtp"),
+    EMAIL_FROM_NAME=(str, "SIGTCC"),
+    BREVO_API_KEY=(str, ""),
+    BREVO_API_URL=(str, "https://api.brevo.com/v3/smtp/email"),
+    BREVO_API_TIMEOUT_SECONDS=(int, 10),
     JWT_ACCESS_MINUTES=(int, 5),
     JWT_REFRESH_MINUTES=(int, 30),
     JWT_REFRESH_COOKIE_SECURE=(bool, True),
@@ -107,6 +112,27 @@ EMAIL_USE_TLS = env("EMAIL_USE_TLS")
 # Sem prazo, um SMTP que aceita a conexão e não responde trava o envio de todas as notificações.
 EMAIL_TIMEOUT = env("EMAIL_TIMEOUT")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
+EMAIL_FROM_NAME = env("EMAIL_FROM_NAME")
+
+# `smtp` (padrão) usa o SMTP acima, o Mailpit no desenvolvimento local; `brevo` envia pela API HTTPS
+# do Brevo, porque o plano Trial do Railway bloqueia o SMTP de saída (config/brevo_email.py).
+EMAIL_PROVIDER = env("EMAIL_PROVIDER")
+if EMAIL_PROVIDER not in ("smtp", "brevo"):
+    raise ImproperlyConfigured("EMAIL_PROVIDER must be 'smtp' or 'brevo'.")
+BREVO_API_KEY = env("BREVO_API_KEY")
+BREVO_API_URL = env("BREVO_API_URL")
+BREVO_API_TIMEOUT_SECONDS = env("BREVO_API_TIMEOUT_SECONDS")
+if EMAIL_PROVIDER == "brevo":
+    # The default sender is not a verified one, so Brevo would reject every message.
+    if not BREVO_API_KEY or "DEFAULT_FROM_EMAIL" not in env.ENVIRON:
+        raise ImproperlyConfigured(
+            "EMAIL_PROVIDER=brevo requires BREVO_API_KEY and DEFAULT_FROM_EMAIL to be set."
+        )
+    if not BREVO_API_URL.startswith("https://") or BREVO_API_TIMEOUT_SECONDS < 1:
+        raise ImproperlyConfigured(
+            "BREVO_API_URL must be an https:// URL and BREVO_API_TIMEOUT_SECONDS at least 1."
+        )
+    EMAIL_BACKEND = "config.brevo_email.BrevoEmailBackend"
 
 # Os arquivos das Entregas ficam no bucket S3 (ADR 0002); o resto segue o padrão do Django.
 STORAGES = {
