@@ -109,7 +109,11 @@ class ChaosRun:
         self._cycle("bootstrap")
         assert Teacher.objects.filter(user__email__iexact=SIMULATED_TEACHER_EMAIL).exists()
         for teacher in teachers:
-            assert teacher.advisings.filter(status=AdvisingStatus.ACTIVE).count() == len(PROFILES)
+            assert teacher.advisings.filter(status=AdvisingStatus.ACTIVE).count() == 1
+            assert teacher.advising_requests.count() == len(PROFILES)
+            assert (
+                teacher.advising_requests.filter(status=AdvisingRequestStatus.PENDING).count() == 1
+            )
         request_advising(students[0], self._simulated_teacher_id())
         self._age_requests(SECONDS_THAT_MAKE_A_SIMULATED_ACCOUNT_ACT[1])
         self._cycle("bootstrap")
@@ -204,12 +208,19 @@ class ChaosRun:
             requested_at=F("requested_at") - datetime.timedelta(seconds=seconds)
         )
 
+    def _age_decisions(self, delta: datetime.timedelta) -> None:
+        AdvisingRequest.objects.exclude(status=AdvisingRequestStatus.PENDING).update(
+            responded_at=F("responded_at") - delta
+        )
+        self.memory.shift_responded_at(delta)
+
     def _advance_time(self, label: str) -> None:
         """Makes the delays of the simulated accounts pass, and sometimes the 7 days of RN20 and
         the time of a meeting, by moving the timestamps back."""
         seconds = self.rng.choice(SECONDS_THAT_MAKE_A_SIMULATED_ACCOUNT_ACT)
         delta = datetime.timedelta(seconds=seconds)
         self._age_requests(seconds)
+        self._age_decisions(delta)
         Activity.objects.update(created_at=F("created_at") - delta)
         Review.objects.update(decided_at=F("decided_at") - delta)
         moved = []
