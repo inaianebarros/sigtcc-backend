@@ -69,6 +69,14 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+if not DEBUG:
+    # Estáticos (Django Admin) servidos pelo próprio processo, sem proxy de arquivos (ADR 0021).
+    # Em desenvolvimento (DEBUG=true) o runserver já os serve.
+    MIDDLEWARE.insert(
+        MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
+        "whitenoise.middleware.WhiteNoiseMiddleware",
+    )
+
 ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
@@ -136,6 +144,8 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# Destino do collectstatic (executado no build da imagem de produção).
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGGING = {
