@@ -18,9 +18,9 @@ WORKDIR /app
 
 # WITH_DEV=1 inclui o grupo "dev" (pytest e ruff); use 0 para uma imagem só com runtime.
 ARG WITH_DEV=1
-RUN --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    if [ "$WITH_DEV" = "1" ]; then \
+# COPY em vez de --mount=type=bind: o Railway só aceita cache mounts e rejeita os demais tipos.
+COPY pyproject.toml uv.lock ./
+RUN if [ "$WITH_DEV" = "1" ]; then \
         uv sync --locked --no-install-project; \
     else \
         uv sync --locked --no-install-project --no-dev; \
@@ -48,10 +48,8 @@ CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
 
 FROM builder AS builder-prod
-# Mesmo estágio de dependências, mas sem o grupo "dev".
-RUN --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    uv sync --locked --no-install-project --no-dev
+# Mesmo estágio de dependências (pyproject.toml e uv.lock já estão em /app), mas sem o grupo "dev".
+RUN uv sync --locked --no-install-project --no-dev
 
 
 FROM python:${PYTHON_VERSION}-slim-trixie AS production
