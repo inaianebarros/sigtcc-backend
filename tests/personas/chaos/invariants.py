@@ -4,6 +4,7 @@ Each check returns the violations it found as readable messages; none means the 
 checks that compare with an earlier moment keep what they saw in an `InvariantMemory`.
 """
 
+import datetime
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import NamedTuple
@@ -25,6 +26,7 @@ from apps.advising.models import Advising, AdvisingRequest, AdvisingRequestStatu
 from apps.advising.services import SYSTEM_END_REASON
 from apps.meetings.models import Meeting, MeetingStatus
 from apps.notifications.models import ACTIVITY_REFERENCE, Notification, NotificationType
+from apps.personas.simulated_students import MEETING_EXCUSES
 
 SIMULATED_STUDENT_PREFIX = "aluno.simulado."
 OPEN_ACTIVITY_STATUSES = (
@@ -45,6 +47,12 @@ class InvariantMemory:
     answered_requests: dict[int, tuple] = field(default_factory=dict)
     ended_advisings: dict[int, tuple] = field(default_factory=dict)
 
+    def shift_responded_at(self, delta: datetime.timedelta) -> None:
+        """The test moves the decision times back on purpose; the memory follows them."""
+        for request_id, snapshot in self.answered_requests.items():
+            moved = snapshot[4] - delta if snapshot[4] else snapshot[4]
+            self.answered_requests[request_id] = (*snapshot[:4], moved)
+
 
 def all_violations(memory: InvariantMemory, real_user_ids: set[int]) -> list[str]:
     return [
@@ -55,6 +63,7 @@ def all_violations(memory: InvariantMemory, real_user_ids: set[int]) -> list[str
         *ended_advisings_leave_nothing_open(),
         *deactivated_accounts_keep_no_bond(),
         *simulated_accounts_stay_in_their_lane(real_user_ids),
+        *simulated_students_behave_as_their_profile(),
         *activity_status_follows_the_flow(),
         *reviews_come_from_the_advising_teacher(),
     ]
@@ -233,10 +242,73 @@ def simulated_accounts_stay_in_their_lane(real_user_ids: set[int]) -> list[str]:
                 f"{advising.student.user.email} has the advising {advising.pk} "
                 f"with the teacher {advising.teacher.user_id}"
             )
+    for request in AdvisingRequest.objects.filter(
+        is_simulated("student__user__"), student__user__email__istartswith=SIMULATED_STUDENT_PREFIX
+    ).select_related("student__user", "teacher"):
+        owner_id = request.student.user.email.partition("@")[0].rsplit(".", 1)[1]
+        if str(request.teacher.user_id) != owner_id:
+            violations.append(
+                f"{request.student.user.email} sent the request {request.pk} "
+                f"to the teacher {request.teacher.user_id}"
+            )
     for meeting in Meeting.objects.filter(is_simulated("author__")):
         violations.append(f"meeting {meeting.pk} was proposed by a simulated account")
     for comment in Comment.objects.filter(is_simulated("author__")):
         violations.append(f"comment {comment.pk} was written by a simulated account")
+    return violations
+
+
+def simulated_students_behave_as_their_profile() -> list[str]:
+    """ADR 0022: the simulated students never get a second advising or ask again after an advising
+    ended (RN07, RN12); the linked student never rejects a meeting; the requester never accepts one,
+    rejects with one of the fixed excuses and never delivers an activity."""
+    violations = []
+    simulated_students = {"student__user__email__istartswith": SIMULATED_STUDENT_PREFIX}
+    several_advisings = (
+        Advising.objects.filter(is_simulated("student__user__"), **simulated_students)
+        .values("student__user__email")
+        .annotate(total=Count("id"))
+        .filter(total__gt=1)
+    )
+    for row in several_advisings:
+        violations.append(f"{row['student__user__email']} has {row['total']} advisings")
+    for advising in Advising.objects.filter(
+        is_simulated("student__user__"), status=AdvisingStatus.ENDED, **simulated_students
+    ).select_related("student__user"):
+        later_requests = AdvisingRequest.objects.filter(
+            student=advising.student, requested_at__gt=advising.ended_at
+        )
+        for request in later_requests:
+            violations.append(
+                f"{advising.student.user.email} asked again (request {request.pk}) after the "
+                f"advising {advising.pk} ended"
+            )
+    teacher_meetings = Meeting.objects.filter(
+        is_simulated("advising__student__user__"),
+        advising__student__user__email__istartswith=SIMULATED_STUDENT_PREFIX,
+        author=F("advising__teacher__user"),
+    ).select_related("advising__student__user")
+    linked = f"{SIMULATED_STUDENT_PREFIX}vinculado."
+    for meeting in teacher_meetings:
+        is_linked = meeting.advising.student.user.email.lower().startswith(linked)
+        if is_linked and meeting.status == MeetingStatus.REJECTED:
+            violations.append(f"the linked student rejected the meeting {meeting.pk}")
+        if not is_linked and meeting.status == MeetingStatus.ACCEPTED:
+            violations.append(f"the requester accepted the meeting {meeting.pk}")
+        if (
+            not is_linked
+            and meeting.status == MeetingStatus.REJECTED
+            and meeting.rejection_reason not in MEETING_EXCUSES
+        ):
+            violations.append(
+                f"the requester rejected the meeting {meeting.pk} with {meeting.rejection_reason!r}"
+            )
+    requester_advisings = Advising.objects.filter(
+        student__user__email__istartswith=f"{SIMULATED_STUDENT_PREFIX}solicitante."
+    )
+    for model in (Submission, StatusChange):
+        for row in model.objects.filter(activity__advising__in=requester_advisings):
+            violations.append(f"the requester has the {model.__name__} {row.pk}")
     return violations
 
 

@@ -14,7 +14,7 @@ from django.db import connection
 
 from apps.accounts.demo_seed import DEMO_DOMAIN
 from apps.accounts.models import Teacher, User
-from apps.advising.models import Advising
+from apps.advising.models import Advising, AdvisingRequest
 from apps.personas.simulated_students import PROFILES
 from apps.personas.simulated_teacher import SIMULATED_TEACHER_EMAIL
 from tests.factories import make_teacher
@@ -115,4 +115,5 @@ def test_the_next_instance_acts_once_the_lock_is_free(
     assert CYCLE_LOG in free.stderr
     assert "errors=0" in free.stderr
     assert Teacher.objects.filter(user__email__iexact=SIMULATED_TEACHER_EMAIL).count() == 1
-    assert Advising.objects.filter(teacher=real_teacher).count() == len(PROFILES)
+    assert AdvisingRequest.objects.filter(teacher=real_teacher).count() == len(PROFILES)
+    assert Advising.objects.filter(teacher=real_teacher).count() == 1
