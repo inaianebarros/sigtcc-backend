@@ -28,6 +28,10 @@ class DemoSeedError(Exception):
     pass
 
 
+def is_demo_account(email: str) -> bool:
+    return email.rpartition("@")[2].lower() == DEMO_DOMAIN
+
+
 @dataclass(frozen=True)
 class DemoStudent:
     slug: str

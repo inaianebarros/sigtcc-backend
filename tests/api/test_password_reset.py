@@ -251,6 +251,28 @@ def test_an_account_deactivated_after_the_request_gets_no_e_mail(client, mailout
     assert mailoutbox == []
 
 
+def test_a_simulated_account_is_settled_without_an_e_mail(client, mailoutbox):
+    make_user(email="ana@demo.ufopa.local")
+    request_reset(client, "ana@demo.ufopa.local")
+
+    send_emails()
+    send_emails()
+
+    assert mailoutbox == []
+    request = PasswordResetRequest.objects.get()
+    assert request.processed_at is not None
+    assert request.attempts == 0
+
+
+def test_a_similar_domain_still_receives_the_reset_link(client, mailoutbox):
+    make_user(email="ana@demo.ufopa.local.example.com")
+    request_reset(client, "ana@demo.ufopa.local.example.com")
+
+    send_emails()
+
+    assert len(mailoutbox) == 1
+
+
 def test_the_request_does_the_same_work_whether_or_not_the_account_exists(client):
     make_user(email="ana@example.com")
     inactive = make_user(email="inativo@example.com")

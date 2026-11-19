@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.demo_seed import is_demo_account
 from apps.notifications.emails import (
     lock_pending_notification,
     pending_notification_ids,
@@ -32,8 +33,10 @@ class Command(BaseCommand):
                     if notification is None:
                         # Another run is sending it, or it was sent meanwhile.
                         continue
-                    # A deactivated account (RN19) is settled without a mail, and it is no failure.
-                    if notification.recipient.is_active:
+                    # A deactivated account (RN19) or a simulated one (ADR 0022) is settled without
+                    # a mail, and it is no failure.
+                    recipient = notification.recipient
+                    if recipient.is_active and not is_demo_account(recipient.email):
                         send_notification_email(notification)
                         mailed = True
                     notification.email_sent_at = timezone.now()
