@@ -18,8 +18,7 @@ WORKDIR /app
 
 # WITH_DEV=1 inclui o grupo "dev" (pytest e ruff); use 0 para uma imagem só com runtime.
 ARG WITH_DEV=1
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+RUN --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     if [ "$WITH_DEV" = "1" ]; then \
         uv sync --locked --no-install-project; \
@@ -50,8 +49,7 @@ CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
 
 FROM builder AS builder-prod
 # Mesmo estágio de dependências, mas sem o grupo "dev".
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+RUN --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     uv sync --locked --no-install-project --no-dev
 
