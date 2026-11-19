@@ -31,6 +31,8 @@ env = environ.Env(
     # credenciais vêm do .env; as chaves do RustFS servem de padrão para as da AWS.
     AWS_S3_ENDPOINT_URL=(str, "http://127.0.0.1:9000"),
     AWS_S3_REGION_NAME=(str, "us-east-1"),
+    # `path` (RustFS no Docker); o Railway Buckets exige `virtual`, que é o urlStyle das credenciais.
+    AWS_S3_ADDRESSING_STYLE=(str, "path"),
     S3_BUCKET=(str, "sigtcc-dev"),
     RUSTFS_ACCESS_KEY=(str, ""),
     RUSTFS_SECRET_KEY=(str, ""),
@@ -134,6 +136,9 @@ if EMAIL_PROVIDER == "brevo":
         )
     EMAIL_BACKEND = "config.brevo_email.BrevoEmailBackend"
 
+if env("AWS_S3_ADDRESSING_STYLE") not in ("path", "virtual", "auto"):
+    raise ImproperlyConfigured("AWS_S3_ADDRESSING_STYLE must be 'path', 'virtual' or 'auto'.")
+
 # Os arquivos das Entregas ficam no bucket S3 (ADR 0002); o resto segue o padrão do Django.
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
@@ -146,7 +151,7 @@ STORAGES = {
             "region_name": env("AWS_S3_REGION_NAME"),
             "access_key": env("AWS_ACCESS_KEY_ID", default=env("RUSTFS_ACCESS_KEY")),
             "secret_key": env("AWS_SECRET_ACCESS_KEY", default=env("RUSTFS_SECRET_KEY")),
-            "addressing_style": "path",
+            "addressing_style": env("AWS_S3_ADDRESSING_STYLE"),
             "signature_version": "s3v4",
             "default_acl": None,
             "querystring_auth": False,
