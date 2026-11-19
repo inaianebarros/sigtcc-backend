@@ -150,3 +150,14 @@ Sessão por JWT (ADR backend 0001 e 0006): `POST /api/auth/login` devolve o acce
 ## Execução local
 
 O sistema é executado **somente em ambiente local** (Docker Compose, HTTP em `localhost`), sem previsão de implantação em nuvem (ADR backend 0005). As configurações padrão assumem isso: o cookie de refresh não é `Secure` no Compose, a origem confiável é `http://localhost:3000`, e as credenciais do `.env.example` são de desenvolvimento. Nada disso deve ir para um ambiente exposto; o checklist do que mudar antes de qualquer implantação está na ADR 0005. Mesmo localmente, use um `DJANGO_SECRET_KEY` com 32 bytes ou mais (por exemplo `openssl rand -hex 32`), pois ele assina os tokens.
+
+## Servidor de produção (homologação)
+
+O alvo `production` do `Dockerfile` (`docker build --target production -t sigtcc-backend:prod .`, também o padrão sem `--target`) é a imagem para um ambiente exposto. O alvo `runtime` continua sendo o do Compose de desenvolvimento (com `runserver`).
+
+- **Inicialização:** `gunicorn -c gunicorn.conf.py config.wsgi:application`, com **1 worker e 4 threads** (ADR backend 0021). Escuta em `0.0.0.0:$PORT` (padrão 8000), registra acesso e erro na saída padrão e roda como usuário sem privilégios. Não aplica migrations.
+- **Uma única réplica, sempre:** os contadores de limitação de tentativas (ADR 0007) ficam no cache local do processo (`locmemcache`, sem Redis). Com mais de um worker ou réplica cada processo teria o seu contador e o limite deixaria de valer. Para escalar, é preciso antes um cache compartilhado (`CACHE_URL`).
+- **Estáticos:** `collectstatic` roda no build da imagem e o WhiteNoise, ativo só com `DJANGO_DEBUG=false`, serve os arquivos (Django Admin) pelo próprio processo.
+- **Passo de release:** `sh docker/release.sh` roda `migrate --noinput`. A plataforma deve chamá-lo uma vez por implantação, antes de iniciar o servidor (no Railway, como comando de pre-deploy; configurado na issue #288). Aplicar migrations é idempotente, mas não rode o release em paralelo.
+- **Variáveis obrigatórias:** `DJANGO_SECRET_KEY` (32 bytes ou mais), `DJANGO_DEBUG=false`, `DJANGO_ALLOWED_HOSTS` e `DATABASE_URL`, além das de e-mail, S3, JWT e `NUM_PROXIES` descritas no `.env.example`. Nada disso entra na imagem.
+- **Healthcheck:** a imagem traz um `HEALTHCHECK` que consulta `http://localhost:$PORT/api/health`, então `localhost` precisa estar em `DJANGO_ALLOWED_HOSTS`. Plataformas com sonda própria (como o Railway) ignoram esse `HEALTHCHECK`; a sonda delas precisa de um Host permitido.

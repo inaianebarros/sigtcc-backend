@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
-# Imagem do backend (Django + Ninja Extra). O comando padrão roda o servidor de
-# desenvolvimento; o servidor de produção e a imagem de release ficam para a issue #64.
+# Imagem do backend (Django + Ninja Extra). Dois alvos:
+#   runtime     desenvolvimento (compose.yaml): inclui pytest e ruff; o comando padrão é o runserver.
+#   production  produção/homologação: sem dependências de dev, gunicorn e estáticos coletados.
+# Sem --target, o build gera "production" (último estágio).
 ARG PYTHON_VERSION=3.13.18
 
 FROM python:${PYTHON_VERSION}-slim-trixie AS builder
@@ -44,3 +46,42 @@ USER app
 EXPOSE 8000
 
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+
+
+FROM builder AS builder-prod
+# Mesmo estágio de dependências, mas sem o grupo "dev".
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    uv sync --locked --no-install-project --no-dev
+
+
+FROM python:${PYTHON_VERSION}-slim-trixie AS production
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    PORT=8000
+
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
+
+COPY --from=builder-prod /opt/venv /opt/venv
+
+WORKDIR /app
+COPY . .
+
+# Valores fictícios só para este comando (não ficam na imagem): o collectstatic carrega os settings,
+# que exigem chave e banco, mas não se conecta ao banco.
+RUN DJANGO_SECRET_KEY=build-only DATABASE_URL=postgres://build:build@localhost/build \
+    python manage.py collectstatic --noinput
+
+USER app
+EXPOSE 8000
+
+# O host "localhost" precisa constar em DJANGO_ALLOWED_HOSTS. Plataformas com healthcheck próprio
+# (por exemplo o Railway) ignoram esta instrução.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:%s/api/health' % os.environ['PORT'], timeout=3)"]
+
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "config.wsgi:application"]
