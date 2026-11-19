@@ -63,6 +63,25 @@ uv run ruff format --check .  # formatação
 uv run python manage.py check
 ```
 
+### Teste de robustez das contas simuladas (caos)
+
+O teste de caos (ADR 0022, issue #287) é lento e fica **fora** do conjunto padrão (`addopts` do `pyproject.toml` exclui o marcador `chaos`). Ele precisa só do PostgreSQL, sem Redis nem rede externa. Rode com:
+
+```bash
+uv run pytest -m chaos                                  # no Compose: docker compose run --rm backend pytest -m chaos
+CHAOS_SEED=7 CHAOS_RUNS=1 uv run pytest -m chaos -s     # reproduz a execução da semente 7 e mostra o resumo
+```
+
+Em cada execução, dois professores reais e dois alunos reais (com orientação com o Professor simulado e com o trio de Alunos simulados) agem pelos serviços de forma aleatória: solicitam, respondem, editam, repetem, cancelam, entregam, revisam, encerram orientação e desativam a conta (RN19), enquanto o `run_personas --once` roda em ciclos intercalados, às vezes no meio do que o simulado já decidiu fazer. Depois de cada passo o teste confere no banco as regras (RN04 a RN07, RN12, RN15, RN19, RN21, RN34 e RN40) e que nenhum simulado encerra orientação, desativa conta ou age fora do domínio `demo.ufopa.local`. Um ciclo com `errors` maior que zero reprova (erro de domínio conta como `skipped`). Há também o teste da trava com dois processos (um segura a trava e o outro não age).
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `CHAOS_SEED` | `1` | primeira semente; cada execução usa uma semente seguinte |
+| `CHAOS_RUNS` | `5` | número de execuções (sementes `CHAOS_SEED` até `CHAOS_SEED + CHAOS_RUNS - 1`) |
+| `CHAOS_STEPS` | `150` | passos de cada execução |
+
+A semente aparece no nome de cada teste (`seed=3`) e, numa falha, na mensagem junto dos últimos passos e do comando que reproduz. Para explorar mais, use outras sementes, por exemplo `CHAOS_SEED=1000 CHAOS_RUNS=30`.
+
 ## Estrutura
 
 Apps por domínio em `apps/`: `accounts`, `advising`, `activities`, `meetings` e `notifications`. As decisões de arquitetura ficam nas ADRs do repositório de documentação do projeto.

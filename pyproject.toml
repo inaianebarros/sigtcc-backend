@@ -26,7 +26,11 @@ dev = [
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
-markers = ["integration: needs the real RustFS of the Compose running"]
+markers = [
+    "integration: needs the real RustFS of the Compose running",
+    "chaos: slow robustness test of the simulated accounts (ADR 0022); run it with `pytest -m chaos`",
+]
+addopts = "-m 'not chaos'"
 
 # Cobertura de linhas e de ramos (#55). `uv run pytest --cov` lê as pastas daqui e falha abaixo de
 # `fail_under` no total; `scripts/check_coverage.sh` também exige o mínimo em cada app. Uma falta de
