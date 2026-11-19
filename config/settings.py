@@ -29,6 +29,8 @@ env = environ.Env(
     S3_BUCKET=(str, "sigtcc-dev"),
     RUSTFS_ACCESS_KEY=(str, ""),
     RUSTFS_SECRET_KEY=(str, ""),
+    PERSONAS_ENABLED=(bool, False),
+    PERSONAS_MAX_ACTIONS_PER_CYCLE=(int, 20),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
@@ -53,6 +55,7 @@ INSTALLED_APPS = [
     "apps.meetings",
     "apps.notifications",
     "apps.dashboard",
+    "apps.personas",
 ]
 
 MIDDLEWARE = [
@@ -189,6 +192,11 @@ AUTH_RATE_LIMITS = {
     "forgot_ip": _auth_rate("FORGOT_IP", 5, 60 * 60),
     "forgot_account": _auth_rate("FORGOT_ACCOUNT", 3, 60 * 60),
 }
+
+PERSONAS_ENABLED = env("PERSONAS_ENABLED")
+PERSONAS_MAX_ACTIONS_PER_CYCLE = env("PERSONAS_MAX_ACTIONS_PER_CYCLE")
+if PERSONAS_MAX_ACTIONS_PER_CYCLE < 1:
+    raise ImproperlyConfigured("PERSONAS_MAX_ACTIONS_PER_CYCLE must be at least 1.")
 
 PASSWORD_RESET_TIMEOUT = 60 * 60
 FRONTEND_URL = env("FRONTEND_URL")
