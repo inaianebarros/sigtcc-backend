@@ -15,6 +15,7 @@ from ninja_extra.exceptions import APIException
 from config import rate_limit
 from config.errors import FieldValidationError
 
+from .demo_seed import is_demo_account
 from .failure_limit import normalize_email
 from .models import PasswordResetRequest, User
 from .passwords import validate_new_password
@@ -139,11 +140,11 @@ def send_reset_link(user: User) -> None:
 
 
 def settle_request(request: PasswordResetRequest) -> bool:
-    """Sends the link of a request, or just settles it when there is no active account to send to.
-    Returns whether an e-mail went out."""
+    """Sends the link of a request, or just settles it when there is no active, non-simulated
+    account to send to (ADR 0022). Returns whether an e-mail went out."""
     user = request.user
     mailed = False
-    if user is not None and user.is_active:
+    if user is not None and user.is_active and not is_demo_account(user.email):
         send_reset_link(user)
         mailed = True
     request.processed_at = timezone.now()

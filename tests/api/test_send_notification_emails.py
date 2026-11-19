@@ -8,6 +8,8 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 
 from apps.accounts.deactivation import deactivate_user
+from apps.accounts.models import UserType
+from apps.notifications.emails import pending_notification_ids
 from apps.notifications.models import Notification, NotificationType
 from tests.api.helpers import bearer
 from tests.factories import (
@@ -15,6 +17,7 @@ from tests.factories import (
     make_notification,
     make_student,
     make_teacher,
+    make_user,
 )
 
 pytestmark = pytest.mark.django_db
@@ -253,12 +256,51 @@ def test_an_account_deactivated_after_the_notification_was_created_is_not_e_mail
     assert reload(notification).email_sent_at is not None
 
 
-def test_the_demonstration_seed_creates_notifications_that_are_e_mailed(catalog, debug, mailoutbox):
+def test_a_simulated_recipient_is_settled_without_a_mail_or_a_counted_attempt(mailoutbox):
+    teacher = make_user(UserType.TEACHER, email="Prof.Sim@DEMO.UFOPA.LOCAL")
+    notification = pending_for(teacher)
+
+    call_command(COMMAND, stdout=StringIO())
+
+    assert mailoutbox == []
+    settled = reload(notification)
+    assert settled.email_sent_at is not None
+    assert settled.email_attempts == 0
+    assert Notification.objects.filter(recipient=teacher).count() == 1
+    assert pending_notification_ids() == []
+
+
+def test_a_simulated_recipient_does_not_stop_a_real_one_from_being_e_mailed(mailoutbox):
+    simulated = make_user(UserType.TEACHER, email="prof@demo.ufopa.local")
+    real = make_teacher().user
+    pending_for(simulated)
+    pending_for(real)
+
+    call_command(COMMAND, stdout=StringIO())
+
+    assert [message.to for message in mailoutbox] == [[real.email]]
+
+
+@pytest.mark.parametrize(
+    "email",
+    ["prof@demo.ufopa.local.example.com", "prof@xdemo.ufopa.local", "prof@example.com"],
+)
+def test_a_similar_domain_is_still_e_mailed(email, mailoutbox):
+    pending_for(make_user(UserType.TEACHER, email=email))
+
+    call_command(COMMAND, stdout=StringIO())
+
+    assert [message.to for message in mailoutbox] == [[email]]
+
+
+def test_the_demonstration_seed_creates_notifications_that_are_settled_without_a_mail(
+    catalog, debug, mailoutbox
+):
     call_command("seed_demo_data", stdout=StringIO())
     created = Notification.objects.filter(email_sent_at__isnull=True).count()
     assert created > 0
 
     call_command(COMMAND, stdout=StringIO())
 
-    assert len(mailoutbox) == created
+    assert mailoutbox == []
     assert not Notification.objects.filter(email_sent_at__isnull=True).exists()

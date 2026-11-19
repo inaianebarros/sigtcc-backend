@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from django.db import connection, transaction
 from ninja.errors import HttpError
 
-from apps.accounts.demo_seed import DEMO_DOMAIN
+from apps.accounts.demo_seed import is_demo_account
 from config.errors import ConflictError, FieldValidationError
 
 from .rules import PersonaAction, PersonaRule
@@ -43,10 +43,6 @@ def instance_lock():
         finally:
             if acquired:
                 cursor.execute("SELECT pg_advisory_unlock(%s)", [ADVISORY_LOCK_KEY])
-
-
-def is_demo_account(email: str) -> bool:
-    return email.lower().endswith(f"@{DEMO_DOMAIN}")
 
 
 def run_cycle(rules: Iterable[PersonaRule], max_actions: int) -> CycleResult:
