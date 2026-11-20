@@ -396,7 +396,9 @@ def review_activity(
     the activity stays in review.
 
     When submission_id is given, the decision is recorded only if it is the activity's latest
-    submission (RN21); otherwise it answers 409 and nothing is recorded. None skips the check.
+    submission (RN21); otherwise it answers 409 and nothing is recorded, files included. Both API
+    routes always give it; None skips the check for the internal callers (demo data, the
+    simulated teacher), which decide on the activity as it is when locked and have no stale view.
     """
     _check_justification(decision, justification)
     checked_files = check_files(files, minimum=0, count_message=REFUSAL_COUNT_MESSAGE)

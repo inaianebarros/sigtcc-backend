@@ -40,8 +40,13 @@ def refuse_url(activity_id):
     return f"/api/atividades/{activity_id}/recusar"
 
 
-def refuse(client, user, activity_id, justification=JUSTIFICATION, files=()):
-    data = {"files": list(files)}
+def latest_id_of(activity_id):
+    latest = Submission.objects.filter(activity_id=activity_id).order_by("-index").first()
+    return latest.id if latest else 0
+
+
+def refuse(client, user, activity_id, justification=JUSTIFICATION, files=(), submission_id=None):
+    data = {"files": list(files), "submission_id": submission_id or latest_id_of(activity_id)}
     if justification is not None:
         data["justification"] = justification
     return client.post(refuse_url(activity_id), data=data, headers=bearer(user))
@@ -421,6 +426,8 @@ def test_the_openapi_documents_the_refusal_with_files(client):
         if "$ref" in form
         else form["properties"]
     )
-    assert {"justification", "files"} <= set(properties)
+    assert {"justification", "submission_id", "files"} <= set(properties)
+    assert "submission_id" in operation["description"]
+    assert "RN21" in operation["description"]
     detail = schema["components"]["schemas"]["ReviewOut"]["properties"]
     assert "files" in detail
