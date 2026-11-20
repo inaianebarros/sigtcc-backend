@@ -15,11 +15,13 @@ from apps.activities.models import (
     Review,
     ReviewDecision,
     ReviewFile,
+    Submission,
 )
 from apps.activities.services import STORAGE_UNAVAILABLE_MESSAGE
 from apps.activities.uploads import MISMATCH_MESSAGE, NOT_ALLOWED_MESSAGE, TOO_BIG_MESSAGE
 from apps.advising.models import Advising, AdvisingStatus
 from apps.notifications.models import Notification
+from tests.api.activity_flow import latest_submission_id
 from tests.api.helpers import bearer, errors_by_field, post_json
 from tests.api.uploads import DOC, DOCX, JPG, PDF, PNG, ZIP, upload
 from tests.factories import make_advising, make_course, make_student, make_teacher
@@ -53,7 +55,7 @@ def advised_pair():
 
 
 def in_review(advising, status=ActivityStatus.IN_REVIEW, **extra):
-    return Activity.objects.create(
+    activity = Activity.objects.create(
         advising=advising,
         title="Capítulo 2",
         description="Entregar o capítulo 2 do TCC",
@@ -61,6 +63,8 @@ def in_review(advising, status=ActivityStatus.IN_REVIEW, **extra):
         status=status,
         **extra,
     )
+    Submission.objects.create(activity=activity)
+    return activity
 
 
 def status_of(activity):
@@ -354,13 +358,17 @@ def test_the_acceptance_and_the_json_refusal_keep_working_without_attachments(cl
     json_refusal = post_json(
         client,
         f"/api/atividades/{refused.id}/revisar",
-        {"decision": "rejected", "justification": JUSTIFICATION},
+        {
+            "decision": "rejected",
+            "justification": JUSTIFICATION,
+            "submission_id": latest_submission_id(refused),
+        },
         headers=bearer(teacher.user),
     )
     acceptance = post_json(
         client,
         f"/api/atividades/{accepted.id}/revisar",
-        {"decision": "accepted"},
+        {"decision": "accepted", "submission_id": latest_submission_id(accepted)},
         headers=bearer(teacher.user),
     )
 

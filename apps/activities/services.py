@@ -52,6 +52,9 @@ COMMENTS_CLOSED_MESSAGE = "Esta atividade já foi concluída e não aceita novos
 NOT_IN_REVIEW_MESSAGE = "Só uma atividade em revisão pode ser revisada."
 JUSTIFICATION_REQUIRED_MESSAGE = "Informe a justificativa da recusa (de 1 a 500 caracteres)."
 NO_JUSTIFICATION_ON_ACCEPT_MESSAGE = "O aceite não tem justificativa."
+STALE_SUBMISSION_MESSAGE = (
+    "A atividade recebeu uma nova entrega. Confira a linha do tempo antes de decidir."
+)
 MAX_JUSTIFICATION_LENGTH = 500
 EDITABLE_FIELDS = ("title", "description", "deadline")
 
@@ -361,6 +364,13 @@ def _lock_reviewable_activity(teacher: Teacher, activity_id: int) -> Activity:
     return activity
 
 
+def _check_latest_submission(activity: Activity, submission_id: int) -> None:
+    """The decision stands only for the latest submission the advisor had in sight (RN21)."""
+    latest_id = activity.submissions.order_by("-index").values_list("id", flat=True).first()
+    if submission_id != latest_id:
+        raise ConflictError(STALE_SUBMISSION_MESSAGE)
+
+
 def _save_review_file_to_storage(storage, activity_id: int, file) -> str:
     try:
         return storage.save(new_review_storage_key(activity_id), file)
@@ -375,6 +385,7 @@ def review_activity(
     decision: ReviewDecision,
     justification: str = "",
     files=(),
+    submission_id: int | None = None,
 ) -> Activity:
     """The active advisor accepts an activity in review (completed, final) or refuses it (back to
     pending, deliveries kept) and the student is notified (RF46, RF48, RN15, RN21, RN40).
@@ -383,6 +394,9 @@ def review_activity(
     the notification share one transaction, and the files are stored while the activity is locked:
     if anything fails, even the commit, the stored files are removed and nothing is recorded, so
     the activity stays in review.
+
+    When submission_id is given, the decision is recorded only if it is the activity's latest
+    submission (RN21); otherwise it answers 409 and nothing is recorded. None skips the check.
     """
     _check_justification(decision, justification)
     checked_files = check_files(files, minimum=0, count_message=REFUSAL_COUNT_MESSAGE)
@@ -391,6 +405,8 @@ def review_activity(
     try:
         with transaction.atomic():
             activity = _lock_reviewable_activity(teacher, activity_id)
+            if submission_id is not None:
+                _check_latest_submission(activity, submission_id)
             accepted = decision == ReviewDecision.ACCEPTED
             review = Review.objects.create(
                 activity=activity, decision=decision, justification=justification

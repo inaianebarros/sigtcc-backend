@@ -4,7 +4,7 @@ import datetime
 
 from django.utils import timezone
 
-from apps.activities.models import Activity
+from apps.activities.models import Activity, Submission
 from tests.api.helpers import bearer, post_json
 from tests.api.uploads import PDF, upload
 from tests.factories import make_advising, make_course, make_student, make_teacher
@@ -58,11 +58,30 @@ def change_status(client, student, activity, status):
     )
 
 
-def accept(client, teacher, activity):
+def latest_submission_id(activity):
+    """The id of the activity's latest delivery, the one the advisor has in sight, or 0 if none."""
+    latest = Submission.objects.filter(activity=activity).order_by("-index").first()
+    return latest.id if latest else 0
+
+
+def accept(client, teacher, activity, submission_id=None):
+    if submission_id is None:
+        submission_id = latest_submission_id(activity)
     return post_json(
         client,
         f"{BASE}/{activity.id}/revisar",
-        {"decision": "accepted"},
+        {"decision": "accepted", "submission_id": submission_id},
+        headers=bearer(teacher.user),
+    )
+
+
+def refuse_without_files(client, teacher, activity, submission_id=None):
+    if submission_id is None:
+        submission_id = latest_submission_id(activity)
+    return post_json(
+        client,
+        f"{BASE}/{activity.id}/revisar",
+        {"decision": "rejected", "justification": "Refazer.", "submission_id": submission_id},
         headers=bearer(teacher.user),
     )
 
