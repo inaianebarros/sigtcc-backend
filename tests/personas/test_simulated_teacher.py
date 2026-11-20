@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from apps.accounts.demo_seed import DEMO_DOMAIN, INSTITUTE, OWN_COURSE
 from apps.accounts.models import Course, Institute, Teacher, User
-from apps.activities.models import ActivityStatus, Review, ReviewDecision
+from apps.activities.models import Activity, ActivityStatus, Review, ReviewDecision
 from apps.advising.models import (
     Advising,
     AdvisingRequest,
@@ -14,12 +14,14 @@ from apps.advising.models import (
     AdvisingStatus,
 )
 from apps.meetings.models import MeetingStatus
+from apps.notifications.models import Notification, NotificationType
 from apps.personas.simulated_teacher import (
     FIRST_REVIEW_JUSTIFICATION,
     SIMULATED_TEACHER_EMAIL,
     SIMULATED_TEACHER_NAME,
     AcceptAdvisingRequests,
     AcceptMeetings,
+    CreateActivities,
     ReviewActivities,
     SimulatedTeacherProvisioning,
 )
@@ -79,6 +81,12 @@ def make_demo_student(course):
 def age_request(advising_request, seconds):
     AdvisingRequest.objects.filter(pk=advising_request.pk).update(
         requested_at=timezone.now() - datetime.timedelta(seconds=seconds)
+    )
+
+
+def age_advising(advising, seconds):
+    Advising.objects.filter(pk=advising.pk).update(
+        started_at=timezone.now() - datetime.timedelta(seconds=seconds)
     )
 
 
@@ -312,6 +320,99 @@ class TestAcceptMeetings:
         assert perform_all(AcceptMeetings()) == []
 
 
+class TestCreateActivities:
+    def test_creates_the_two_planned_activities_after_the_delay(self, teacher, course):
+        advising = make_advising(make_student(course=course), teacher)
+        age_advising(advising, 31)
+
+        actions = perform_all(CreateActivities())
+
+        assert len(actions) == 1
+        activities = Activity.objects.filter(advising=advising).order_by("deadline")
+        today = timezone.localdate()
+        assert [activity.deadline for activity in activities] == [
+            today + datetime.timedelta(days=7),
+            today + datetime.timedelta(days=14),
+        ]
+        assert {activity.status for activity in activities} == {ActivityStatus.PENDING}
+
+    def test_notifies_the_student_of_each_activity(self, teacher, course):
+        advising = make_advising(make_student(course=course), teacher)
+        age_advising(advising, 31)
+
+        perform_all(CreateActivities())
+
+        notifications = Notification.objects.filter(
+            recipient=advising.student.user, type=NotificationType.ACTIVITY_CREATED
+        )
+        assert notifications.count() == 2
+
+    def test_waits_for_an_advising_younger_than_the_delay(self, teacher, course):
+        advising = make_advising(make_student(course=course), teacher)
+        age_advising(advising, 10)
+
+        assert perform_all(CreateActivities()) == []
+        assert not Activity.objects.filter(advising=advising).exists()
+
+    def test_running_again_does_not_duplicate_the_activities(self, teacher, course):
+        advising = make_advising(make_student(course=course), teacher)
+        age_advising(advising, 31)
+
+        perform_all(CreateActivities())
+
+        assert perform_all(CreateActivities()) == []
+        assert Activity.objects.filter(advising=advising).count() == 2
+
+    def test_ignores_an_advising_that_already_has_an_activity(self, teacher, course):
+        advising = make_advising(make_student(course=course), teacher)
+        age_advising(advising, 31)
+        make_activity(advising)
+
+        assert perform_all(CreateActivities()) == []
+        assert Activity.objects.filter(advising=advising).count() == 1
+
+    def test_a_deleted_activity_counts_as_already_planned(self, teacher, course):
+        advising = make_advising(make_student(course=course), teacher)
+        age_advising(advising, 31)
+        Activity.objects.filter(pk=make_activity(advising).pk).update(deleted_at=timezone.now())
+
+        assert perform_all(CreateActivities()) == []
+
+    def test_ignores_a_student_of_the_simulated_domain(self, teacher, course):
+        advising = make_advising(make_demo_student(course), teacher)
+        age_advising(advising, 31)
+
+        assert perform_all(CreateActivities()) == []
+
+    def test_ignores_an_ended_advising(self, teacher, course):
+        advising = make_advising(make_student(course=course), teacher)
+        age_advising(advising, 31)
+        Advising.objects.filter(pk=advising.pk).update(
+            status=AdvisingStatus.ENDED, ended_at=timezone.now(), end_reason="Concluída."
+        )
+
+        assert perform_all(CreateActivities()) == []
+
+    def test_ignores_an_advising_of_another_teacher(self, teacher, course):
+        advising = make_advising(make_student(course=course))
+        age_advising(advising, 31)
+
+        assert perform_all(CreateActivities()) == []
+
+    def test_the_created_activities_are_reviewed_by_the_review_rule(self, teacher, course):
+        advising = make_advising(make_student(course=course), teacher)
+        age_advising(advising, 31)
+        perform_all(CreateActivities())
+        first = Activity.objects.filter(advising=advising).order_by("deadline").first()
+        Activity.objects.filter(pk=first.pk).update(status=ActivityStatus.IN_REVIEW)
+
+        actions = perform_all(ReviewActivities())
+
+        assert len(actions) == 1
+        first.refresh_from_db()
+        assert first.status == ActivityStatus.PENDING
+
+
 class TestStatesOutsideTheTable:
     def test_a_state_outside_the_table_generates_no_action(self, teacher, course):
         student = make_student(course=course)
@@ -320,7 +421,12 @@ class TestStatesOutsideTheTable:
         make_meeting(advising, author=teacher.user)
         make_user()
 
-        for rule in (AcceptAdvisingRequests(), ReviewActivities(), AcceptMeetings()):
+        for rule in (
+            AcceptAdvisingRequests(),
+            CreateActivities(),
+            ReviewActivities(),
+            AcceptMeetings(),
+        ):
             assert list(rule.pending_actions()) == []
 
 
