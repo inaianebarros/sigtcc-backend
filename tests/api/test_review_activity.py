@@ -20,6 +20,7 @@ from apps.activities.models import (
 from apps.advising.models import Advising
 from apps.advising.services import close_advising
 from apps.notifications.models import Notification
+from tests.api.activity_flow import latest_submission_id
 from tests.api.helpers import (
     CREATE_NOTIFICATION,
     bearer,
@@ -43,8 +44,11 @@ def url(activity_id):
     return f"/api/atividades/{activity_id}/revisar"
 
 
-def review(client, user, activity_id, decision, justification=None):
-    body = {"decision": decision}
+def review(client, user, activity_id, decision, justification=None, submission_id=None):
+    if submission_id is None:
+        activity = Activity.objects.filter(pk=activity_id).first()
+        submission_id = latest_submission_id(activity) if activity else 0
+    body = {"decision": decision, "submission_id": submission_id}
     if justification is not None:
         body["justification"] = justification
     return post_json(client, url(activity_id), body, headers=bearer(user))
@@ -58,13 +62,15 @@ def advised_pair():
 
 
 def add_activity(advising, status=ActivityStatus.IN_REVIEW, deadline=None):
-    return Activity.objects.create(
+    activity = Activity.objects.create(
         advising=advising,
         title="Capítulo 2",
         description="Entregar o capítulo 2 do TCC",
         deadline=deadline or timezone.localdate() + datetime.timedelta(days=7),
         status=status,
     )
+    Submission.objects.create(activity=activity)
+    return activity
 
 
 def refresh_status(activity):
@@ -92,7 +98,6 @@ def test_the_advisor_accepts_and_the_activity_is_completed_with_the_list_item_sh
 def test_the_advisor_refuses_with_a_justification_and_the_submissions_stay(client):
     _, teacher, advising = advised_pair()
     activity = add_activity(advising)
-    Submission.objects.create(activity=activity)
 
     response = review(
         client, teacher.user, activity.id, ReviewDecision.REJECTED, "  Faltou a conclusão.  "
@@ -201,7 +206,7 @@ def test_an_unknown_or_missing_decision_is_a_validation_error(client, body):
 def test_anonymous_gets_401_and_a_student_or_an_admin_gets_403(client):
     student, _, advising = advised_pair()
     activity = add_activity(advising)
-    body = {"decision": "accepted"}
+    body = {"decision": "accepted", "submission_id": latest_submission_id(activity)}
 
     anonymous = post_json(client, url(activity.id), body)
     by_student = post_json(client, url(activity.id), body, headers=bearer(student.user))

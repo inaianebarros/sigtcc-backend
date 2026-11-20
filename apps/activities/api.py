@@ -105,6 +105,7 @@ class ActivityStatusIn(Schema):
 
 class ReviewIn(Schema):
     decision: ReviewDecision
+    submission_id: int
     justification: Annotated[
         str, StringConstraints(strip_whitespace=True, max_length=MAX_JUSTIFICATION_LENGTH)
     ] = ""
@@ -513,7 +514,12 @@ class ActivityController:
         permissions=[IsTeacher],
         summary="O Professor orientador revisa uma atividade em revisão",
         description=(
-            "decision é accepted ou rejected (RF46, RN21). Aceitar conclui a atividade, de forma "
+            "decision é accepted ou rejected (RF46, RN21). submission_id, obrigatório, é o id da "
+            "entrega mais recente que o Professor tinha à vista ao decidir: se não for a entrega "
+            "mais recente da atividade (o Aluno entregou de novo, ou o id é de outra atividade ou "
+            'não existe), responde 409 com a mensagem "A atividade recebeu uma nova entrega. '
+            'Confira a linha do tempo antes de decidir." e nada é gravado: nem revisão, nem '
+            "mudança de status, nem notificação (RN21). Aceitar conclui a atividade, de forma "
             "definitiva (RN15), e ela deixa de aparecer como atrasada. Recusar a devolve para "
             "pending, com as entregas anteriores mantidas, e exige justification de 1 a 500 "
             "caracteres, sem espaços nas pontas (RN40); no aceite, justification é erro de "
@@ -528,7 +534,11 @@ class ActivityController:
     )
     def review(self, request: HttpRequest, activity_id: int, payload: ReviewIn):
         activity = review_activity(
-            request.user.teacher, activity_id, payload.decision, payload.justification
+            request.user.teacher,
+            activity_id,
+            payload.decision,
+            payload.justification,
+            submission_id=payload.submission_id,
         )
         return activity_item(activity.id)
 
