@@ -15,6 +15,7 @@ from apps.advising.advisor_api import AdvisorProfileController, AdvisorSearchCon
 from apps.advising.api import AdvisingRequestController
 from apps.advising.linked_student_api import LinkedStudentProfileController
 from apps.advising.report_activity_api import ReportActivityController
+from apps.advising.report_meeting_api import ReportMeetingController
 from apps.advising.thesis_api import AdvisorThesisTopicController, StudentThesisTopicController
 from apps.dashboard.api import DashboardController
 from apps.meetings.api import MeetingController
@@ -75,6 +76,7 @@ api.register_controllers(
     StudentThesisProposalController,
     AdvisingRequestController,
     ReportActivityController,
+    ReportMeetingController,
     AdvisorSearchController,
     AdvisorProfileController,
     LinkedStudentProfileController,

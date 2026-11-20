@@ -5,7 +5,8 @@ from ninja.errors import HttpError
 from apps.accounts.models import User
 from apps.activities.models import Activity, ActivityStatus
 from apps.meetings.models import Meeting, MeetingStatus
-from apps.meetings.situations import is_over
+from apps.meetings.services import MEETING_NOT_FOUND_MESSAGE
+from apps.meetings.situations import is_over, with_situation
 
 from .models import Advising, AdvisingStatus
 from .services import own_advisings
@@ -53,6 +54,21 @@ def report_activity_scope(user: User, advising_id: int):
     feed lists. Anyone else, an unknown id and an active advising get the 404 of the report (RN47).
     """
     return report_activities(read_ended_advising(user, advising_id))
+
+
+def report_meeting(user: User, advising_id: int, meeting_id: int) -> Meeting:
+    """A meeting of the report of an ended advising (RF61), in the shape of a calendar item: one
+    that took place (RN43). Anyone else, an unknown id, an active advising, a meeting of another
+    advising and one that did not take place get the same 404 (RN47)."""
+    advising = read_ended_advising(user, advising_id)
+    meeting = (
+        with_situation(report_meetings(advising).filter(pk=meeting_id), timezone.now())
+        .select_related("author", "advising__student__user", "advising__teacher__user")
+        .first()
+    )
+    if meeting is None:
+        raise HttpError(404, MEETING_NOT_FOUND_MESSAGE)
+    return meeting
 
 
 def advising_report(user: User, advising_id: int) -> Advising:
