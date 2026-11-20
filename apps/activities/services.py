@@ -4,6 +4,7 @@ from datetime import date
 from typing import IO
 
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 from ninja.errors import HttpError
 
@@ -302,17 +303,20 @@ def _open_stored(stored_file: SubmissionFile | ReviewFile) -> IO[bytes]:
         raise HttpError(503, DOWNLOAD_UNAVAILABLE_MESSAGE) from error
 
 
-def open_submission_file(user, activity_id: int, file_id: int) -> tuple[SubmissionFile, IO[bytes]]:
-    """The file of an activity the user may see, opened for reading (RF31)."""
-    submission_file = submission_file_for_download(user, activity_id, file_id)
+def open_submission_file(
+    activities: QuerySet[Activity], activity_id: int, file_id: int
+) -> tuple[SubmissionFile, IO[bytes]]:
+    """The file of one of the `activities` the caller may read, opened for reading (RF31)."""
+    submission_file = submission_file_for_download(activities, activity_id, file_id)
     return submission_file, _open_stored(submission_file)
 
 
 def open_review_file(
-    user, activity_id: int, review_id: int, file_id: int
+    activities: QuerySet[Activity], activity_id: int, review_id: int, file_id: int
 ) -> tuple[ReviewFile, IO[bytes]]:
-    """The file attached to a refusal of an activity the user may see, opened for reading (RN48)."""
-    review_file = review_file_for_download(user, activity_id, review_id, file_id)
+    """The file attached to a refusal of one of the `activities` the caller may read, opened for
+    reading (RN48)."""
+    review_file = review_file_for_download(activities, activity_id, review_id, file_id)
     return review_file, _open_stored(review_file)
 
 

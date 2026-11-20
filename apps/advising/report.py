@@ -48,6 +48,13 @@ def read_ended_advising(user: User, advising_id: int) -> Advising:
     return advising
 
 
+def report_activity_scope(user: User, advising_id: int):
+    """The activities a party of an ended advising reads from its report (RF61): the ones the
+    feed lists. Anyone else, an unknown id and an active advising get the 404 of the report (RN47).
+    """
+    return report_activities(read_ended_advising(user, advising_id))
+
+
 def advising_report(user: User, advising_id: int) -> Advising:
     """The report of an ended advising of the user (RF61): the header and the general totals.
 
