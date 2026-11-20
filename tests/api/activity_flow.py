@@ -86,9 +86,11 @@ def refuse_without_files(client, teacher, activity, submission_id=None):
     )
 
 
-def refuse(client, teacher, activity, files=()):
+def refuse(client, teacher, activity, files=(), submission_id=None):
+    if submission_id is None:
+        submission_id = latest_submission_id(activity)
     return client.post(
         f"{BASE}/{activity.id}/recusar",
-        data={"justification": "Refazer.", "files": list(files)},
+        data={"justification": "Refazer.", "submission_id": submission_id, "files": list(files)},
         headers=bearer(teacher.user),
     )

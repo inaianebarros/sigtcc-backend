@@ -557,17 +557,22 @@ class ActivityController:
         summary="O Professor orientador recusa uma atividade em revisão, com arquivos",
         description=(
             "Recusa em multipart (RF46, RN48): justification, de 1 a 500 caracteres sem contar as "
-            "pontas (RN40), e, no campo files, de 0 a 5 arquivos de 1 byte a 10 MB, nos tipos "
-            "PDF, DOC, DOCX, ZIP, PNG e JPG (ou JPEG), conferidos pela extensão e pelo conteúdo, "
-            "como na entrega. Um arquivo inválido rejeita a recusa inteira, com um erro de "
+            "pontas (RN40); submission_id, obrigatório, o id da entrega mais recente que o "
+            "Professor tinha à vista ao decidir; e, no campo files, de 0 a 5 arquivos de 1 byte a "
+            "10 MB, nos tipos PDF, DOC, DOCX, ZIP, PNG e JPG (ou JPEG), conferidos pela extensão "
+            "e pelo conteúdo, como na entrega. Um arquivo inválido rejeita a recusa inteira, com um erro de "
             "validação por arquivo (files.0, files.1...) e nada gravado. A atividade volta para "
             "pending, com as entregas anteriores mantidas, e o Aluno recebe a notificação do "
             "resultado (RF48), igual à da rota de revisar. A decisão, os anexos e a notificação "
             "são gravados juntos: se o armazenamento falhar, responde 503, nada fica gravado e a "
             "atividade continua em revisão; se o banco falhar, os arquivos já enviados são "
-            "removidos. Atividade que não está em revisão responde 409. Outro Professor, "
-            "atividade de outro Aluno, excluída, arquivada, inexistente ou de orientação "
-            "encerrada respondem o mesmo 404. Os anexos de cada decisão aparecem em reviews[].files "
+            "removidos. Se submission_id não for a entrega mais recente da atividade (o Aluno "
+            "entregou de novo, ou o id é de outra atividade ou não existe), responde 409 com a "
+            'mensagem "A atividade recebeu uma nova entrega. Confira a linha do tempo antes de '
+            'decidir." e nada é gravado: nem anexo, no banco ou no armazenamento, nem revisão, '
+            "nem mudança de status, nem notificação (RN21). Atividade que não está em revisão "
+            "responde 409. Outro Professor, atividade de outro Aluno, excluída, arquivada, "
+            "inexistente ou de orientação encerrada respondem o mesmo 404. Os anexos de cada decisão aparecem em reviews[].files "
             "do detalhe da atividade. O aceite continua em /revisar, em JSON e sem arquivos. A "
             "resposta é a atividade no formato da lista."
         ),
@@ -577,6 +582,7 @@ class ActivityController:
         request: HttpRequest,
         activity_id: int,
         justification: Form[str],
+        submission_id: Form[int],
         files: File[list[UploadedFile]] = None,
     ):
         activity = review_activity(
@@ -585,6 +591,7 @@ class ActivityController:
             ReviewDecision.REJECTED,
             justification.strip(),
             files or [],
+            submission_id=submission_id,
         )
         return activity_item(activity.id)
 

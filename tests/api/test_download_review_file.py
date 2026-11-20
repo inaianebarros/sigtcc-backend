@@ -8,9 +8,10 @@ from django.test import Client
 from django.utils import timezone
 
 from apps.accounts.models import UserType
-from apps.activities.models import Activity, ActivityStatus, Review, ReviewFile
+from apps.activities.models import Activity, ActivityStatus, Review, ReviewFile, Submission
 from apps.advising.models import Advising
 from apps.advising.services import close_advising
+from tests.api.activity_flow import latest_submission_id
 from tests.api.helpers import bearer
 from tests.api.uploads import PDF, PNG, upload
 from tests.factories import make_advising, make_course, make_student, make_teacher, make_user
@@ -32,20 +33,26 @@ def advised_pair():
 
 
 def add_activity(advising, status=ActivityStatus.IN_REVIEW):
-    return Activity.objects.create(
+    activity = Activity.objects.create(
         advising=advising,
         title="Capítulo 2",
         description="Entregar o capítulo 2 do TCC",
         deadline="2099-12-31",
         status=status,
     )
+    Submission.objects.create(activity=activity)
+    return activity
 
 
 def refuse_with(client, teacher, activity, files):
     """Refuses the activity with the files and returns the review and its files by id."""
     response = client.post(
         f"/api/atividades/{activity.id}/recusar",
-        data={"justification": "Refazer a introdução.", "files": files},
+        data={
+            "justification": "Refazer a introdução.",
+            "submission_id": latest_submission_id(activity),
+            "files": files,
+        },
         headers=bearer(teacher.user),
     )
     assert response.status_code == 200
