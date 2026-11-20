@@ -5,14 +5,15 @@ from datetime import timedelta
 
 from django.db.models import Exists, F, OuterRef, QuerySet
 from django.db.models.functions import Now
+from django.utils import timezone
 
 from apps.accounts.demo_seed import DEMO_DOMAIN, INSTITUTE, OWN_COURSE
 from apps.accounts.models import AreaOfInterest, Course, Institute, Teacher
 from apps.accounts.schemas import TeacherRegistrationIn
 from apps.accounts.services import register_teacher
 from apps.activities.models import Activity, ActivityStatus, Review, ReviewDecision
-from apps.activities.services import review_activity
-from apps.advising.models import AdvisingRequest, AdvisingStatus, AnswerAction
+from apps.activities.services import create_activity, review_activity
+from apps.advising.models import Advising, AdvisingRequest, AdvisingStatus, AnswerAction
 from apps.advising.services import answer_request
 from apps.meetings.models import Meeting, MeetingStatus
 from apps.meetings.services import answer_meeting
@@ -25,6 +26,22 @@ SIMULATED_TEACHER_EMAIL = f"professor.simulado.ciencia-da-computacao@{DEMO_DOMAI
 SIMULATED_TEACHER_NAME = "Professor Simulado"
 SIMULATED_TEACHER_REGISTRATION = "PSIMULADO01"
 REQUEST_ANSWER_DELAY = timedelta(seconds=30)
+ACTIVITY_CREATION_DELAY = timedelta(seconds=30)
+ACTIVITY_PLAN = (
+    (
+        "Primeira atividade: revisar a literatura sobre o tema",
+        "Atividade criada pelo professor simulado para você testar o fluxo. Mude o status para "
+        "em andamento, entregue um arquivo qualquer e envie para revisão. A primeira revisão "
+        "será recusada com uma justificativa padrão, e as seguintes serão aceitas.",
+        7,
+    ),
+    (
+        "Segunda atividade: escrever a introdução",
+        "Atividade criada pelo professor simulado para você testar o fluxo. Entregue um "
+        "arquivo qualquer e envie para revisão.",
+        14,
+    ),
+)
 FIRST_REVIEW_JUSTIFICATION = (
     "Recusa padrão do professor simulado: revise a entrega e envie novamente. "
     "As próximas revisões serão aceitas."
@@ -128,6 +145,51 @@ class AcceptAdvisingRequests:
             )
 
 
+class CreateActivities:
+    """An active advising of a real student that has no activity yet, and started more than the
+    delay ago, gets the planned activities, so the student can test the activity flow (RF25).
+
+    The creation is one action, one transaction, so the advising never ends up with only part of
+    the plan. Any activity of the advising, even a deleted one, counts as already planned."""
+
+    name = "simulated_teacher_create_activities"
+
+    def pending_actions(self) -> Iterable[PersonaAction]:
+        teacher = _simulated_teacher()
+        if teacher is None:
+            return
+        advisings = (
+            _only_real_students(
+                Advising.objects.filter(
+                    teacher=teacher,
+                    status=AdvisingStatus.ACTIVE,
+                    started_at__lte=Now() - ACTIVITY_CREATION_DELAY,
+                ),
+                "student",
+            )
+            .filter(~Exists(Activity.objects.filter(advising=OuterRef("pk"))))
+            .order_by("started_at", "id")
+        )
+        for advising_id, student_user_id in advisings.values_list("id", "student__user_id"):
+            yield PersonaAction(
+                teacher.user.email,
+                f"create_activities:{advising_id}",
+                lambda student_user_id=student_user_id: self._create_plan(teacher, student_user_id),
+            )
+
+    @staticmethod
+    def _create_plan(teacher: Teacher, student_user_id: int) -> None:
+        today = timezone.localdate()
+        for title, description, deadline_in_days in ACTIVITY_PLAN:
+            create_activity(
+                teacher,
+                student_user_id,
+                title,
+                description,
+                today + timedelta(days=deadline_in_days),
+            )
+
+
 class ReviewActivities:
     """An activity in review of a real student's advising is refused when the advising has no
     review yet and accepted otherwise (RN21, RN40).
@@ -204,6 +266,7 @@ class AcceptMeetings:
 SIMULATED_TEACHER_RULES: tuple[PersonaRule, ...] = (
     SimulatedTeacherProvisioning(),
     AcceptAdvisingRequests(),
+    CreateActivities(),
     ReviewActivities(),
     AcceptMeetings(),
 )
