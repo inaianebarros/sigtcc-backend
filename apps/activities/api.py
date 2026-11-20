@@ -32,6 +32,7 @@ from .queries import (
     activity_item,
     list_activities,
     list_comments,
+    visible_activities,
 )
 from .services import (
     EDITABLE_FIELDS,
@@ -227,6 +228,19 @@ class ActivityDetailOut(ActivityItemOut):
         return obj.ordered_reviews
 
 
+#: The 200 of a download route: the stored bytes, which the response schema cannot describe.
+FILE_DOWNLOAD_OPENAPI = {
+    "responses": {
+        "200": {
+            "description": "O conteúdo do arquivo.",
+            "content": {
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+            },
+        }
+    }
+}
+
+
 def attachment_response(stored_file: SubmissionFile | ReviewFile, content) -> FileResponse:
     """A stored file as a download: an attachment under its original name, with the stored type and
     nosniff set by the route itself, whatever the global setting says."""
@@ -327,7 +341,7 @@ class ActivityController:
         ),
     )
     def read_activity(self, request: HttpRequest, activity_id: int):
-        return activity_detail(request.user, activity_id)
+        return activity_detail(visible_activities(request.user), activity_id)
 
     @http_patch(
         "/{int:activity_id}",
@@ -419,21 +433,12 @@ class ActivityController:
             "encerrada, arquivo inexistente (ou ausente do armazenamento) ou de outra atividade "
             "respondem o mesmo 404. Se o armazenamento não responder, 503."
         ),
-        openapi_extra={
-            "responses": {
-                "200": {
-                    "description": "O conteúdo do arquivo.",
-                    "content": {
-                        "application/octet-stream": {
-                            "schema": {"type": "string", "format": "binary"}
-                        }
-                    },
-                }
-            }
-        },
+        openapi_extra=FILE_DOWNLOAD_OPENAPI,
     )
     def download(self, request: HttpRequest, activity_id: int, file_id: int):
-        submission_file, content = open_submission_file(request.user, activity_id, file_id)
+        submission_file, content = open_submission_file(
+            visible_activities(request.user), activity_id, file_id
+        )
         return attachment_response(submission_file, content)
 
     @http_get(
@@ -451,23 +456,14 @@ class ActivityController:
             "mesmo 404. Se o armazenamento não responder, 503. Os ids vêm de reviews[].id e "
             "reviews[].files[].id do detalhe da atividade."
         ),
-        openapi_extra={
-            "responses": {
-                "200": {
-                    "description": "O conteúdo do arquivo.",
-                    "content": {
-                        "application/octet-stream": {
-                            "schema": {"type": "string", "format": "binary"}
-                        }
-                    },
-                }
-            }
-        },
+        openapi_extra=FILE_DOWNLOAD_OPENAPI,
     )
     def download_review_file(
         self, request: HttpRequest, activity_id: int, review_id: int, file_id: int
     ):
-        review_file, content = open_review_file(request.user, activity_id, review_id, file_id)
+        review_file, content = open_review_file(
+            visible_activities(request.user), activity_id, review_id, file_id
+        )
         return attachment_response(review_file, content)
 
     @http_patch(
@@ -631,7 +627,7 @@ class ActivityController:
             int, Query(ge=1, le=ninja_settings.PAGINATION_MAX_LIMIT)
         ] = DEFAULT_PAGE_SIZE,
     ):
-        return activity_timeline(request.user, activity_id, before, limit)
+        return activity_timeline(visible_activities(request.user), activity_id, before, limit)
 
     @http_post(
         "/{int:activity_id}/comentarios",

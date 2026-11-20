@@ -85,9 +85,13 @@ def list_activities(
     )
 
 
-def activity_detail(user: User, activity_id: int, today: date | None = None) -> Activity:
+def activity_detail(
+    activities: QuerySet[Activity], activity_id: int, today: date | None = None
+) -> Activity:
+    """The detail of one of the `activities` the caller may read: the visible ones of an active
+    advising (RF30) or the ones in the report of an ended advising (RF61)."""
     activity = (
-        with_overdue(visible_activities(user).filter(pk=activity_id), today)
+        with_overdue(activities.filter(pk=activity_id), today)
         .select_related("advising__student__user", "advising__teacher__user")
         .annotate(comments_count=Count("comments", distinct=True))
         .prefetch_related(
@@ -113,16 +117,18 @@ def activity_detail(user: User, activity_id: int, today: date | None = None) -> 
     return activity
 
 
-def submission_file_for_download(user: User, activity_id: int, file_id: int) -> SubmissionFile:
-    """The file of an activity the user may see: its student and the active advisor (RF31).
+def submission_file_for_download(
+    activities: QuerySet[Activity], activity_id: int, file_id: int
+) -> SubmissionFile:
+    """The file of one of the `activities` the caller may read (RF31).
 
-    Anyone else, a deleted, archived or ended-advising activity, a missing file and a file of
-    another activity all answer the same 404.
+    An activity out of that scope, a missing file and a file of another activity all answer the
+    same 404.
     """
     submission_file = (
         SubmissionFile.objects.filter(
             pk=file_id,
-            submission__activity__in=visible_activities(user).filter(pk=activity_id),
+            submission__activity__in=activities.filter(pk=activity_id),
         )
         .select_related("submission")
         .first()
@@ -133,19 +139,18 @@ def submission_file_for_download(user: User, activity_id: int, file_id: int) -> 
 
 
 def review_file_for_download(
-    user: User, activity_id: int, review_id: int, file_id: int
+    activities: QuerySet[Activity], activity_id: int, review_id: int, file_id: int
 ) -> ReviewFile:
-    """The file attached to a refusal of an activity the user may see: its student and the active
-    advisor (RF46, RN48).
+    """The file attached to a refusal of one of the `activities` the caller may read (RF46, RN48).
 
-    Anyone else, a deleted, archived or ended-advising activity, a missing file, a file of another
-    decision and a file of another activity all answer the same 404.
+    An activity out of that scope, a missing file, a file of another decision and a file of
+    another activity all answer the same 404.
     """
     review_file = (
         ReviewFile.objects.filter(
             pk=file_id,
             review_id=review_id,
-            review__activity__in=visible_activities(user).filter(pk=activity_id),
+            review__activity__in=activities.filter(pk=activity_id),
         )
         .select_related("review")
         .first()

@@ -1,6 +1,6 @@
 from bisect import bisect_left
 
-from django.db.models import Max, Prefetch
+from django.db.models import Max, Prefetch, QuerySet
 from ninja.errors import HttpError
 
 from apps.accounts.models import User
@@ -15,7 +15,7 @@ from .models import (
     Submission,
     SubmissionFile,
 )
-from .queries import ACTIVITY_NOT_FOUND_MESSAGE, visible_activities
+from .queries import ACTIVITY_NOT_FOUND_MESSAGE
 
 DEFAULT_PAGE_SIZE = 10
 
@@ -33,16 +33,18 @@ def _file(stored_file: SubmissionFile | ReviewFile) -> dict:
     }
 
 
-def activity_timeline(user: User, activity_id: int, before: int | None, limit: int) -> dict:
-    """A page of the timeline of an activity the user may see (RN49), latest event first.
+def activity_timeline(
+    activities: QuerySet[Activity], activity_id: int, before: int | None, limit: int
+) -> dict:
+    """A page of the timeline of one of the `activities` the caller may read (RN49), latest event
+    first.
 
     The indexes of an activity are contiguous, from 1 (the creation) to `last_event_index`, so a
     page is a range of indexes: the `limit` indexes below `before` (or below the latest), and the
     records in that range are loaded from each source, with the number of queries fixed.
     """
     activity = (
-        visible_activities(user)
-        .filter(pk=activity_id)
+        activities.filter(pk=activity_id)
         .select_related("advising__student__user", "advising__teacher__user")
         .first()
     )
