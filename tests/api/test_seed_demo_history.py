@@ -14,13 +14,11 @@ from apps.activities.models import Activity, ActivityStatus
 from apps.advising.models import Advising, AdvisingStatus, ThesisTopic
 from apps.meetings.models import SYSTEM_CANCELLATION_REASON, Meeting, MeetingStatus
 from apps.notifications.models import Notification, NotificationType
-from tests.api.helpers import bearer, post_json
+from tests.api.helpers import bearer
 
 pytestmark = pytest.mark.django_db
 
 ENDED_STUDENT = "aluno7.orientacao-encerrada"
-OTHER_COURSE_STUDENT = "aluno8.outro-curso"
-OTHER_COURSE_TEACHER = "prof4.outro-curso"
 TEACHER = "prof1.orientandos"
 EMPTY_TEACHER = "prof2.sem-orientandos"
 COMPLETE_STUDENT = "aluno5.orientacao-completa"
@@ -155,62 +153,15 @@ def test_the_whole_story_of_the_ended_advising_is_old_and_coherent(seeded):
         assert activity.deadline < advising.ended_at.date()
 
 
-def test_the_other_course_student_only_finds_the_teacher_of_the_own_course(client, seeded):
-    response = get(client, OTHER_COURSE_STUDENT, "/api/orientadores/busca")
-
-    assert [item["id"] for item in response.json()["items"]] == [user_of(OTHER_COURSE_TEACHER).id]
-
-
-def test_the_first_student_does_not_find_the_teacher_of_the_other_course(client, seeded):
-    response = get(client, FIRST_STUDENT, "/api/orientadores/busca")
-
-    assert user_of(OTHER_COURSE_TEACHER).id not in [item["id"] for item in response.json()["items"]]
-
-
-def test_the_other_course_student_cannot_open_the_profile_of_a_teacher_of_another_course(
-    client, seeded
-):
-    teacher_id = user_of(TEACHER).id
-
-    response = get(client, OTHER_COURSE_STUDENT, f"/api/orientadores/{teacher_id}/perfil")
-
-    assert response.status_code == 404
-
-
-def test_the_other_course_student_cannot_ask_a_teacher_of_another_course(client, seeded):
-    response = post_json(
-        client,
-        "/api/orientacao/solicitacoes",
-        {"teacher_id": user_of(TEACHER).id},
-        headers=bearer(user_of(OTHER_COURSE_STUDENT)),
-    )
-
-    assert response.status_code == 409
-    assert "não orienta o seu curso" in response.json()["detail"]
-
-
-@pytest.mark.parametrize("slug", [COMPLETE_STUDENT, FIRST_STUDENT, ENDED_STUDENT])
-def test_the_other_course_teacher_cannot_open_the_profile_of_a_student_of_another_course(
-    client, seeded, slug
-):
-    response = get(client, OTHER_COURSE_TEACHER, f"/api/alunos/{user_of(slug).id}/perfil")
-
-    assert response.status_code == 404
-
-
 @pytest.mark.parametrize(
     "url",
     ["/api/orientacao/orientandos", "/api/orientacao/solicitacoes", "/api/orientacao/historico"],
 )
-@pytest.mark.parametrize("slug", [OTHER_COURSE_TEACHER, EMPTY_TEACHER])
-def test_the_teachers_without_students_see_the_empty_lists(client, seeded, slug, url):
+@pytest.mark.parametrize("slug", [EMPTY_TEACHER])
+def test_the_teacher_without_students_sees_the_empty_lists(client, seeded, slug, url):
     response = get(client, slug, url)
 
     assert response.json() == EMPTY
-
-
-def test_the_other_course_student_has_no_history(client, seeded):
-    assert get(client, OTHER_COURSE_STUDENT, "/api/orientacao/historico").json() == EMPTY
 
 
 def test_running_it_again_duplicates_nothing(seeded):

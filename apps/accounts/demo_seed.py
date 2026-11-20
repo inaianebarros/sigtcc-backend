@@ -20,7 +20,6 @@ TEACHER_REGISTRATION_PREFIX = "PDEMO"
 
 INSTITUTE = "Instituto de Engenharia e Geociências"
 OWN_COURSE = "Ciência da Computação"
-OTHER_COURSE = "Sistemas de Informação"
 CATALOG_HINT = "Carregue o catálogo antes: python manage.py loaddata fixtures/seed.json"
 
 
@@ -85,12 +84,6 @@ STUDENTS = (
         "Gabriela Torres",
         ("Sistemas Distribuídos", "Computação em Nuvem"),
     ),
-    DemoStudent(
-        "aluno8.outro-curso",
-        "Henrique Lima",
-        ("Interação Humano-Computador",),
-        course=OTHER_COURSE,
-    ),
 )
 
 TEACHERS = (
@@ -115,12 +108,6 @@ TEACHERS = (
         "Roberto Pinheiro",
         ("Segurança da Informação", "Redes de Computadores"),
         is_available=False,
-    ),
-    DemoTeacher(
-        "prof4.outro-curso",
-        "Sônia Falcão",
-        ("Interação Humano-Computador", "Informática na Educação"),
-        course=OTHER_COURSE,
     ),
 )
 
@@ -148,12 +135,11 @@ def _catalog() -> Catalog:
     own_course = Course.objects.filter(institute=institute, name=OWN_COURSE).first()
     if institute is None or own_course is None:
         raise DemoSeedError(f"O instituto e o curso do catálogo não existem. {CATALOG_HINT}")
-    other_course, _ = Course.objects.get_or_create(institute=institute, name=OTHER_COURSE)
     areas = {area.name: area for area in AreaOfInterest.objects.all()}
     needed = {name for person in (*STUDENTS, *TEACHERS) for name in person.areas}
     if needed - areas.keys():
         raise DemoSeedError(f"Faltam áreas de interesse no catálogo. {CATALOG_HINT}")
-    return Catalog(institute, {OWN_COURSE: own_course, OTHER_COURSE: other_course}, areas)
+    return Catalog(institute, {OWN_COURSE: own_course}, areas)
 
 
 def _create_student(number: int, person: DemoStudent, catalog: Catalog) -> None:
