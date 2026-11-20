@@ -15,7 +15,6 @@ pytestmark = pytest.mark.django_db
 COMMAND = "seed_demo_data"
 INSTITUTE = "Instituto de Engenharia e Geociências"
 OWN_COURSE = "Ciência da Computação"
-OTHER_COURSE = "Sistemas de Informação"
 SEARCH_URL = "/api/orientadores/busca"
 
 STUDENTS = [
@@ -26,13 +25,11 @@ STUDENTS = [
     "aluno5.orientacao-completa",
     "aluno6.orientacao-vazia",
     "aluno7.orientacao-encerrada",
-    "aluno8.outro-curso",
 ]
 TEACHERS = [
     "prof1.orientandos",
     "prof2.sem-orientandos",
     "prof3.indisponivel",
-    "prof4.outro-curso",
 ]
 
 
@@ -50,17 +47,17 @@ def user_of(name):
     return User.objects.get(email=email(name))
 
 
-def test_it_creates_the_eight_students_the_four_teachers_and_the_administrator(catalog, debug):
+def test_it_creates_the_seven_students_the_three_teachers_and_the_administrator(catalog, debug):
     seed()
 
-    assert Student.objects.count() == 8
-    assert Teacher.objects.count() == 4
+    assert Student.objects.count() == 7
+    assert Teacher.objects.count() == 3
     for name in STUDENTS:
         assert user_of(name).type == UserType.STUDENT
     for name in TEACHERS:
         assert user_of(name).type == UserType.TEACHER
     assert User.objects.get(email=email("admin")).type == UserType.ADMIN
-    assert User.objects.count() == 13
+    assert User.objects.count() == 11
 
 
 @pytest.mark.parametrize("name", [*STUDENTS, *TEACHERS, "admin"])
@@ -80,7 +77,7 @@ def test_running_it_again_creates_nothing_more(catalog, debug):
 
     assert (User.objects.count(), Student.objects.count(), Teacher.objects.count()) == before
     lines = [line for line in second.splitlines() if "@" in line]
-    assert len(lines) == 13
+    assert len(lines) == 11
     assert all("já existe" in line for line in lines)
 
 
@@ -100,26 +97,24 @@ def test_it_asks_for_the_catalog_when_it_is_missing(debug):
     assert User.objects.count() == 0
 
 
-def test_it_adds_only_the_other_course_to_the_existing_institute(catalog, debug):
+def test_it_creates_no_course_beyond_the_one_of_the_catalog(catalog, debug):
     seed()
     seed()
 
     institute = Institute.objects.get(name=INSTITUTE)
     assert Institute.objects.count() == 1
-    assert set(Course.objects.values_list("name", flat=True)) == {OWN_COURSE, OTHER_COURSE}
-    assert Course.objects.filter(institute=institute).count() == 2
+    assert set(Course.objects.values_list("name", flat=True)) == {OWN_COURSE}
+    assert Course.objects.filter(institute=institute).count() == 1
     assert AreaOfInterest.objects.count() == 17
 
 
 def test_the_courses_follow_the_scenarios(catalog, debug):
     seed()
 
-    for name in STUDENTS[:7]:
+    for name in STUDENTS:
         assert user_of(name).student.course.name == OWN_COURSE
-    assert user_of("aluno8.outro-curso").student.course.name == OTHER_COURSE
-    for name in TEACHERS[:3]:
+    for name in TEACHERS:
         assert [course.name for course in user_of(name).teacher.courses.all()] == [OWN_COURSE]
-    assert [c.name for c in user_of("prof4.outro-curso").teacher.courses.all()] == [OTHER_COURSE]
 
 
 def test_every_user_has_areas_and_students_share_areas_with_teachers(catalog, debug):
@@ -132,7 +127,7 @@ def test_every_user_has_areas_and_students_share_areas_with_teachers(catalog, de
     student_areas = set(user_of("aluno1.sem-orientacao").student.areas_of_interest.all())
     shared = [
         name
-        for name in TEACHERS[:3]
+        for name in TEACHERS
         if student_areas & set(user_of(name).teacher.areas_of_interest.all())
     ]
     assert len(shared) >= 2
@@ -149,21 +144,12 @@ def test_student_one_finds_the_available_teachers_of_the_own_course_by_compatibi
     items = response.json()["items"]
     found = [item["id"] for item in items]
     assert user_of("prof3.indisponivel").id not in found
-    assert user_of("prof4.outro-curso").id not in found
     assert set(found) == {user_of("prof1.orientandos").id, user_of("prof2.sem-orientandos").id}
     compatibilities = [item["compatibility"] for item in items]
     assert response.json()["count"] == 2
     assert all(value >= 1 for value in compatibilities)
     assert compatibilities == sorted(compatibilities, reverse=True)
     assert items[0]["id"] == user_of("prof2.sem-orientandos").id
-
-
-def test_student_eight_does_not_find_the_teachers_of_the_other_course(client, catalog, debug):
-    seed()
-
-    response = client.get(SEARCH_URL, headers=bearer(user_of("aluno8.outro-curso")))
-
-    assert [item["id"] for item in response.json()["items"]] == [user_of("prof4.outro-curso").id]
 
 
 def test_only_the_third_teacher_is_unavailable(catalog, debug):

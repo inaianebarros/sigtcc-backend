@@ -28,7 +28,6 @@ ACCEPTED = [
     "aluno6.orientacao-vazia",
     "aluno7.orientacao-encerrada",
 ]
-WITHOUT_REQUESTS = ["aluno8.outro-curso"]
 
 
 def user_of(slug):
@@ -109,12 +108,6 @@ def test_the_first_teacher_lists_the_requests_of_different_students(client, seed
         user_of(ACCEPTED[1]).full_name: "accepted",
         user_of(ACCEPTED[2]).full_name: "accepted",
     }
-
-
-def test_the_other_course_student_has_no_request_yet(seeded):
-    students = [user_of(slug) for slug in WITHOUT_REQUESTS]
-
-    assert AdvisingRequest.objects.filter(student__user__in=students).count() == 0
 
 
 def test_the_services_notify_the_teacher_and_the_students(seeded):

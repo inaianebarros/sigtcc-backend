@@ -29,7 +29,7 @@ from tests.factories import (
 
 pytestmark = pytest.mark.django_db
 
-CAST_SIZE = 13
+CAST_SIZE = 11
 PENDING_STUDENT = "aluno2.solicitacao-pendente"
 COMPLETE_STUDENT = "aluno5.orientacao-completa"
 
@@ -113,7 +113,7 @@ def test_the_reset_leaves_the_other_users_and_their_data_untouched(seeded):
     assert AdvisingRequest.objects.filter(pk=other_request.pk).exists()
 
 
-def test_the_reset_does_not_touch_the_catalog_nor_the_extra_course(seeded):
+def test_the_reset_does_not_touch_the_catalog(seeded):
     before = (Institute.objects.count(), Course.objects.count(), AreaOfInterest.objects.count())
 
     run("--reset", "--yes")
@@ -123,7 +123,6 @@ def test_the_reset_does_not_touch_the_catalog_nor_the_extra_course(seeded):
         Course.objects.count(),
         AreaOfInterest.objects.count(),
     )
-    assert Course.objects.filter(name="Sistemas de Informação").count() == 1
 
 
 def test_it_removes_everything_that_belongs_to_the_demonstration_users(seeded):
@@ -134,8 +133,8 @@ def test_it_removes_everything_that_belongs_to_the_demonstration_users(seeded):
 
     # The same set comes back, so the counts are the same, but from new rows.
     assert (SubmissionFile.objects.count(), Meeting.objects.count()) == counts_before
-    assert Student.objects.count() == 8
-    assert Teacher.objects.count() == 4
+    assert Student.objects.count() == 7
+    assert Teacher.objects.count() == 3
 
 
 def test_the_files_of_the_deliveries_are_removed_from_the_storage(seeded):

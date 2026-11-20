@@ -19,7 +19,7 @@ FIRST_TEACHER = "prof1.orientandos"
 SEARCH_URL = "/api/orientadores/busca"
 HISTORY_URL = "/api/orientacao/historico"
 PAGE_SIZE = 20
-CAST_SIZE = 13
+CAST_SIZE = 11
 
 
 def user_of(slug):
