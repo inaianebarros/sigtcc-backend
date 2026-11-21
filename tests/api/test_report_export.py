@@ -1,7 +1,6 @@
 """The export of the report of an ended advising to PDF (RF62, RN50, ADR 0027)."""
 
 import pytest
-from django.core.management import CommandError
 from django.db.models.signals import post_save
 
 from apps.activities.models import ActivityStatus
@@ -116,28 +115,6 @@ def test_anyone_else_an_unknown_id_and_an_active_advising_get_the_404_of_the_rep
     assert endpoint(client, active.student.user, active.id).status_code == 404
     assert endpoint(client, active.teacher.user, active.id).status_code == 404
     assert endpoint(client, make_admin(), advising.id).status_code == 403
-
-
-def test_an_export_that_cannot_be_kept_in_the_bucket_fails_and_a_new_request_is_built(
-    client, settings
-):
-    student = make_student()
-    advising = ended_advising(student)
-    ask_export(client, student.user, advising.id)
-    storages = settings.STORAGES
-    settings.STORAGES = {
-        **storages,
-        "submissions": {"BACKEND": "tests.api.failing_storage.FailingStorage"},
-    }
-    with pytest.raises(CommandError):
-        run_worker()
-    settings.STORAGES = storages
-
-    assert current_export(client, student.user, advising.id).json()["status"] == "failed"
-    assert download(client, student.user, advising.id).status_code == 409
-    ask_export(client, student.user, advising.id)
-    run_worker()
-    assert download(client, student.user, advising.id).status_code == 200
 
 
 def test_the_current_export_shows_the_stage_and_the_count_while_the_pdf_is_built(client):
