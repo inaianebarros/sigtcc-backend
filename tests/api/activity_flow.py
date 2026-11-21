@@ -94,3 +94,14 @@ def refuse(client, teacher, activity, files=(), submission_id=None):
         data={"justification": "Refazer.", "submission_id": submission_id, "files": list(files)},
         headers=bearer(teacher.user),
     )
+
+
+def end_advising(client, teacher, advising, reason="Concluímos o ciclo de orientação do TCC."):
+    response = post_json(
+        client,
+        f"/api/orientacao/{advising.id}/encerrar",
+        {"reason": reason},
+        headers=bearer(teacher.user),
+    )
+    assert response.status_code == 200
+    return response

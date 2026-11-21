@@ -4,7 +4,12 @@
 <meta charset="utf-8">
 <title>Relatório da orientação</title>
 <style>
-  @page { size: A4; margin: 2cm 1.8cm; }
+  @page {
+    size: A4;
+    margin: 2cm 1.8cm 2.2cm;
+    @bottom-left { content: "Gerado pelo SIGTCC em {{ built_at|date:'d/m/Y' }} às {{ built_at|time:'H:i' }}"; font-family: "DejaVu Sans", sans-serif; font-size: 8pt; color: #3e4c59; }
+    @bottom-right { content: "Página " counter(page) " de " counter(pages); font-family: "DejaVu Sans", sans-serif; font-size: 8pt; color: #3e4c59; }
+  }
   body { font-family: "DejaVu Sans", "Liberation Sans", sans-serif; font-size: 10.5pt; color: #1f2933; line-height: 1.45; }
   h1 { color: #0f6460; font-size: 18pt; margin: 0 0 12pt; }
   h2 { color: #0b4b3f; font-size: 13pt; margin: 18pt 0 6pt; border-bottom: 1px solid #0f6460; padding-bottom: 2pt; }
@@ -14,6 +19,17 @@
   .status { display: inline-block; border: 1px solid #0f6460; color: #0b4b3f; border-radius: 8pt; padding: 0 6pt; font-size: 9pt; }
   ul.totals { list-style: none; padding: 0; margin: 0; }
   ul.totals li { margin: 2pt 0; }
+  h3 { font-size: 11pt; margin: 0 0 2pt; }
+  h4 { font-size: 9.5pt; margin: 4pt 0 1pt; color: #3e4c59; }
+  .record { border-left: 3px solid #0f6460; padding: 4pt 0 4pt 8pt; margin: 8pt 0; }
+  .record.meeting, ol.timeline li { break-inside: avoid; }
+  h2, h3, h4 { break-after: avoid; }
+  .text { white-space: pre-line; margin: 2pt 0; }
+  .meta { color: #3e4c59; font-size: 9pt; margin: 1pt 0; }
+  ol.timeline { list-style: none; padding: 0; margin: 2pt 0 0; font-size: 9.5pt; }
+  ol.timeline li { border-top: 1px solid #d9e2ec; padding: 3pt 0; }
+  .event-title { font-weight: bold; margin: 0; }
+  .files { margin: 1pt 0; font-size: 9pt; }
 </style>
 </head>
 <body>
@@ -35,5 +51,41 @@
   <li>Reuniões realizadas: {{ report.meetings_count }}</li>
   <li>Atividades concluídas ou arquivadas: {{ report.activities_count }}</li>
 </ul>
+
+<h2>Reuniões realizadas</h2>
+{% for meeting in meetings %}
+<section class="record meeting">
+  <h3>{{ meeting.scheduled_at|date:"d/m/Y" }}, das {{ meeting.scheduled_at|time:"H:i" }} às {{ meeting.ends_at|time:"H:i" }}</h3>
+  <p class="status">Realizada</p>
+  <p class="text">{{ meeting.description }}</p>
+  <h4>Apontamentos do professor</h4>
+  <p class="text">{% if meeting.notes %}{{ meeting.notes }}{% else %}Sem apontamentos registrados.{% endif %}</p>
+</section>
+{% empty %}
+<p>Nenhuma reunião realizada.</p>
+{% endfor %}
+
+<h2>Atividades concluídas ou arquivadas</h2>
+{% for activity in activities %}
+<section class="record">
+  <h3>{{ activity.title }}</h3>
+  <p class="meta">Prazo: {{ activity.deadline|date:"d/m/Y" }} · <span class="status">{% if activity.status == "archived" %}Arquivada ao encerrar a orientação{% else %}Concluída{% endif %}</span></p>
+  <p class="text">{{ activity.description }}</p>
+  <h4>Linha do tempo</h4>
+  <ol class="timeline">
+  {% for event in activity.events %}
+    <li>
+      <p class="event-title">{% include "advising/report_export_event_title.html" %}</p>
+      <p class="meta">{{ event.author.full_name }} ({% if event.author.type == "student" %}Aluno{% else %}Orientador{% endif %}) · {{ event.occurred_at|date:"d/m/Y H:i" }}</p>
+      {% if event.type == "comment" %}<p class="text">{{ event.text }}</p>{% endif %}
+      {% if event.type == "review" and event.justification %}<p class="text">{{ event.justification }}</p>{% endif %}
+      {% if event.files %}<p class="files">{% if event.type == "review" %}Anexos{% else %}Arquivos{% endif %}: {% for file in event.files %}{{ file.file_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+    </li>
+  {% endfor %}
+  </ol>
+</section>
+{% empty %}
+<p>Nenhuma atividade concluída ou arquivada.</p>
+{% endfor %}
 </body>
 </html>

@@ -1,46 +1,21 @@
 """The export of the report of an ended advising to PDF (RF62, RN50, ADR 0027)."""
 
-import io
-from zoneinfo import ZoneInfo
-
 import pytest
-from django.core.management import CommandError, call_command
-from pypdf import PdfReader
+from django.core.management import CommandError
 
 from apps.activities.models import ActivityStatus
-from tests.api.helpers import bearer
 from tests.api.report_builders import REASON, add_activity, add_meeting, ended_advising
+from tests.api.report_export_flow import (
+    SANTAREM,
+    ask_export,
+    current_export,
+    download,
+    pdf_text,
+    run_worker,
+)
 from tests.factories import make_admin, make_advising, make_student, make_teacher
 
 pytestmark = pytest.mark.django_db
-
-SANTAREM = ZoneInfo("America/Santarem")
-
-
-def export_url(advising_id):
-    return f"/api/orientacao/historico/{advising_id}/exportacao"
-
-
-def ask_export(client, user, advising_id):
-    return client.post(export_url(advising_id), headers=bearer(user))
-
-
-def current_export(client, user, advising_id):
-    return client.get(export_url(advising_id), headers=bearer(user))
-
-
-def download(client, user, advising_id):
-    return client.get(f"{export_url(advising_id)}/pdf", headers=bearer(user))
-
-
-def run_worker():
-    call_command("send_report_exports", stdout=io.StringIO())
-
-
-def pdf_text(response) -> str:
-    content = b"".join(response.streaming_content)
-    reader = PdfReader(io.BytesIO(content))
-    return "\n".join(page.extract_text() for page in reader.pages)
 
 
 def test_a_student_asks_the_export_and_downloads_the_pdf_with_the_header_and_the_totals(client):
