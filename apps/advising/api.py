@@ -310,6 +310,8 @@ class AdvisingRequestController:
         summary="Pede a exportação do relatório de uma orientação encerrada em PDF",
         description=(
             "O Aluno ou o Professor da orientação encerrada pede o relatório em PDF (RF62, RN50). "
+            "Se já houver uma exportação válida (em andamento, ou pronta e não expirada), ela é "
+            "devolvida, sem gerar outra. "
             "O PDF é gerado fora da requisição, pelo comando send_report_exports (ADR 0027); a "
             "resposta traz a exportação na fila. Quem não é parte da orientação, um id "
             "desconhecido e uma orientação ainda ativa respondem o 404 do relatório (RN47)."
@@ -325,7 +327,8 @@ class AdvisingRequestController:
         summary="A exportação atual do relatório pedida pelo usuário",
         description=(
             "A última exportação do relatório que o próprio usuário pediu para essa orientação "
-            "(RF62), ou null quando não há. status: queued, processing, ready ou failed. O 404 "
+            "(RF62), ou null quando não há. status: queued, processing, ready, failed ou expired "
+            "(pronta há mais de 7 dias); available_until é até quando a pronta baixa. O 404 "
             "segue o do relatório (RN47)."
         ),
     )
@@ -340,12 +343,14 @@ class AdvisingRequestController:
             403: ErrorOut,
             404: ErrorOut,
             409: ErrorOut,
+            410: ErrorOut,
         },
         permissions=[IsStudent | IsTeacher],
         summary="Baixa o PDF da exportação do relatório",
         description=(
             "Só quem pediu baixa o PDF, quando a sua última exportação está pronta (RN50); "
-            "senão, 409. O 404 segue o do relatório (RN47)."
+            "senão, 409. Depois de 7 dias da conclusão o PDF expirou e a resposta é 410, mesmo "
+            "que o arquivo ainda exista. O 404 segue o do relatório (RN47)."
         ),
     )
     def download_report_export(self, request: HttpRequest, advising_id: int):

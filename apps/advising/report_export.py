@@ -17,11 +17,17 @@ from ninja.errors import HttpError
 from apps.accounts.models import User, UserType
 from apps.activities.timeline import whole_timeline
 
-from .models import ReportExport, ReportExportStage, ReportExportStatus
+from .models import (
+    REPORT_EXPORT_VALID_FOR,
+    ReportExport,
+    ReportExportStage,
+    ReportExportStatus,
+)
 from .report import advising_report, read_ended_advising, report_activities, report_meetings
 from .thesis import topic_of
 
 PDF_NOT_READY_MESSAGE = "O PDF ainda não está pronto."
+PDF_EXPIRED_MESSAGE = "Este PDF expirou. Gere um novo pelo botão Exportar PDF."
 
 
 def export_storage() -> Storage:
@@ -30,15 +36,21 @@ def export_storage() -> Storage:
 
 
 def request_export(user: User, advising_id: int) -> ReportExport:
-    """Queues an export of the report for one of its parties; anyone else gets the 404 of the
-    report (RN47)."""
+    """Queues an export of the report for one of its parties, or returns the valid one the person
+    already has (RN50); anyone else gets the 404 of the report (RN47)."""
     advising = read_ended_advising(user, advising_id)
+    latest = _latest_of(user, advising)
+    if latest is not None and latest.is_valid(timezone.now()):
+        return latest
     return ReportExport.objects.create(advising=advising, requester=user)
 
 
 def current_export(user: User, advising_id: int) -> ReportExport | None:
     """The latest export the user asked for that advising, or none."""
-    advising = read_ended_advising(user, advising_id)
+    return _latest_of(user, read_ended_advising(user, advising_id))
+
+
+def _latest_of(user: User, advising) -> ReportExport | None:
     return (
         ReportExport.objects.filter(advising=advising, requester=user)
         .order_by("-created_at", "-id")
@@ -49,9 +61,27 @@ def current_export(user: User, advising_id: int) -> ReportExport | None:
 def ready_export(user: User, advising_id: int) -> ReportExport:
     """The latest export of the user when its PDF is ready; only the requester downloads it."""
     export = current_export(user, advising_id)
+    if export is not None and export.is_expired(timezone.now()):
+        raise HttpError(410, PDF_EXPIRED_MESSAGE)
     if export is None or export.status != ReportExportStatus.READY:
         raise HttpError(409, PDF_NOT_READY_MESSAGE)
     return export
+
+
+def remove_expired_pdfs() -> int:
+    """Removes from the bucket the PDFs past their 7 days and marks them expired (RN50): the
+    Railway bucket has no lifecycle rule, so the worker does it (ADR 0027)."""
+    expired = ReportExport.objects.filter(
+        status=ReportExportStatus.READY,
+        ready_at__lt=timezone.now() - REPORT_EXPORT_VALID_FOR,
+    )
+    removed = 0
+    for export in expired:
+        export_storage().delete(export.storage_key)
+        export.status = ReportExportStatus.EXPIRED
+        export.save(update_fields=["status"])
+        removed += 1
+    return removed
 
 
 def queued_export_ids() -> list[int]:

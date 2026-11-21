@@ -7,6 +7,7 @@ from apps.advising.report_export import (
     claim_export,
     mark_export_failed,
     queued_export_ids,
+    remove_expired_pdfs,
 )
 
 logger = logging.getLogger("sigtcc.exports")
@@ -20,6 +21,7 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
+        remove_expired_pdfs()
         built = 0
         failed: list[int] = []
         for export_id in queued_export_ids():
