@@ -17,6 +17,8 @@ from ninja.errors import HttpError
 
 from apps.accounts.models import User, UserType
 from apps.activities.timeline import whole_timeline
+from apps.notifications.models import Notification, NotificationType
+from apps.notifications.services import notify
 
 from .models import (
     REPORT_EXPORT_VALID_FOR,
@@ -167,7 +169,36 @@ def build_export(export: ReportExport) -> None:
     export.file_name = export_file_name(export)
     export.status = ReportExportStatus.READY
     export.ready_at = timezone.now()
-    export.save(update_fields=["storage_key", "file_name", "status", "ready_at"])
+    with transaction.atomic():
+        export.save(update_fields=["storage_key", "file_name", "status", "ready_at"])
+        _notify_ready(export, report.counterpart_name)
+
+
+def _notify_ready(export: ReportExport, counterpart_name: str) -> None:
+    """Tells the requester the PDF is ready (RN50): the notice opens the report screen, where the
+    download is, and the e-mail goes only if the person did not see it there (ADR 0027)."""
+    notify(
+        export.requester,
+        NotificationType.REPORT_EXPORT_READY,
+        reference_type="advising_report",
+        reference_id=export.advising_id,
+        payload={
+            "export_id": export.id,
+            "advising_id": export.advising_id,
+            "counterpart_name": counterpart_name,
+            "ended_on": timezone.localdate(export.advising.ended_at).isoformat(),
+            "available_until": timezone.localdate(export.available_until).isoformat(),
+        },
+    )
+
+
+def notification_of(export: ReportExport) -> Notification | None:
+    """The notice of the ready PDF, so the screen marks it read when it shows the result."""
+    return Notification.objects.filter(
+        recipient_id=export.requester_id,
+        type=NotificationType.REPORT_EXPORT_READY,
+        payload__export_id=export.id,
+    ).first()
 
 
 def _advance(export: ReportExport, stage: ReportExportStage, done: int) -> None:

@@ -37,6 +37,9 @@ LIST_DESCRIPTION = (
     "fuso de Santarém) e description. "
     "meeting_answered: responder_name, decision (accepted ou rejected), reason (só na recusa) "
     "e scheduled_at. "
+    "report_export_ready: export_id, advising_id, counterpart_name, ended_on (AAAA-MM-DD) e "
+    "available_until (AAAA-MM-DD); a reference é advising_report com o id da orientação, para "
+    "abrir a tela do relatório. "
     "O tipo sem aviso ainda (solicitação não respondida) tem payload vazio e message com o "
     "nome do tipo."
 )

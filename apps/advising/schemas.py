@@ -357,6 +357,15 @@ class ReportExportOut(Schema):
     file_name: str | None
     #: Until when the ready PDF can be downloaded: 7 days after it got ready (RN50).
     available_until: datetime | None
+    #: The notice of the ready PDF, which the screen marks read when it shows it (RN50).
+    notification_id: int | None
+
+    @staticmethod
+    def resolve_notification_id(obj) -> int | None:
+        from .report_export import notification_of
+
+        notification = notification_of(obj)
+        return notification.id if notification else None
 
     @staticmethod
     def resolve_status(obj) -> str:

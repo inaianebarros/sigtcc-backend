@@ -24,6 +24,7 @@ class NotificationType(models.TextChoices):
     ACTIVITY_CHANGED = "activity_changed", "Atividade alterada"
     ACTIVITY_DELETED = "activity_deleted", "Atividade excluída"
     ADVISING_ENDED = "advising_ended", "Orientação encerrada"
+    REPORT_EXPORT_READY = "report_export_ready", "PDF do relatório pronto"
 
 
 class Notification(models.Model):

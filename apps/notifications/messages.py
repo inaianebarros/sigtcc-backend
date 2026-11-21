@@ -12,6 +12,11 @@ def _format_date(iso: str) -> str:
     return datetime.date.fromisoformat(iso).strftime("%d/%m/%Y")
 
 
+def message_date(iso: str) -> str:
+    """A day of a payload as the messages write it, for the e-mails that have a text of their own."""
+    return _format_date(iso)
+
+
 def _activity_created(payload: Payload) -> str:
     return (
         f'{payload["teacher_name"]} criou a atividade "{payload["activity_title"]}" para você, '
@@ -127,6 +132,14 @@ def _activity_review_result(payload: Payload) -> str:
     return text
 
 
+def _report_export_ready(payload: Payload) -> str:
+    return (
+        f"O PDF do relatório da sua orientação com {payload['counterpart_name']}, encerrada em "
+        f"{_format_date(payload['ended_on'])}, está pronto. Baixe-o na tela do relatório até "
+        f"{_format_date(payload['available_until'])}."
+    )
+
+
 _BUILDERS: dict[str, Callable[[Payload], str]] = {
     NotificationType.ADVISING_REQUEST_RECEIVED: _advising_request_received,
     NotificationType.ADVISING_REQUEST_ANSWERED: _advising_request_answered,
@@ -138,6 +151,7 @@ _BUILDERS: dict[str, Callable[[Payload], str]] = {
     NotificationType.ACTIVITY_SUBMITTED: _activity_submitted,
     NotificationType.ACTIVITY_AWAITING_REVIEW: _activity_awaiting_review,
     NotificationType.ACTIVITY_COMMENTED: _activity_commented,
+    NotificationType.REPORT_EXPORT_READY: _report_export_ready,
     NotificationType.ADVISING_ENDED: _advising_ended,
     NotificationType.MEETING_REQUESTED: _meeting_requested,
     NotificationType.MEETING_ANSWERED: _meeting_answered,
