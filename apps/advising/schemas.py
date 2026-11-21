@@ -348,6 +348,9 @@ class ReportExportOut(Schema):
 
     id: int
     status: Literal["queued", "processing", "ready", "failed"]
+    stage: Literal["queued", "gathering", "rendering"]
+    items_done: int
+    items_total: int
     created_at: datetime
     ready_at: datetime | None
     file_name: str | None

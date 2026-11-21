@@ -15,10 +15,9 @@ from django.utils.text import slugify
 from ninja.errors import HttpError
 
 from apps.accounts.models import User, UserType
-from apps.activities.models import Activity
 from apps.activities.timeline import whole_timeline
 
-from .models import Advising, ReportExport, ReportExportStatus
+from .models import ReportExport, ReportExportStage, ReportExportStatus
 from .report import advising_report, read_ended_advising, report_activities, report_meetings
 from .thesis import topic_of
 
@@ -80,9 +79,29 @@ def claim_export(export_id: int) -> ReportExport | None:
 
 
 def build_export(export: ReportExport) -> None:
+    """Gathers the records, counting them as it goes, then renders the PDF and keeps it; each step
+    is saved, so the screen follows the stage and the count (RF62, ADR frontend 0007)."""
     from weasyprint import HTML  # heavy: loaded only by the worker
 
     report = advising_report(export.requester, export.advising_id)
+    export.items_total = report.records_count
+    _advance(export, ReportExportStage.GATHERING, 0)
+    meetings = []
+    for meeting in (
+        report_meetings(report).annotate(day=TruncDate("scheduled_at")).order_by("-day", "-id")
+    ):
+        meetings.append(meeting)
+        _advance(export, ReportExportStage.GATHERING, export.items_done + 1)
+    activities = list(
+        report_activities(report)
+        .select_related("advising__student__user", "advising__teacher__user")
+        .order_by("-deadline", "-id")
+    )
+    for activity in activities:
+        activity.events = whole_timeline(activity)
+        _advance(export, ReportExportStage.GATHERING, export.items_done + 1)
+
+    _advance(export, ReportExportStage.RENDERING, export.items_done)
     built_at = timezone.now()
     html = render_to_string(
         "advising/report_export.html",
@@ -90,10 +109,8 @@ def build_export(export: ReportExport) -> None:
             "report": report,
             "topic": topic_of(report),
             "built_at": built_at,
-            "meetings": report_meetings(report)
-            .annotate(day=TruncDate("scheduled_at"))
-            .order_by("-day", "-id"),
-            "activities": _activities_with_timeline(report),
+            "meetings": meetings,
+            "activities": activities,
             "counterpart_label": (
                 "Professor orientador" if export.requester.type == UserType.STUDENT else "Aluno"
             ),
@@ -110,15 +127,9 @@ def build_export(export: ReportExport) -> None:
     export.save(update_fields=["storage_key", "file_name", "status", "ready_at"])
 
 
-def _activities_with_timeline(advising: Advising) -> list[Activity]:
-    activities = list(
-        report_activities(advising)
-        .select_related("advising__student__user", "advising__teacher__user")
-        .order_by("-deadline", "-id")
-    )
-    for activity in activities:
-        activity.events = whole_timeline(activity)
-    return activities
+def _advance(export: ReportExport, stage: ReportExportStage, done: int) -> None:
+    export.stage, export.items_done = stage, done
+    export.save(update_fields=["stage", "items_done", "items_total"])
 
 
 def export_file_name(export: ReportExport) -> str:

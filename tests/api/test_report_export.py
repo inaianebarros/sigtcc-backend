@@ -2,8 +2,10 @@
 
 import pytest
 from django.core.management import CommandError
+from django.db.models.signals import post_save
 
 from apps.activities.models import ActivityStatus
+from apps.advising.models import ReportExport
 from tests.api.report_builders import REASON, add_activity, add_meeting, ended_advising
 from tests.api.report_export_flow import (
     SANTAREM,
@@ -136,3 +138,32 @@ def test_an_export_that_cannot_be_kept_in_the_bucket_fails_and_a_new_request_is_
     ask_export(client, student.user, advising.id)
     run_worker()
     assert download(client, student.user, advising.id).status_code == 200
+
+
+def test_the_current_export_shows_the_stage_and_the_count_while_the_pdf_is_built(client):
+    student = make_student()
+    advising = ended_advising(student)
+    add_meeting(advising)
+    add_meeting(advising, days_from_now=-5)
+    add_activity(advising)
+    add_activity(advising, status=ActivityStatus.ARCHIVED)
+    ask_export(client, student.user, advising.id)
+    seen = []
+
+    def look(sender, instance, **kwargs):
+        body = current_export(client, student.user, advising.id).json()
+        seen.append((body["status"], body["stage"], body["items_done"], body["items_total"]))
+
+    post_save.connect(look, sender=ReportExport)
+    try:
+        queued = current_export(client, student.user, advising.id).json()
+        run_worker()
+    finally:
+        post_save.disconnect(look, sender=ReportExport)
+
+    assert (queued["stage"], queued["items_done"], queued["items_total"]) == ("queued", 0, 0)
+    gathering = [step for step in seen if step[1] == "gathering"]
+    assert [done for _, _, done, _ in gathering] == [0, 1, 2, 3, 4]
+    assert {total for _, _, _, total in gathering} == {4}
+    assert ("processing", "rendering", 4, 4) in seen
+    assert seen[-1][0] == "ready"
