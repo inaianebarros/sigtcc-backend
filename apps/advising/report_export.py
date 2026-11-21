@@ -17,7 +17,11 @@ from ninja.errors import HttpError
 
 from apps.accounts.models import User, UserType
 from apps.activities.timeline import whole_timeline
-from apps.notifications.models import Notification, NotificationType
+from apps.notifications.models import (
+    ADVISING_REPORT_REFERENCE,
+    Notification,
+    NotificationType,
+)
 from apps.notifications.services import notify
 
 from .models import (
@@ -180,7 +184,7 @@ def _notify_ready(export: ReportExport, counterpart_name: str) -> None:
     notify(
         export.requester,
         NotificationType.REPORT_EXPORT_READY,
-        reference_type="advising_report",
+        reference_type=ADVISING_REPORT_REFERENCE,
         reference_id=export.advising_id,
         payload={
             "export_id": export.id,

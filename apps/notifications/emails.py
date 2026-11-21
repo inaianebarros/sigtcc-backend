@@ -19,6 +19,9 @@ MAX_EMAIL_ATTEMPTS = 5
 #: Notices the person may have seen on the screen that caused them (RN50): read there, they get no
 #: e-mail. Each waits a little before going out, so the screen has the time to mark it read.
 SKIPPED_WHEN_READ = (NotificationType.REPORT_EXPORT_READY,)
+# The screen asks every 2 seconds while the tab is visible (ADR frontend 0007) and marks
+# the notice read as soon as it shows the result; 15 seconds is several of those reads.
+# A tab left in the background does not read, so that person gets the e-mail.
 SEEN_ON_SCREEN_GRACE = timedelta(seconds=15)
 
 logger = logging.getLogger("sigtcc.notifications")
@@ -76,10 +79,15 @@ def _report_export_ready_body(notification: Notification) -> str:
     )
 
 
+#: The types whose e-mail has a text of its own instead of the notice plus the general link.
+_OWN_BODIES = {NotificationType.REPORT_EXPORT_READY: _report_export_ready_body}
+
+
 def email_for(notification: Notification) -> tuple[str, str]:
     subject = NotificationType(notification.type).label
-    if notification.type == NotificationType.REPORT_EXPORT_READY:
-        return subject, _report_export_ready_body(notification)
+    own_body = _OWN_BODIES.get(notification.type)
+    if own_body is not None:
+        return subject, own_body(notification)
     text = message_for(notification.type, notification.payload)
     return subject, f"{text}\n\nAcesse o SIGTCC: {settings.FRONTEND_URL}"
 

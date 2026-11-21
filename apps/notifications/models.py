@@ -5,6 +5,8 @@ ADVISING_REQUEST_REFERENCE = "advising_request"
 ADVISING_REFERENCE = "advising"
 ACTIVITY_REFERENCE = "activity"
 MEETING_REFERENCE = "meeting"
+#: The report of an ended advising (RF61): its id is the advising's.
+ADVISING_REPORT_REFERENCE = "advising_report"
 
 
 class NotificationType(models.TextChoices):
