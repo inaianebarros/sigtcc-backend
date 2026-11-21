@@ -6,7 +6,7 @@ from apps.advising.report_export import (
     build_export,
     claim_export,
     queued_export_ids,
-    record_failed_attempt,
+    record_export_failure,
 )
 
 logger = logging.getLogger("sigtcc.exports")
@@ -23,6 +23,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         built = 0
         failed: list[int] = []
+        given_up: list[int] = []
         for export_id in queued_export_ids():
             export = claim_export(export_id)
             if export is None:
@@ -34,13 +35,15 @@ class Command(BaseCommand):
                 logger.exception("failed to build report export %s", export_id)
                 failed.append(export_id)
                 try:
-                    record_failed_attempt(export_id)
+                    if record_export_failure(export_id):
+                        given_up.append(export_id)
                 except Exception:
                     # Marking must never stop the others.
                     logger.exception("failed to count the attempt of report export %s", export_id)
         self.stdout.write(f"{built} PDF(s) gerado(s)." if built else "Nenhum PDF gerado.")
         if failed:
             raise CommandError(
-                f"{len(failed)} exportação(ões) do relatório falharam "
-                f"(ids {', '.join(map(str, failed))})."
+                f"{len(failed)} exportação(ões) do relatório falharam nesta tentativa "
+                f"(ids {', '.join(map(str, failed))}); "
+                f"{len(given_up)} delas esgotaram as 5 tentativas."
             )

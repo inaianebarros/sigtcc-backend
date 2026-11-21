@@ -166,6 +166,8 @@ class ReportExport(models.Model):
     )
     items_done = models.PositiveIntegerField(default=0)
     items_total = models.PositiveIntegerField(default=0)
+    #: After a failed attempt, the worker waits until then to try again (RN50).
+    retry_at = models.DateTimeField(null=True, blank=True)
     storage_key = models.CharField(max_length=255, blank=True, default="")
     file_name = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)

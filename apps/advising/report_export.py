@@ -4,10 +4,12 @@ bucket, from where only the requester downloads it."""
 
 import logging
 import uuid
+from datetime import timedelta
 
 from django.core.files.base import ContentFile
 from django.core.files.storage import Storage, storages
 from django.db import transaction
+from django.db.models import Q
 from django.db.models.functions import TruncDate
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -37,6 +39,9 @@ logger = logging.getLogger("sigtcc.exports")
 
 PDF_NOT_READY_MESSAGE = "O PDF ainda não está pronto."
 PDF_EXPIRED_MESSAGE = "Este PDF expirou. Gere um novo pelo botão Exportar PDF."
+#: The wait before the next attempt doubles from this one: 30 s, 1, 2 and 4 min, so a
+#: bucket outage of a few minutes does not use up the attempts.
+FIRST_RETRY_AFTER = timedelta(seconds=30)
 
 
 def export_storage() -> Storage:
@@ -105,6 +110,7 @@ def remove_expired_pdfs() -> int:
 def queued_export_ids() -> list[int]:
     return list(
         ReportExport.objects.filter(status=ReportExportStatus.QUEUED)
+        .filter(Q(retry_at__isnull=True) | Q(retry_at__lte=timezone.now()))
         .order_by("created_at", "id")
         .values_list("id", flat=True)
     )
@@ -127,8 +133,7 @@ def claim_export(export_id: int) -> ReportExport | None:
         if export is None:
             return None
         if not export.requester.is_active:
-            export.status = ReportExportStatus.FAILED
-            export.save(update_fields=["status"])
+            export.delete()
             return None
         export.status = ReportExportStatus.PROCESSING
         export.save(update_fields=["status"])
@@ -181,9 +186,14 @@ def build_export(export: ReportExport) -> None:
     export.file_name = export_file_name(export)
     export.status = ReportExportStatus.READY
     export.ready_at = timezone.now()
-    with transaction.atomic():
-        export.save(update_fields=["storage_key", "file_name", "status", "ready_at"])
-        _notify_ready(export, report.counterpart_name)
+    try:
+        with transaction.atomic():
+            export.save(update_fields=["storage_key", "file_name", "status", "ready_at"])
+            _notify_ready(export, report.counterpart_name)
+    except Exception:
+        # The export goes back to the queue: the file it will not point to must not stay behind.
+        export_storage().delete(key)
+        raise
 
 
 def _notify_ready(export: ReportExport, counterpart_name: str) -> None:
@@ -240,9 +250,10 @@ def export_file_name(export: ReportExport) -> str:
     return f"relatorio-orientacao-{student}-{ended}.pdf"
 
 
-def record_failed_attempt(export_id: int) -> None:
+def record_export_failure(export_id: int) -> bool:
     """Counts a failed attempt (RN50): before the fifth, the export goes back to the queue from the
-    start; at the fifth it fails and the requester is told, in the same transaction."""
+    start, after a wait that doubles each time; at the fifth it fails and the requester is told, in
+    the same transaction. Says whether it failed for good."""
     with transaction.atomic():
         export = (
             ReportExport.objects.select_for_update()
@@ -254,11 +265,22 @@ def record_failed_attempt(export_id: int) -> None:
             export.status = ReportExportStatus.QUEUED
             export.stage = ReportExportStage.QUEUED
             export.items_done = export.items_total = 0
-            export.save(update_fields=["attempts", "status", "stage", "items_done", "items_total"])
-            return
+            export.retry_at = timezone.now() + FIRST_RETRY_AFTER * 2 ** (export.attempts - 1)
+            export.save(
+                update_fields=[
+                    "attempts",
+                    "status",
+                    "stage",
+                    "items_done",
+                    "items_total",
+                    "retry_at",
+                ]
+            )
+            return False
         export.status = ReportExportStatus.FAILED
         export.save(update_fields=["attempts", "status"])
         _notify(export, NotificationType.REPORT_EXPORT_FAILED, _counterpart_name(export))
+    return True
 
 
 def _counterpart_name(export: ReportExport) -> str:
