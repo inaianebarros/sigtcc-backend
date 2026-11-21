@@ -350,3 +350,9 @@ class ReportExportOut(Schema):
     status: Literal["queued", "processing", "ready", "failed"]
     created_at: datetime
     ready_at: datetime | None
+    #: The name of the PDF once it is ready; null before that.
+    file_name: str | None
+
+    @staticmethod
+    def resolve_file_name(obj) -> str | None:
+        return obj.file_name or None

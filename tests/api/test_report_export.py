@@ -110,6 +110,8 @@ def test_the_current_export_goes_from_none_to_queued_to_ready(client):
     assert queued["id"] == asked["id"] and queued["status"] == "queued"
     assert early.status_code == 409
     assert ready["status"] == "ready" and ready["ready_at"]
+    assert asked["file_name"] is None
+    assert ready["file_name"].startswith("relatorio-orientacao-")
 
 
 def test_the_other_party_does_not_download_the_pdf_the_requester_asked_for(client):
