@@ -241,17 +241,19 @@ FILE_DOWNLOAD_OPENAPI = {
 }
 
 
-def attachment_response(stored_file: SubmissionFile | ReviewFile, content) -> FileResponse:
-    """A stored file as a download: an attachment under its original name, with the stored type and
-    nosniff set by the route itself, whatever the global setting says."""
+def download_response(content, file_name: str, content_type: str) -> FileResponse:
+    """A stored file as a download: an attachment under the given name and type, with nosniff set
+    by the route itself, whatever the global setting says."""
     response = FileResponse(
-        content,
-        as_attachment=True,
-        filename=stored_file.file_name,
-        content_type=stored_file.content_type,
+        content, as_attachment=True, filename=file_name, content_type=content_type
     )
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+def attachment_response(stored_file: SubmissionFile | ReviewFile, content) -> FileResponse:
+    """A delivered or attached file under its original name and stored type."""
+    return download_response(content, stored_file.file_name, stored_file.content_type)
 
 
 @api_controller("/atividades", tags=["Atividades"], auth=JWTAuth())

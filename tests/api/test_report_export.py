@@ -4,7 +4,7 @@ import io
 from zoneinfo import ZoneInfo
 
 import pytest
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from pypdf import PdfReader
 
 from apps.activities.models import ActivityStatus
@@ -152,7 +152,8 @@ def test_an_export_that_cannot_be_kept_in_the_bucket_fails_and_a_new_request_is_
         **storages,
         "submissions": {"BACKEND": "tests.api.failing_storage.FailingStorage"},
     }
-    run_worker()
+    with pytest.raises(CommandError):
+        run_worker()
     settings.STORAGES = storages
 
     assert current_export(client, student.user, advising.id).json()["status"] == "failed"

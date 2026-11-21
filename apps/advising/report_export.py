@@ -7,6 +7,7 @@ import uuid
 from django.core.files.base import ContentFile
 from django.core.files.storage import Storage, storages
 from django.db import transaction
+from django.db.models import F
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.text import slugify
@@ -76,7 +77,6 @@ def claim_export(export_id: int) -> ReportExport | None:
 
 
 def build_export(export: ReportExport) -> None:
-    """Renders the PDF, keeps it in the bucket and marks the export ready."""
     from weasyprint import HTML  # heavy: loaded only by the worker
 
     report = advising_report(export.requester, export.advising_id)
@@ -106,3 +106,10 @@ def export_file_name(export: ReportExport) -> str:
     student = slugify(export.advising.student.user.full_name)
     ended = timezone.localdate(export.advising.ended_at).isoformat()
     return f"relatorio-orientacao-{student}-{ended}.pdf"
+
+
+def mark_export_failed(export_id: int) -> None:
+    """Counts the failed attempt and marks the export as failed (the 5 attempts come in RN50)."""
+    ReportExport.objects.filter(pk=export_id).update(
+        status=ReportExportStatus.FAILED, attempts=F("attempts") + 1
+    )

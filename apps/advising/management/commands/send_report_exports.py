@@ -1,9 +1,13 @@
 import logging
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
-from apps.advising.models import ReportExport, ReportExportStatus
-from apps.advising.report_export import build_export, claim_export, queued_export_ids
+from apps.advising.report_export import (
+    build_export,
+    claim_export,
+    mark_export_failed,
+    queued_export_ids,
+)
 
 logger = logging.getLogger("sigtcc.exports")
 
@@ -17,6 +21,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         built = 0
+        failed: list[int] = []
         for export_id in queued_export_ids():
             export = claim_export(export_id)
             if export is None:
@@ -26,5 +31,15 @@ class Command(BaseCommand):
                 built += 1
             except Exception:
                 logger.exception("failed to build report export %s", export_id)
-                ReportExport.objects.filter(pk=export_id).update(status=ReportExportStatus.FAILED)
+                failed.append(export_id)
+                try:
+                    mark_export_failed(export_id)
+                except Exception:
+                    # Marking must never stop the others.
+                    logger.exception("failed to mark report export %s as failed", export_id)
         self.stdout.write(f"{built} PDF(s) gerado(s)." if built else "Nenhum PDF gerado.")
+        if failed:
+            raise CommandError(
+                f"{len(failed)} exportação(ões) do relatório falharam "
+                f"(ids {', '.join(map(str, failed))})."
+            )

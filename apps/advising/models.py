@@ -147,6 +147,7 @@ class ReportExport(models.Model):
     status = models.CharField(
         max_length=10, choices=ReportExportStatus.choices, default=ReportExportStatus.QUEUED
     )
+    attempts = models.PositiveSmallIntegerField(default=0)
     storage_key = models.CharField(max_length=255, blank=True, default="")
     file_name = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)

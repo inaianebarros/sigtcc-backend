@@ -1,12 +1,13 @@
 from typing import Annotated
 
-from django.http import FileResponse, HttpRequest
+from django.http import HttpRequest
 from ninja import Query
 from ninja.responses import Status
 from ninja_extra import api_controller, http_get, http_post, paginate
 from ninja_jwt.authentication import JWTAuth
 
 from apps.accounts.permissions import IsStudent, IsTeacher
+from apps.activities.api import download_response
 from config.pagination import BoundedLimitOffsetPagination, TenPerPageLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page
 
@@ -349,11 +350,6 @@ class AdvisingRequestController:
     )
     def download_report_export(self, request: HttpRequest, advising_id: int):
         export = ready_export(request.user, advising_id)
-        response = FileResponse(
-            export_storage().open(export.storage_key, "rb"),
-            as_attachment=True,
-            filename=export.file_name,
-            content_type="application/pdf",
+        return download_response(
+            export_storage().open(export.storage_key, "rb"), export.file_name, "application/pdf"
         )
-        response["X-Content-Type-Options"] = "nosniff"
-        return response
