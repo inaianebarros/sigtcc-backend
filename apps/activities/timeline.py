@@ -63,7 +63,7 @@ def activity_timeline(
 
 
 def whole_timeline(activity: Activity) -> list[dict]:
-    """Every event of the activity, latest first (RN49), as the export of the report shows it."""
+    """Every event of the activity, latest first (RN49)."""
     events = _events_between(activity, 1, activity.last_event_index)
     return sorted(events, key=lambda event: event["index"], reverse=True)
 

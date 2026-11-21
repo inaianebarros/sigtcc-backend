@@ -15,9 +15,10 @@ from django.utils.text import slugify
 from ninja.errors import HttpError
 
 from apps.accounts.models import User, UserType
+from apps.activities.models import Activity
 from apps.activities.timeline import whole_timeline
 
-from .models import ReportExport, ReportExportStatus
+from .models import Advising, ReportExport, ReportExportStatus
 from .report import advising_report, read_ended_advising, report_activities, report_meetings
 from .thesis import topic_of
 
@@ -105,11 +106,11 @@ def build_export(export: ReportExport) -> None:
     export.storage_key = key
     export.file_name = export_file_name(export)
     export.status = ReportExportStatus.READY
-    export.ready_at = built_at
+    export.ready_at = timezone.now()
     export.save(update_fields=["storage_key", "file_name", "status", "ready_at"])
 
 
-def _activities_with_timeline(advising) -> list:
+def _activities_with_timeline(advising: Advising) -> list[Activity]:
     activities = list(
         report_activities(advising)
         .select_related("advising__student__user", "advising__teacher__user")

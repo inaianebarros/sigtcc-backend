@@ -1,6 +1,7 @@
 """What the PDF of the export of the report holds (RF62, RN50): every record of the ended
 advising, grouped in meetings and activities, with each activity's timeline."""
 
+import re
 from datetime import date, datetime
 
 import pytest
@@ -14,9 +15,10 @@ from tests.api.activity_flow import (
     comment,
     create_activity,
     deliver,
+    end_advising,
     refuse,
 )
-from tests.api.helpers import bearer, post_json
+from tests.api.helpers import bearer
 from tests.api.report_builders import add_meeting, ended_advising
 from tests.api.report_export_flow import (
     SANTAREM,
@@ -37,16 +39,6 @@ def at(day: date, hour: int, minute: int = 0) -> datetime:
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=SANTAREM)
 
 
-def end_advising(client, teacher, advising):
-    response = post_json(
-        client,
-        f"/api/orientacao/{advising.id}/encerrar",
-        {"reason": "Concluímos o ciclo de orientação do TCC."},
-        headers=bearer(teacher.user),
-    )
-    assert response.status_code == 200
-
-
 def test_the_meetings_section_lists_every_held_meeting_with_its_times_and_notes(client):
     student = make_student()
     advising = ended_advising(student)
@@ -59,6 +51,9 @@ def test_the_meetings_section_lists_every_held_meeting_with_its_times_and_notes(
     add_meeting(advising, at=at(date(2026, 10, 6), 9, 30), description="Revisar a introdução")
     add_meeting(advising, status=MeetingStatus.CANCELLED, description="Reunião cancelada")
     add_meeting(advising, status=MeetingStatus.PENDING, description="Reunião pendente")
+    add_meeting(advising, status=MeetingStatus.REJECTED, description="Reunião recusada")
+    # 22:00 in Santarém is already the next day in UTC: the day shown is the local one.
+    add_meeting(advising, at=at(date(2026, 8, 3), 22), description="Reunião à noite")
 
     text = exported_text(client, student.user, advising.id)
 
@@ -71,6 +66,9 @@ def test_the_meetings_section_lists_every_held_meeting_with_its_times_and_notes(
     assert "Sem apontamentos registrados." in meetings
     assert "Reunião cancelada" not in text
     assert "Reunião pendente" not in text
+    assert "Reunião recusada" not in text
+    assert "03/08/2026, das 22:00 às 23:00" in meetings
+    assert meetings.index("Definir o tema") < meetings.index("Reunião à noite")
 
 
 def test_the_activities_section_lists_each_activity_with_its_whole_timeline(client):
@@ -146,7 +144,7 @@ def test_every_page_has_the_footer_with_when_it_was_built_and_the_page_number(cl
     pages = [page.extract_text() for page in reader.pages]
     assert len(pages) > 1
     for number, page in enumerate(pages, start=1):
-        assert f"Gerado pelo SIGTCC em {day}" in page
+        assert re.search(rf"Gerado pelo SIGTCC em {re.escape(day)} às \d\d:\d\d", page)
         assert f"Página {number} de {len(pages)}" in page
 
 
