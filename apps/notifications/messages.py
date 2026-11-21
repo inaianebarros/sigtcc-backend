@@ -140,6 +140,14 @@ def _report_export_ready(payload: Payload) -> str:
     )
 
 
+def _report_export_failed(payload: Payload) -> str:
+    return (
+        "Não foi possível gerar o PDF do relatório da sua orientação com "
+        f"{payload['counterpart_name']}, encerrada em {_format_date(payload['ended_on'])}. "
+        "Abra o relatório e use o botão Tentar novamente."
+    )
+
+
 _BUILDERS: dict[str, Callable[[Payload], str]] = {
     NotificationType.ADVISING_REQUEST_RECEIVED: _advising_request_received,
     NotificationType.ADVISING_REQUEST_ANSWERED: _advising_request_answered,
@@ -152,6 +160,7 @@ _BUILDERS: dict[str, Callable[[Payload], str]] = {
     NotificationType.ACTIVITY_AWAITING_REVIEW: _activity_awaiting_review,
     NotificationType.ACTIVITY_COMMENTED: _activity_commented,
     NotificationType.REPORT_EXPORT_READY: _report_export_ready,
+    NotificationType.REPORT_EXPORT_FAILED: _report_export_failed,
     NotificationType.ADVISING_ENDED: _advising_ended,
     NotificationType.MEETING_REQUESTED: _meeting_requested,
     NotificationType.MEETING_ANSWERED: _meeting_answered,

@@ -18,7 +18,10 @@ MAX_EMAIL_ATTEMPTS = 5
 
 #: Notices the person may have seen on the screen that caused them (RN50): read there, they get no
 #: e-mail. Each waits a little before going out, so the screen has the time to mark it read.
-SKIPPED_WHEN_READ = (NotificationType.REPORT_EXPORT_READY,)
+SKIPPED_WHEN_READ = (
+    NotificationType.REPORT_EXPORT_READY,
+    NotificationType.REPORT_EXPORT_FAILED,
+)
 # The screen asks every 2 seconds while the tab is visible (ADR frontend 0007) and marks
 # the notice read as soon as it shows the result; 15 seconds is several of those reads.
 # A tab left in the background does not read, so that person gets the e-mail.
@@ -79,8 +82,22 @@ def _report_export_ready_body(notification: Notification) -> str:
     )
 
 
+def _report_export_failed_body(notification: Notification) -> str:
+    payload = notification.payload
+    ended = message_date(payload["ended_on"])
+    return (
+        "Não foi possível gerar o PDF do relatório da sua orientação com "
+        f"{payload['counterpart_name']}, encerrada em {ended}.\n\n"
+        "Para pedir de novo, abra o relatório no SIGTCC (será preciso entrar com a sua conta) e "
+        f"use o botão Tentar novamente:\n{_report_screen(notification)}"
+    )
+
+
 #: The types whose e-mail has a text of its own instead of the notice plus the general link.
-_OWN_BODIES = {NotificationType.REPORT_EXPORT_READY: _report_export_ready_body}
+_OWN_BODIES = {
+    NotificationType.REPORT_EXPORT_READY: _report_export_ready_body,
+    NotificationType.REPORT_EXPORT_FAILED: _report_export_failed_body,
+}
 
 
 def email_for(notification: Notification) -> tuple[str, str]:

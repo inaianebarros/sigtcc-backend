@@ -94,7 +94,7 @@ RECEIVED = {"student_name": "Ana Souza"}
 UNANSWERED = {"teacher_name": "Carlos Lima"}
 SCHEDULED = "2026-12-01T14:30:00"
 
-# One realistic payload and the exact text each of the 14 types is e-mailed with (RF54).
+# One realistic payload and the exact text each of the 15 types is e-mailed with (RF54).
 EVERY_TYPE = {
     NotificationType.ADVISING_REQUEST_RECEIVED: (
         RECEIVED,
@@ -164,6 +164,16 @@ EVERY_TYPE = {
         },
         "O PDF do relatório da sua orientação com Carlos Lima, encerrada em 02/11/2026, está "
         "pronto. Ele fica disponível até 27/11/2026, e só você pode baixá-lo.",
+    ),
+    NotificationType.REPORT_EXPORT_FAILED: (
+        {
+            "export_id": 1,
+            "advising_id": 7,
+            "counterpart_name": "Carlos Lima",
+            "ended_on": "2026-11-02",
+        },
+        "Não foi possível gerar o PDF do relatório da sua orientação com Carlos Lima, encerrada "
+        "em 02/11/2026.",
     ),
 }
 
