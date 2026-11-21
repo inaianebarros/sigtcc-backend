@@ -96,6 +96,16 @@ uv run python manage.py expire_advising_requests    # no Compose: docker compose
 
 No Compose, o serviço `expiration-cron` (mesma imagem do backend, sem portas) o executa a cada hora, num laço. Cada solicitação é marcada e notificada na própria transação: uma falha desfaz só aquela solicitação, o comando segue com as outras e termina com erro para aparecer no log, e a hora seguinte tenta de novo. A marcação também acontece quando o aluno envia uma nova solicitação com a anterior vencida, pela mesma função, sem duplicar o aviso.
 
+## Exportação do relatório em PDF
+
+O aluno e o professor de uma orientação encerrada pedem o relatório dela em PDF (RF62, RN50, ADR 0027). O pedido só grava uma linha na fila; o comando `send_report_exports` gera o PDF com o WeasyPrint, grava no bucket das entregas (prefixo `exportacoes/`) e marca a exportação como pronta, e só quem pediu baixa o arquivo. Uma falha marca aquela exportação como falha e o comando segue com as outras.
+
+```bash
+uv run python manage.py send_report_exports    # no Compose: docker compose run --rm backend python manage.py send_report_exports
+```
+
+No Compose, o serviço `export-cron` (mesma imagem do backend, sem portas) o executa a cada 3 segundos, num laço. **Sem esse serviço nenhum PDF é gerado.** O WeasyPrint precisa de bibliotecas de sistema (pango e fontes), já instaladas nas imagens `runtime` e `production`; para rodar no host, instale `libpango-1.0-0`, `libpangoft2-1.0-0` e `libharfbuzz-subset0`.
+
 ## E-mail das notificações
 
 Cada notificação criada também é enviada por e-mail ao destinatário (RF54, ADR 0011), em até 1 minuto (RNF04). O assunto é o tipo da notificação, e o corpo traz o mesmo texto que o sistema mostra e um link para ele (`FRONTEND_URL`). O comando pode ser executado à mão:

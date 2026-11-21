@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Relatório da orientação</title>
+<style>
+  @page { size: A4; margin: 2cm 1.8cm; }
+  body { font-family: "DejaVu Sans", "Liberation Sans", sans-serif; font-size: 10.5pt; color: #1f2933; line-height: 1.45; }
+  h1 { color: #0f6460; font-size: 18pt; margin: 0 0 12pt; }
+  h2 { color: #0b4b3f; font-size: 13pt; margin: 18pt 0 6pt; border-bottom: 1px solid #0f6460; padding-bottom: 2pt; }
+  dl { margin: 0; }
+  dt { font-weight: bold; margin-top: 6pt; }
+  dd { margin: 0; white-space: pre-line; }
+  .status { display: inline-block; border: 1px solid #0f6460; color: #0b4b3f; border-radius: 8pt; padding: 0 6pt; font-size: 9pt; }
+  ul.totals { list-style: none; padding: 0; margin: 0; }
+  ul.totals li { margin: 2pt 0; }
+</style>
+</head>
+<body>
+<h1>Relatório da orientação</h1>
+
+<dl>
+  <dt>{{ counterpart_label }}</dt>
+  <dd>{{ report.counterpart_name }} <span class="status">Encerrada</span></dd>
+  <dt>Período</dt>
+  <dd>Iniciada em {{ report.started_at|date:"d/m/Y" }} · Encerrada em {{ report.ended_at|date:"d/m/Y" }}</dd>
+  <dt>Motivo do encerramento</dt>
+  <dd>{{ report.end_reason }}</dd>
+  <dt>Tema da orientação</dt>
+  <dd>{% if topic %}{{ topic.description }}{% else %}Sem tema cadastrado{% endif %}</dd>
+</dl>
+
+<h2>Resumo</h2>
+<ul class="totals">
+  <li>Reuniões realizadas: {{ report.meetings_count }}</li>
+  <li>Atividades concluídas ou arquivadas: {{ report.activities_count }}</li>
+</ul>
+</body>
+</html>

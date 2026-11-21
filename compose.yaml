@@ -219,6 +219,30 @@ services:
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
 
+  # Exportação do relatório da orientação em PDF (RF62, RN50, ADR backend 0027): a mesma imagem, sem
+  # portas, um ciclo a cada 3 segundos para a tela acompanhar a geração. Sem ele nenhum PDF é gerado.
+  export-cron:
+    build:
+      context: .
+      target: runtime
+    command:
+      - sh
+      - -c
+      - "while true; do python manage.py send_report_exports || true; sleep 3; done"
+    environment: *backend-environment
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
   # Contas simuladas da homologação (ADR backend 0021 e 0022, issue #283): a mesma imagem, sem portas,
   # um ciclo a cada 15 segundos. Desligado por padrão: só sobe com o profile "personas"
   # (docker compose --profile personas up -d personas-cron) e só age com PERSONAS_ENABLED=true no .env.
