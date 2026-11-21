@@ -5,6 +5,8 @@ ADVISING_REQUEST_REFERENCE = "advising_request"
 ADVISING_REFERENCE = "advising"
 ACTIVITY_REFERENCE = "activity"
 MEETING_REFERENCE = "meeting"
+#: The report of an ended advising (RF61): its id is the advising's.
+ADVISING_REPORT_REFERENCE = "advising_report"
 
 
 class NotificationType(models.TextChoices):
@@ -24,6 +26,7 @@ class NotificationType(models.TextChoices):
     ACTIVITY_CHANGED = "activity_changed", "Atividade alterada"
     ACTIVITY_DELETED = "activity_deleted", "Atividade excluída"
     ADVISING_ENDED = "advising_ended", "Orientação encerrada"
+    REPORT_EXPORT_READY = "report_export_ready", "PDF do relatório pronto"
 
 
 class Notification(models.Model):

@@ -1,11 +1,13 @@
 """The command that e-mails each pending notification to its recipient (RF54, RNF04, #153)."""
 
+from datetime import timedelta
 from io import StringIO
 
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
+from django.utils import timezone
 
 from apps.accounts.deactivation import deactivate_user
 from apps.accounts.models import UserType
@@ -92,7 +94,7 @@ RECEIVED = {"student_name": "Ana Souza"}
 UNANSWERED = {"teacher_name": "Carlos Lima"}
 SCHEDULED = "2026-12-01T14:30:00"
 
-# One realistic payload and the exact text each of the 13 types is e-mailed with (RF54).
+# One realistic payload and the exact text each of the 14 types is e-mailed with (RF54).
 EVERY_TYPE = {
     NotificationType.ADVISING_REQUEST_RECEIVED: (
         RECEIVED,
@@ -152,6 +154,17 @@ EVERY_TYPE = {
         "Carlos Lima encerrou a sua orientação. 1 atividade em aberto foi arquivada. "
         "Nenhuma reunião pendente ou aceita foi cancelada.",
     ),
+    NotificationType.REPORT_EXPORT_READY: (
+        {
+            "export_id": 1,
+            "advising_id": 7,
+            "counterpart_name": "Carlos Lima",
+            "ended_on": "2026-11-02",
+            "available_until": "2026-11-27",
+        },
+        "O PDF do relatório da sua orientação com Carlos Lima, encerrada em 02/11/2026, está "
+        "pronto. Ele fica disponível até 27/11/2026, e só você pode baixá-lo.",
+    ),
 }
 
 
@@ -166,6 +179,8 @@ def test_each_type_is_e_mailed_once_to_its_recipient_with_its_label_and_text(
     recipient = make_student().user
     payload, text = EVERY_TYPE[notification_type]
     make_notification(recipient, notification_type, payload=payload)
+    # Some notices wait a few seconds for the screen to mark them read (RN50); this one is older.
+    Notification.objects.update(created_at=timezone.now() - timedelta(minutes=1))
 
     call_command(COMMAND)
 

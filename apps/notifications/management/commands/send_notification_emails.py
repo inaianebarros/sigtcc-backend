@@ -9,6 +9,7 @@ from apps.notifications.emails import (
     lock_pending_notification,
     pending_notification_ids,
     record_failed_attempt,
+    seen_on_screen,
     send_notification_email,
 )
 
@@ -36,7 +37,12 @@ class Command(BaseCommand):
                     # A deactivated account (RN19) or a simulated one (ADR 0022) is settled without
                     # a mail, and it is no failure.
                     recipient = notification.recipient
-                    if recipient.is_active and not is_demo_account(recipient.email):
+                    # A notice already read on the screen that caused it is settled too (RN50).
+                    if (
+                        recipient.is_active
+                        and not is_demo_account(recipient.email)
+                        and not seen_on_screen(notification)
+                    ):
                         send_notification_email(notification)
                         mailed = True
                     notification.email_sent_at = timezone.now()
