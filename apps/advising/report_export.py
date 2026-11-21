@@ -8,15 +8,17 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import Storage, storages
 from django.db import transaction
 from django.db.models import F
+from django.db.models.functions import TruncDate
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.text import slugify
 from ninja.errors import HttpError
 
 from apps.accounts.models import User, UserType
+from apps.activities.timeline import whole_timeline
 
 from .models import ReportExport, ReportExportStatus
-from .report import advising_report, read_ended_advising
+from .report import advising_report, read_ended_advising, report_activities, report_meetings
 from .thesis import topic_of
 
 PDF_NOT_READY_MESSAGE = "O PDF ainda não está pronto."
@@ -80,11 +82,17 @@ def build_export(export: ReportExport) -> None:
     from weasyprint import HTML  # heavy: loaded only by the worker
 
     report = advising_report(export.requester, export.advising_id)
+    built_at = timezone.now()
     html = render_to_string(
         "advising/report_export.html",
         {
             "report": report,
             "topic": topic_of(report),
+            "built_at": built_at,
+            "meetings": report_meetings(report)
+            .annotate(day=TruncDate("scheduled_at"))
+            .order_by("-day", "-id"),
+            "activities": _activities_with_timeline(report),
             "counterpart_label": (
                 "Professor orientador" if export.requester.type == UserType.STUDENT else "Aluno"
             ),
@@ -97,8 +105,19 @@ def build_export(export: ReportExport) -> None:
     export.storage_key = key
     export.file_name = export_file_name(export)
     export.status = ReportExportStatus.READY
-    export.ready_at = timezone.now()
+    export.ready_at = built_at
     export.save(update_fields=["storage_key", "file_name", "status", "ready_at"])
+
+
+def _activities_with_timeline(advising) -> list:
+    activities = list(
+        report_activities(advising)
+        .select_related("advising__student__user", "advising__teacher__user")
+        .order_by("-deadline", "-id")
+    )
+    for activity in activities:
+        activity.events = whole_timeline(activity)
+    return activities
 
 
 def export_file_name(export: ReportExport) -> str:
