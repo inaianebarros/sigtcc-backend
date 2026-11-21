@@ -1,10 +1,12 @@
 """One valid export per person and advising, and the 7 days of the PDF (RN50)."""
 
+import io
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
 from django.core.files.storage import storages
+from django.core.management import call_command
 from django.utils import timezone
 
 from tests.api.report_builders import ended_advising
@@ -98,7 +100,26 @@ def test_the_worker_removes_the_expired_pdfs_from_the_bucket_and_keeps_the_valid
         _, recent, _ = ready_export(client)
 
     with later(VALID_FOR + timedelta(minutes=1)):
-        run_worker()
+        call_command("remove_expired_report_exports", stdout=io.StringIO())
 
     assert stored_pdfs(old.id) == []
     assert len(stored_pdfs(recent.id)) == 1
+
+
+def test_a_pdf_the_bucket_refuses_to_remove_does_not_keep_the_others(client, monkeypatch):
+    _, refused, _ = ready_export(client)
+    _, removed, _ = ready_export(client)
+    storage = storages["submissions"]
+    delete = storage.delete
+
+    def refuse_one(name):
+        if name.startswith(f"exportacoes/{refused.id}/"):
+            raise OSError("bucket unavailable")
+        delete(name)
+
+    monkeypatch.setattr(storage, "delete", refuse_one)
+    with later(VALID_FOR + timedelta(minutes=1)):
+        call_command("remove_expired_report_exports", stdout=io.StringIO())
+
+    assert len(stored_pdfs(refused.id)) == 1
+    assert stored_pdfs(removed.id) == []

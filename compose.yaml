@@ -221,6 +221,7 @@ services:
 
   # Exportação do relatório da orientação em PDF (RF62, RN50, ADR backend 0027): a mesma imagem, sem
   # portas, um ciclo a cada 3 segundos para a tela acompanhar a geração. Sem ele nenhum PDF é gerado.
+  # A cada 1200 ciclos (cerca de 1 hora) apaga do bucket os PDFs com mais de 7 dias.
   export-cron:
     build:
       context: .
@@ -228,7 +229,7 @@ services:
     command:
       - sh
       - -c
-      - "while true; do python manage.py send_report_exports || true; sleep 3; done"
+      - "i=0; while true; do python manage.py send_report_exports || true; if [ $$((i % 1200)) -eq 0 ]; then python manage.py remove_expired_report_exports || true; fi; i=$$((i + 1)); sleep 3; done"
     environment: *backend-environment
     volumes:
       - .:/app

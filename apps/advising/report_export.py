@@ -2,6 +2,7 @@
 report in PDF; the `send_report_exports` command builds it outside the request and keeps it in the
 bucket, from where only the requester downloads it."""
 
+import logging
 import uuid
 
 from django.core.files.base import ContentFile
@@ -19,12 +20,15 @@ from apps.activities.timeline import whole_timeline
 
 from .models import (
     REPORT_EXPORT_VALID_FOR,
+    Advising,
     ReportExport,
     ReportExportStage,
     ReportExportStatus,
 )
 from .report import advising_report, read_ended_advising, report_activities, report_meetings
 from .thesis import topic_of
+
+logger = logging.getLogger("sigtcc.exports")
 
 PDF_NOT_READY_MESSAGE = "O PDF ainda não está pronto."
 PDF_EXPIRED_MESSAGE = "Este PDF expirou. Gere um novo pelo botão Exportar PDF."
@@ -39,10 +43,13 @@ def request_export(user: User, advising_id: int) -> ReportExport:
     """Queues an export of the report for one of its parties, or returns the valid one the person
     already has (RN50); anyone else gets the 404 of the report (RN47)."""
     advising = read_ended_advising(user, advising_id)
-    latest = _latest_of(user, advising)
-    if latest is not None and latest.is_valid(timezone.now()):
-        return latest
-    return ReportExport.objects.create(advising=advising, requester=user)
+    with transaction.atomic():
+        # Two quick requests wait for each other here, so the second one finds the first.
+        Advising.objects.select_for_update().filter(pk=advising.pk).first()
+        latest = _latest_of(user, advising)
+        if latest is not None and latest.is_valid(timezone.now()):
+            return latest
+        return ReportExport.objects.create(advising=advising, requester=user)
 
 
 def current_export(user: User, advising_id: int) -> ReportExport | None:
@@ -50,7 +57,7 @@ def current_export(user: User, advising_id: int) -> ReportExport | None:
     return _latest_of(user, read_ended_advising(user, advising_id))
 
 
-def _latest_of(user: User, advising) -> ReportExport | None:
+def _latest_of(user: User, advising: Advising) -> ReportExport | None:
     return (
         ReportExport.objects.filter(advising=advising, requester=user)
         .order_by("-created_at", "-id")
@@ -70,14 +77,20 @@ def ready_export(user: User, advising_id: int) -> ReportExport:
 
 def remove_expired_pdfs() -> int:
     """Removes from the bucket the PDFs past their 7 days and marks them expired (RN50): the
-    Railway bucket has no lifecycle rule, so the worker does it (ADR 0027)."""
+    Railway bucket has no lifecycle rule, so the worker does it once an hour (ADR 0027)."""
     expired = ReportExport.objects.filter(
         status=ReportExportStatus.READY,
         ready_at__lt=timezone.now() - REPORT_EXPORT_VALID_FOR,
     )
+    storage = export_storage()
     removed = 0
     for export in expired:
-        export_storage().delete(export.storage_key)
+        try:
+            storage.delete(export.storage_key)
+        except Exception:
+            # One file the bucket refuses must not keep the others; the next run tries again.
+            logger.exception("failed to remove the expired PDF of report export %s", export.id)
+            continue
         export.status = ReportExportStatus.EXPIRED
         export.save(update_fields=["status"])
         removed += 1
