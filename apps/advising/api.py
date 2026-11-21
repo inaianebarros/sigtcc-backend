@@ -7,6 +7,7 @@ from ninja_extra import api_controller, http_get, http_post, paginate
 from ninja_jwt.authentication import JWTAuth
 
 from apps.accounts.permissions import IsStudent, IsTeacher
+from apps.activities.api import download_response
 from config.pagination import BoundedLimitOffsetPagination, TenPerPageLimitOffsetPagination
 from config.schemas import ErrorOut, FieldErrorsOut, Page
 
@@ -14,6 +15,7 @@ from .calendar_advisees import list_calendar_advisees
 from .models import AdvisingRequestStatus
 from .records import RecordFeed, RecordType
 from .report import advising_report, read_ended_advising
+from .report_export import current_export, export_storage, ready_export, request_export
 from .schemas import (
     AdviseeOut,
     AdvisingHistorySummaryOut,
@@ -28,6 +30,7 @@ from .schemas import (
     EndedAdvisingItemOut,
     EndedAdvisingOut,
     RecordOut,
+    ReportExportOut,
     RequestStatusOut,
     StudentRequestItemOut,
 )
@@ -299,3 +302,54 @@ class AdvisingRequestController:
         record_type: Annotated[RecordType | None, Query(alias="type")] = None,
     ):
         return RecordFeed(read_ended_advising(request.user, advising_id), record_type)
+
+    @http_post(
+        "/historico/{int:advising_id}/exportacao",
+        response={202: ReportExportOut, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut},
+        permissions=[IsStudent | IsTeacher],
+        summary="Pede a exportação do relatório de uma orientação encerrada em PDF",
+        description=(
+            "O Aluno ou o Professor da orientação encerrada pede o relatório em PDF (RF62, RN50). "
+            "O PDF é gerado fora da requisição, pelo comando send_report_exports (ADR 0027); a "
+            "resposta traz a exportação na fila. Quem não é parte da orientação, um id "
+            "desconhecido e uma orientação ainda ativa respondem o 404 do relatório (RN47)."
+        ),
+    )
+    def ask_report_export(self, request: HttpRequest, advising_id: int):
+        return Status(202, request_export(request.user, advising_id))
+
+    @http_get(
+        "/historico/{int:advising_id}/exportacao",
+        response={200: ReportExportOut | None, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut},
+        permissions=[IsStudent | IsTeacher],
+        summary="A exportação atual do relatório pedida pelo usuário",
+        description=(
+            "A última exportação do relatório que o próprio usuário pediu para essa orientação "
+            "(RF62), ou null quando não há. status: queued, processing, ready ou failed. O 404 "
+            "segue o do relatório (RN47)."
+        ),
+    )
+    def current_report_export(self, request: HttpRequest, advising_id: int):
+        return current_export(request.user, advising_id)
+
+    @http_get(
+        "/historico/{int:advising_id}/exportacao/pdf",
+        response={
+            200: None,
+            401: ErrorOut,
+            403: ErrorOut,
+            404: ErrorOut,
+            409: ErrorOut,
+        },
+        permissions=[IsStudent | IsTeacher],
+        summary="Baixa o PDF da exportação do relatório",
+        description=(
+            "Só quem pediu baixa o PDF, quando a sua última exportação está pronta (RN50); "
+            "senão, 409. O 404 segue o do relatório (RN47)."
+        ),
+    )
+    def download_report_export(self, request: HttpRequest, advising_id: int):
+        export = ready_export(request.user, advising_id)
+        return download_response(
+            export_storage().open(export.storage_key, "rb"), export.file_name, "application/pdf"
+        )

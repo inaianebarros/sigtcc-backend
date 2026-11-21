@@ -127,3 +127,31 @@ class ThesisTopic(models.Model):
     advising = models.OneToOneField(Advising, on_delete=models.PROTECT, related_name="thesis_topic")
     description = models.TextField()
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class ReportExportStatus(models.TextChoices):
+    QUEUED = "queued", "Na fila"
+    PROCESSING = "processing", "Gerando"
+    READY = "ready", "Pronta"
+    FAILED = "failed", "Falhou"
+
+
+class ReportExport(models.Model):
+    """An Exportação do Relatório (RF62, RN50): a party of an ended advising asks for the report
+    in PDF, and the `send_report_exports` command builds it outside the request (ADR 0027)."""
+
+    advising = models.ForeignKey(Advising, on_delete=models.CASCADE, related_name="report_exports")
+    requester = models.ForeignKey(
+        "accounts.User", on_delete=models.CASCADE, related_name="report_exports"
+    )
+    status = models.CharField(
+        max_length=10, choices=ReportExportStatus.choices, default=ReportExportStatus.QUEUED
+    )
+    attempts = models.PositiveSmallIntegerField(default=0)
+    storage_key = models.CharField(max_length=255, blank=True, default="")
+    file_name = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    ready_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["status", "created_at"])]

@@ -341,3 +341,17 @@ class AdviseeOut(Schema):
             in_review=obj.in_review_count,
             completed=obj.completed_count,
         )
+
+
+class ReportExportOut(Schema):
+    """An Exportação do Relatório of the user (RF62, RN50): where it is and when it got ready."""
+
+    id: int
+    status: Literal["queued", "processing", "ready", "failed"]
+    created_at: datetime
+    ready_at: datetime | None
+    file_name: str | None
+
+    @staticmethod
+    def resolve_file_name(obj) -> str | None:
+        return obj.file_name or None
