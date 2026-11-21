@@ -136,6 +136,14 @@ class ReportExportStatus(models.TextChoices):
     FAILED = "failed", "Falhou"
 
 
+class ReportExportStage(models.TextChoices):
+    """Where the building of the PDF is (RF62): waiting, gathering the records, rendering."""
+
+    QUEUED = "queued", "Na fila"
+    GATHERING = "gathering", "Reunindo reuniões e atividades"
+    RENDERING = "rendering", "Gerando o PDF"
+
+
 class ReportExport(models.Model):
     """An Exportação do Relatório (RF62, RN50): a party of an ended advising asks for the report
     in PDF, and the `send_report_exports` command builds it outside the request (ADR 0027)."""
@@ -148,6 +156,11 @@ class ReportExport(models.Model):
         max_length=10, choices=ReportExportStatus.choices, default=ReportExportStatus.QUEUED
     )
     attempts = models.PositiveSmallIntegerField(default=0)
+    stage = models.CharField(
+        max_length=10, choices=ReportExportStage.choices, default=ReportExportStage.QUEUED
+    )
+    items_done = models.PositiveIntegerField(default=0)
+    items_total = models.PositiveIntegerField(default=0)
     storage_key = models.CharField(max_length=255, blank=True, default="")
     file_name = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
