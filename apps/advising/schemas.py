@@ -2,6 +2,7 @@ import datetime as dt
 from datetime import datetime
 from typing import Annotated, Literal
 
+from django.utils import timezone
 from ninja import Field, Schema
 from pydantic import StringConstraints
 
@@ -347,13 +348,19 @@ class ReportExportOut(Schema):
     """An Exportação do Relatório of the user (RF62, RN50): where it is and when it got ready."""
 
     id: int
-    status: Literal["queued", "processing", "ready", "failed"]
+    status: Literal["queued", "processing", "ready", "failed", "expired"]
     stage: Literal["queued", "gathering", "rendering"]
     items_done: int
     items_total: int
     created_at: datetime
     ready_at: datetime | None
     file_name: str | None
+    #: Until when the ready PDF can be downloaded: 7 days after it got ready (RN50).
+    available_until: datetime | None
+
+    @staticmethod
+    def resolve_status(obj) -> str:
+        return "expired" if obj.is_expired(timezone.now()) else obj.status
 
     @staticmethod
     def resolve_file_name(obj) -> str | None:

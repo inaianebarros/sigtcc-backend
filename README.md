@@ -104,7 +104,7 @@ O aluno e o professor de uma orientação encerrada pedem o relatório dela em P
 uv run python manage.py send_report_exports    # no Compose: docker compose run --rm backend python manage.py send_report_exports
 ```
 
-No Compose, o serviço `export-cron` (mesma imagem do backend, sem portas) o executa a cada 3 segundos, num laço. **Sem esse serviço nenhum PDF é gerado.** O WeasyPrint precisa de bibliotecas de sistema (pango e fontes), já instaladas nas imagens `runtime` e `production`; para rodar no host, instale `libpango-1.0-0`, `libpangoft2-1.0-0` e `libharfbuzz-subset0`.
+No Compose, o serviço `export-cron` (mesma imagem do backend, sem portas) o executa a cada 3 segundos, num laço, e a cada cerca de 1 hora roda `remove_expired_report_exports`, que apaga do bucket os PDFs com mais de 7 dias e os marca como expirados (RN50; o Railway Buckets não tem regra de ciclo de vida). Pedir de novo devolve a exportação válida (em andamento, ou pronta e não expirada), e o download depois de 7 dias responde 410. **Sem esse serviço nenhum PDF é gerado.** O WeasyPrint precisa de bibliotecas de sistema (pango e fontes), já instaladas nas imagens `runtime` e `production`; para rodar no host, instale `libpango-1.0-0`, `libpangoft2-1.0-0` e `libharfbuzz-subset0`.
 
 ## E-mail das notificações
 

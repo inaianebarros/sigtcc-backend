@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 from django.db import models
@@ -134,6 +134,7 @@ class ReportExportStatus(models.TextChoices):
     PROCESSING = "processing", "Gerando"
     READY = "ready", "Pronta"
     FAILED = "failed", "Falhou"
+    EXPIRED = "expired", "Expirada"
 
 
 class ReportExportStage(models.TextChoices):
@@ -142,6 +143,10 @@ class ReportExportStage(models.TextChoices):
     QUEUED = "queued", "Na fila"
     GATHERING = "gathering", "Reunindo reuniões e atividades"
     RENDERING = "rendering", "Gerando o PDF"
+
+
+#: How long a ready PDF can be downloaded (RN50).
+REPORT_EXPORT_VALID_FOR = timedelta(days=7)
 
 
 class ReportExport(models.Model):
@@ -168,3 +173,18 @@ class ReportExport(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["status", "created_at"])]
+
+    @property
+    def available_until(self) -> datetime | None:
+        return self.ready_at + REPORT_EXPORT_VALID_FOR if self.ready_at else None
+
+    def is_expired(self, now: datetime) -> bool:
+        """A ready PDF past its 7 days counts as expired even before the worker removes it."""
+        return self.status == ReportExportStatus.EXPIRED or (
+            self.status == ReportExportStatus.READY and now > self.available_until
+        )
+
+    def is_valid(self, now: datetime) -> bool:
+        """Running, or ready and not expired: asking again returns it instead of a new one."""
+        running = self.status in (ReportExportStatus.QUEUED, ReportExportStatus.PROCESSING)
+        return running or (self.status == ReportExportStatus.READY and not self.is_expired(now))
