@@ -348,7 +348,6 @@ class ReportExportOut(Schema):
 
     id: int
     status: Literal["queued", "processing", "ready", "failed"]
-    #: Where the building is (RF62): queued, gathering (counting items) or rendering.
     stage: Literal["queued", "gathering", "rendering"]
     items_done: int
     items_total: int

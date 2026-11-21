@@ -144,6 +144,7 @@ def test_the_current_export_shows_the_stage_and_the_count_while_the_pdf_is_built
     student = make_student()
     advising = ended_advising(student)
     add_meeting(advising)
+    add_meeting(advising, days_from_now=-5)
     add_activity(advising)
     add_activity(advising, status=ActivityStatus.ARCHIVED)
     ask_export(client, student.user, advising.id)
@@ -162,8 +163,7 @@ def test_the_current_export_shows_the_stage_and_the_count_while_the_pdf_is_built
 
     assert (queued["stage"], queued["items_done"], queued["items_total"]) == ("queued", 0, 0)
     gathering = [step for step in seen if step[1] == "gathering"]
-    assert gathering[0] == ("processing", "gathering", 0, 3)
-    assert gathering[-1] == ("processing", "gathering", 3, 3)
-    assert [done for _, _, done, _ in gathering] == sorted(done for _, _, done, _ in gathering)
-    assert ("processing", "rendering", 3, 3) in seen
+    assert [done for _, _, done, _ in gathering] == [0, 1, 2, 3, 4]
+    assert {total for _, _, _, total in gathering} == {4}
+    assert ("processing", "rendering", 4, 4) in seen
     assert seen[-1][0] == "ready"

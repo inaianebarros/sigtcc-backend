@@ -84,11 +84,14 @@ def build_export(export: ReportExport) -> None:
     from weasyprint import HTML  # heavy: loaded only by the worker
 
     report = advising_report(export.requester, export.advising_id)
-    _advance(export, ReportExportStage.GATHERING, 0, report.records_count)
-    meetings = list(
+    export.items_total = report.records_count
+    _advance(export, ReportExportStage.GATHERING, 0)
+    meetings = []
+    for meeting in (
         report_meetings(report).annotate(day=TruncDate("scheduled_at")).order_by("-day", "-id")
-    )
-    _advance(export, ReportExportStage.GATHERING, len(meetings), report.records_count)
+    ):
+        meetings.append(meeting)
+        _advance(export, ReportExportStage.GATHERING, export.items_done + 1)
     activities = list(
         report_activities(report)
         .select_related("advising__student__user", "advising__teacher__user")
@@ -96,9 +99,9 @@ def build_export(export: ReportExport) -> None:
     )
     for activity in activities:
         activity.events = whole_timeline(activity)
-        _advance(export, ReportExportStage.GATHERING, export.items_done + 1, export.items_total)
+        _advance(export, ReportExportStage.GATHERING, export.items_done + 1)
 
-    _advance(export, ReportExportStage.RENDERING, export.items_done, export.items_total)
+    _advance(export, ReportExportStage.RENDERING, export.items_done)
     built_at = timezone.now()
     html = render_to_string(
         "advising/report_export.html",
@@ -124,8 +127,8 @@ def build_export(export: ReportExport) -> None:
     export.save(update_fields=["storage_key", "file_name", "status", "ready_at"])
 
 
-def _advance(export: ReportExport, stage: str, done: int, total: int) -> None:
-    export.stage, export.items_done, export.items_total = stage, done, total
+def _advance(export: ReportExport, stage: ReportExportStage, done: int) -> None:
+    export.stage, export.items_done = stage, done
     export.save(update_fields=["stage", "items_done", "items_total"])
 
 
